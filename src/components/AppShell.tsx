@@ -152,8 +152,8 @@ export default function AppShell({
                     key={item.href}
                     href={item.href}
                     className={`flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-semibold transition ${active
-                        ? 'bg-[#d6b37a] text-black shadow-[0_12px_30px_rgba(214,179,122,0.25)]'
-                        : 'border border-white/8 bg-white/[0.03] text-white/75 hover:border-white/15 hover:bg-white/[0.07] hover:text-white'
+                      ? 'bg-[#d6b37a] text-black shadow-[0_12px_30px_rgba(214,179,122,0.25)]'
+                      : 'border border-white/8 bg-white/[0.03] text-white/75 hover:border-white/15 hover:bg-white/[0.07] hover:text-white'
                       }`}
                   >
                     <span>{item.label}</span>

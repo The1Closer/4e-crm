@@ -154,8 +154,8 @@ function ActionCard({
     <Link
       href={href}
       className={`group rounded-[2rem] border p-6 shadow-[0_25px_80px_rgba(0,0,0,0.30)] backdrop-blur-2xl transition duration-200 hover:-translate-y-1 ${accent
-          ? 'border-[#d6b37a]/30 bg-[linear-gradient(135deg,rgba(214,179,122,0.16),rgba(255,255,255,0.04))]'
-          : 'border-white/10 bg-white/[0.04]'
+        ? 'border-[#d6b37a]/30 bg-[linear-gradient(135deg,rgba(214,179,122,0.16),rgba(255,255,255,0.04))]'
+        : 'border-white/10 bg-white/[0.04]'
         }`}
     >
       <div className="space-y-3">
