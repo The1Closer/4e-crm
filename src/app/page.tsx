@@ -1,268 +1,211 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
-import NotificationBell from '../components/NotificationBell'
-import AuthStatus from '../components/AuthStatus'
-import { supabase } from '../lib/supabase'
-import { getCurrentUserProfile, isManagerLike } from '../lib/auth-helpers'
-
-type JobRow = {
-  id: string
-  contract_amount: number | null
-  remaining_balance: number | null
-  install_date: string | null
-  stage_id: number | null
-  pipeline_stages:
-    | {
-        id: number
-        name: string | null
-      }
-    | {
-        id: number
-        name: string | null
-      }[]
-    | null
-  job_reps:
-    | {
-        profile_id: string
-      }[]
-    | null
-}
-
-function getStageName(stage: JobRow['pipeline_stages']) {
-  if (!stage) return 'No Stage'
-  const item = Array.isArray(stage) ? stage[0] ?? null : stage
-  return item?.name ?? 'No Stage'
-}
 
 export default function HomePage() {
-  const [role, setRole] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [jobs, setJobs] = useState<JobRow[]>([])
-
-  useEffect(() => {
-    async function loadHomeDashboard() {
-      setLoading(true)
-
-      const currentProfile = await getCurrentUserProfile()
-
-      if (!currentProfile) {
-        setRole(null)
-        setJobs([])
-        setLoading(false)
-        return
-      }
-
-      setRole(currentProfile.role)
-
-      let visibleJobIds: string[] | null = null
-
-      if (!isManagerLike(currentProfile.role)) {
-        const { data: assignedRows } = await supabase
-          .from('job_reps')
-          .select('job_id')
-          .eq('profile_id', currentProfile.id)
-
-        visibleJobIds = [...new Set((assignedRows ?? []).map((row: any) => row.job_id))]
-
-        if (visibleJobIds.length === 0) {
-          setJobs([])
-          setLoading(false)
-          return
-        }
-      }
-
-      let query = supabase
-        .from('jobs')
-        .select(`
-          id,
-          contract_amount,
-          remaining_balance,
-          install_date,
-          stage_id,
-          pipeline_stages (
-            id,
-            name
-          ),
-          job_reps (
-            profile_id
-          )
-        `)
-
-      if (visibleJobIds) {
-        query = query.in('id', visibleJobIds)
-      }
-
-      const { data } = await query
-      setJobs((data ?? []) as JobRow[])
-      setLoading(false)
-    }
-
-    loadHomeDashboard()
-  }, [])
-
-  const stats = useMemo(() => {
-    const totalJobs = jobs.length
-    const totalContractAmount = jobs.reduce(
-      (sum, job) => sum + Number(job.contract_amount ?? 0),
-      0
-    )
-    const totalRemainingBalance = jobs.reduce(
-      (sum, job) => sum + Number(job.remaining_balance ?? 0),
-      0
-    )
-    const installsScheduled = jobs.filter((job) => !!job.install_date).length
-    const paidInFull = jobs.filter((job) => Number(job.remaining_balance ?? 0) <= 0).length
-    const contingencies = jobs.filter(
-      (job) => getStageName(job.pipeline_stages).toLowerCase() === 'contingency'
-    ).length
-    const contracted = jobs.filter(
-      (job) => getStageName(job.pipeline_stages).toLowerCase().includes('contract')
-    ).length
-
-    return {
-      totalJobs,
-      totalContractAmount,
-      totalRemainingBalance,
-      installsScheduled,
-      paidInFull,
-      contingencies,
-      contracted,
-    }
-  }, [jobs])
-
-  const showManagerLinks = isManagerLike(role)
-
   return (
-    <main className="min-h-screen bg-gray-50 p-8">
-      <div className="mx-auto max-w-6xl space-y-8">
-        <section className="rounded-3xl border border-gray-200 bg-white p-8 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-3xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-gray-500">
-                4 Elements Renovations
-              </p>
+    <div className="space-y-8">
+      <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03))] p-8 shadow-[0_25px_90px_rgba(0,0,0,0.45)] backdrop-blur-2xl md:p-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,179,122,0.18),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_26%)]" />
 
-              <h1 className="mt-3 text-4xl font-bold tracking-tight text-gray-900">
-                4 Elements CRM
+        <div className="relative grid gap-8 xl:grid-cols-[1.35fr_0.9fr]">
+          <div className="space-y-5">
+            <div className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
+              Business Operations
+            </div>
+
+            <div className="space-y-3">
+              <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-white md:text-5xl">
+                Run the branch, track performance, and move deals from one system.
               </h1>
 
-              <p className="mt-4 text-base text-gray-600">
-                Internal roofing CRM for claims, contracts, production flow, team management, dashboards, and notifications.
+              <p className="max-w-2xl text-base leading-7 text-white/68 md:text-lg">
+                Jobs, pipeline visibility, nightly activity, reporting, templates, commissions, and performance tracking — all in one place.
               </p>
             </div>
 
-            <AuthStatus />
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/dashboard"
+                className="rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85]"
+              >
+                Open Dashboard
+              </Link>
+
+              <Link
+                href="/jobs/new"
+                className="rounded-2xl border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.10]"
+              >
+                Create Job
+              </Link>
+            </div>
           </div>
 
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href="/jobs"
-              className="rounded-xl bg-gray-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-gray-800"
-            >
-              View Jobs
-            </Link>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+            <StatTile label="Month to Date" value="$0" sub="Tracked revenue" />
+            <StatTile label="Projected Finish" value="$0" sub="Mon–Sat pace" />
+            <StatTile label="Contingencies" value="0" sub="This month" />
+            <StatTile label="Contracts" value="0" sub="This month" />
+          </div>
+        </div>
+      </section>
 
-            <Link
-              href="/jobs/new"
-              className="rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-            >
-              Create New Job
-            </Link>
+      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="grid gap-6 md:grid-cols-2">
+          <ActionCard
+            title="Submit Nightly Numbers"
+            description="Log today’s knocks, talks, walks, inspections, contingencies, contracts, and revenue."
+            href="/stats/submit"
+            accent
+          />
 
-            <Link
-              href="/team"
-              className="rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-            >
-              Team Management
-            </Link>
+          <ActionCard
+            title="Dashboard"
+            description="Branch, team, and individual performance with charts, projections, and pipeline visibility."
+            href="/dashboard"
+          />
 
-            {showManagerLinks ? (
-              <>
-                <Link
-                  href="/stats/manager"
-                  className="rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-                >
-                  Manager Entry
-                </Link>
+          <ActionCard
+            title="Jobs"
+            description="Open deals, move homeowners through the pipeline, and manage the work in progress."
+            href="/jobs"
+          />
 
-                <Link
-                  href="/dashboard/team"
-                  className="rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-                >
-                  Team Dashboard
-                </Link>
+          <ActionCard
+            title="Templates & Signer"
+            description="Open templates, edit documents, sign files, and save them back into the job."
+            href="/templates"
+          />
+        </div>
 
-                <Link
-                  href="/dashboard/branch"
-                  className="rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-                >
-                  Branch Dashboard
-                </Link>
-              </>
-            ) : null}
+        <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_90px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
+          <div className="mb-5">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
+              Quick Access
+            </div>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
+              Daily Workflow
+            </h2>
+          </div>
 
-            <NotificationBell />
+          <div className="space-y-3">
+            <MiniLink href="/calendar/installs" label="Install Calendar" />
+            <MiniLink href="/commissions" label="Commissions" />
+            <MiniLink href="/contracts/editor" label="Signer" />
+            <MiniLink href="/notifications" label="Notifications" />
+            <MiniLink href="/stats/manager" label="Manager Entry" />
           </div>
         </section>
+      </section>
 
-        <section className="space-y-4">
-          <div className="text-lg font-semibold text-gray-900">
-            CRM Overview
-          </div>
+      <section className="grid gap-6 md:grid-cols-3">
+        <InfoCard
+          eyebrow="Pipeline"
+          title="Keep deals moving."
+          text="Track every homeowner from first contact through signed contract and production."
+        />
+        <InfoCard
+          eyebrow="Performance"
+          title="Measure what matters."
+          text="Use nightly numbers, projections, and dashboards to keep reps accountable and improving."
+        />
+        <InfoCard
+          eyebrow="Execution"
+          title="Run everything faster."
+          text="Templates, documents, reporting, and jobs all live inside one operating system."
+        />
+      </section>
+    </div>
+  )
+}
 
-          {loading ? (
-            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm text-sm text-gray-600">
-              Loading CRM dashboard...
-            </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div className="text-sm font-semibold text-gray-900">Total Jobs</div>
-                <div className="mt-2 text-3xl font-bold text-gray-900">
-                  {stats.totalJobs}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div className="text-sm font-semibold text-gray-900">Total Contract Amount</div>
-                <div className="mt-2 text-3xl font-bold text-gray-900">
-                  ${stats.totalContractAmount.toLocaleString()}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div className="text-sm font-semibold text-gray-900">Total Remaining Balance</div>
-                <div className="mt-2 text-3xl font-bold text-gray-900">
-                  ${stats.totalRemainingBalance.toLocaleString()}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div className="text-sm font-semibold text-gray-900">Installs Scheduled</div>
-                <div className="mt-2 text-3xl font-bold text-gray-900">
-                  {stats.installsScheduled}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div className="text-sm font-semibold text-gray-900">Contingencies</div>
-                <div className="mt-2 text-3xl font-bold text-gray-900">
-                  {stats.contingencies}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div className="text-sm font-semibold text-gray-900">Paid In Full</div>
-                <div className="mt-2 text-3xl font-bold text-gray-900">
-                  {stats.paidInFull}
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
+function StatTile({
+  label,
+  value,
+  sub,
+}: {
+  label: string
+  value: string
+  sub: string
+}) {
+  return (
+    <div className="rounded-3xl border border-white/10 bg-black/20 p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/42">
+        {label}
       </div>
-    </main>
+      <div className="mt-3 text-3xl font-bold tracking-tight text-white">{value}</div>
+      <div className="mt-2 text-sm text-white/55">{sub}</div>
+    </div>
+  )
+}
+
+function ActionCard({
+  title,
+  description,
+  href,
+  accent,
+}: {
+  title: string
+  description: string
+  href: string
+  accent?: boolean
+}) {
+  return (
+    <Link
+      href={href}
+      className={`group rounded-[2rem] border p-6 shadow-[0_25px_80px_rgba(0,0,0,0.30)] backdrop-blur-2xl transition duration-200 hover:-translate-y-1 ${accent
+          ? 'border-[#d6b37a]/30 bg-[linear-gradient(135deg,rgba(214,179,122,0.16),rgba(255,255,255,0.04))]'
+          : 'border-white/10 bg-white/[0.04]'
+        }`}
+    >
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <h3 className="text-xl font-semibold tracking-tight text-white">{title}</h3>
+          <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45 transition group-hover:text-white/70">
+            Open
+          </span>
+        </div>
+
+        <p className="text-sm leading-6 text-white/65">{description}</p>
+      </div>
+    </Link>
+  )
+}
+
+function MiniLink({
+  href,
+  label,
+}: {
+  href: string
+  label: string
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-white/75 transition hover:border-white/15 hover:bg-white/[0.08] hover:text-white"
+    >
+      <span>{label}</span>
+      <span className="text-white/30">→</span>
+    </Link>
+  )
+}
+
+function InfoCard({
+  eyebrow,
+  title,
+  text,
+}: {
+  eyebrow: string
+  title: string
+  text: string
+}) {
+  return (
+    <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#d6b37a]">
+        {eyebrow}
+      </div>
+      <div className="mt-3 text-xl font-bold tracking-tight text-white">{title}</div>
+      <p className="mt-3 text-sm leading-6 text-white/62">{text}</p>
+    </div>
   )
 }

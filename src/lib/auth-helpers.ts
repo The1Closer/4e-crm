@@ -1,33 +1,86 @@
-import { supabase } from './supabase'
+import { supabase } from '@/lib/supabase'
 
-export type CurrentUserProfile = {
+export type AppRole = 'admin' | 'manager' | 'sales_manager' | 'rep' | string
+
+export type UserProfile = {
   id: string
-  email: string | null
   full_name: string | null
-  role: string | null
-} | null
+  role: AppRole | null
+  is_active: boolean | null
+  manager_id?: string | null
+  rep_type_id?: number | null
+  avatar_url?: string | null
+  phone?: string | null
+}
 
-export async function getCurrentUserProfile(): Promise<CurrentUserProfile> {
+export type AppPermissions = {
+  canViewHome: boolean
+  canViewJobs: boolean
+  canCreateJob: boolean
+  canViewDashboard: boolean
+
+  canViewTeamManagement: boolean
+  canManageUsers: boolean
+  canViewManagerEntry: boolean
+
+  canViewInstallCalendar: boolean
+
+  canViewCommissions: boolean
+  canViewAllCommissions: boolean
+
+  canViewTemplates: boolean
+  canManageTemplates: boolean
+
+  canUseSigner: boolean
+  canViewNotifications: boolean
+}
+
+export async function getCurrentUserProfile(): Promise<UserProfile | null> {
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   if (!user) return null
 
-  const { data: profile } = await supabase
+  const { data, error } = await supabase
     .from('profiles')
-    .select('id, full_name, role')
+    .select(
+      'id, full_name, role, is_active, manager_id, rep_type_id, avatar_url, phone'
+    )
     .eq('id', user.id)
     .single()
 
-  return {
-    id: user.id,
-    email: user.email ?? null,
-    full_name: profile?.full_name ?? null,
-    role: profile?.role ?? null,
-  }
+  if (error || !data) return null
+
+  return data as UserProfile
 }
 
-export function isManagerLike(role: string | null | undefined) {
-  return role === 'manager' || role === 'admin'
+export function isManagerLike(role: AppRole | null | undefined) {
+  return role === 'admin' || role === 'manager' || role === 'sales_manager'
+}
+
+export function getPermissions(role: AppRole | null | undefined): AppPermissions {
+  const managerLike = isManagerLike(role)
+
+  return {
+    canViewHome: true,
+    canViewJobs: true,
+    canCreateJob: true,
+    canViewDashboard: true,
+
+    canViewTeamManagement: managerLike,
+    canManageUsers: managerLike,
+    canViewManagerEntry: managerLike,
+
+    canViewInstallCalendar: true,
+
+    canViewCommissions: true,
+    canViewAllCommissions: managerLike,
+
+    canViewTemplates: true,
+    canManageTemplates: managerLike,
+
+    canUseSigner: true,
+    canViewNotifications: true,
+  }
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import ManagerOnlyRoute from '../../components/ManagerOnlyRoute'
 import { supabase } from '../../lib/supabase'
+import { getCurrentUserProfile, getPermissions } from '@/lib/auth-helpers'
 
 type TemplateRow = {
   id: string

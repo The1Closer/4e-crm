@@ -214,7 +214,7 @@ function TeamDashboardContent() {
 export default function TeamDashboardPage() {
   return (
     <ManagerOnlyRoute>
-      <TeamDashboardContent />
+      <main>...</main>
     </ManagerOnlyRoute>
   )
 }

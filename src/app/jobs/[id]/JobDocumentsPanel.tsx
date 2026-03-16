@@ -1,9 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { supabase } from '../../../lib/supabase'
-import { getCurrentUserProfile, isManagerLike } from '../../../lib/auth-helpers'
+import { supabase } from '@/lib/supabase'
+import {
+  getCurrentUserProfile,
+  getPermissions,
+  type UserProfile,
+} from '@/lib/auth-helpers'
 
 type UploadedDocument = {
   id: string
@@ -41,19 +45,30 @@ export default function JobDocumentsPanel({
 }: {
   jobId: string
 }) {
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [permissionsLoading, setPermissionsLoading] = useState(true)
+
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocument[]>([])
   const [signedDocs, setSignedDocs] = useState<SignedJobDocument[]>([])
   const [templates, setTemplates] = useState<TemplateRow[]>([])
-  const [isManager, setIsManager] = useState(false)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    async function loadProfile() {
+      const nextProfile = await getCurrentUserProfile()
+      setProfile(nextProfile)
+      setPermissionsLoading(false)
+    }
+
+    loadProfile()
+  }, [])
+
+  const permissions = getPermissions(profile?.role)
 
   async function loadData() {
     setLoading(true)
     setMessage('')
-
-    const currentProfile = await getCurrentUserProfile()
-    setIsManager(isManagerLike(currentProfile?.role ?? null))
 
     const [uploadedRes, signedRes, templatesRes] = await Promise.all([
       supabase
@@ -65,7 +80,9 @@ export default function JobDocumentsPanel({
 
       supabase
         .from('job_documents')
-        .select('id, template_id, file_name, file_url, file_path, document_type, is_signed, created_at')
+        .select(
+          'id, template_id, file_name, file_url, file_path, document_type, is_signed, created_at'
+        )
         .eq('job_id', jobId)
         .order('created_at', { ascending: false }),
 
@@ -105,7 +122,7 @@ export default function JobDocumentsPanel({
   }, [jobId])
 
   async function deleteUploadedDocument(doc: UploadedDocument) {
-    if (!isManager) return
+    if (!permissions.canManageTemplates) return
 
     setMessage('')
 
@@ -118,10 +135,7 @@ export default function JobDocumentsPanel({
       return
     }
 
-    const { error } = await supabase
-      .from('documents')
-      .delete()
-      .eq('id', doc.id)
+    const { error } = await supabase.from('documents').delete().eq('id', doc.id)
 
     if (error) {
       setMessage(error.message)
@@ -133,7 +147,7 @@ export default function JobDocumentsPanel({
   }
 
   async function deleteSignedDocument(doc: SignedJobDocument) {
-    if (!isManager) return
+    if (!permissions.canManageTemplates) return
 
     setMessage('')
 
@@ -155,36 +169,41 @@ export default function JobDocumentsPanel({
     loadData()
   }
 
-  const mergedDocuments = [
-    ...signedDocs.map((doc) => ({
-      kind: 'generated' as const,
-      id: doc.id,
-      file_name: doc.file_name,
-      open_url: doc.file_url,
-      signer_url: `/contracts/editor?jobId=${jobId}&documentId=${doc.id}&sourceUrl=${encodeURIComponent(
-        doc.file_url
-      )}&name=${encodeURIComponent(doc.file_name)}`,
-      subtitle: `${doc.is_signed ? 'Signed' : 'Generated'} • ${doc.document_type || 'Document'}`,
-      deletable: isManager,
-      onDelete: () => deleteSignedDocument(doc),
-    })),
-    ...uploadedDocs.map((doc) => {
-      const url = buildUploadedDocUrl(doc.file_path)
-
-      return {
-        kind: 'uploaded' as const,
+  const mergedDocuments = useMemo(() => {
+    return [
+      ...signedDocs.map((doc) => ({
+        kind: 'generated' as const,
         id: doc.id,
         file_name: doc.file_name,
-        open_url: url,
-        signer_url: `/contracts/editor?jobId=${jobId}&sourceUrl=${encodeURIComponent(
-          url
+        open_url: doc.file_url,
+        signer_url: `/contracts/editor?jobId=${jobId}&documentId=${doc.id}&sourceUrl=${encodeURIComponent(
+          doc.file_url
         )}&name=${encodeURIComponent(doc.file_name)}`,
-        subtitle: 'Uploaded document',
-        deletable: isManager,
-        onDelete: () => deleteUploadedDocument(doc),
-      }
-    }),
-  ].sort((a, b) => a.file_name.localeCompare(b.file_name))
+        subtitle: `${doc.is_signed ? 'Signed' : 'Generated'} • ${
+          doc.document_type || 'Document'
+        }`,
+        deletable: permissions.canManageTemplates,
+        onDelete: () => deleteSignedDocument(doc),
+      })),
+
+      ...uploadedDocs.map((doc) => {
+        const url = buildUploadedDocUrl(doc.file_path)
+
+        return {
+          kind: 'uploaded' as const,
+          id: doc.id,
+          file_name: doc.file_name,
+          open_url: url,
+          signer_url: `/contracts/editor?jobId=${jobId}&sourceUrl=${encodeURIComponent(
+            url
+          )}&name=${encodeURIComponent(doc.file_name)}`,
+          subtitle: 'Uploaded document',
+          deletable: permissions.canManageTemplates,
+          onDelete: () => deleteUploadedDocument(doc),
+        }
+      }),
+    ].sort((a, b) => a.file_name.localeCompare(b.file_name))
+  }, [signedDocs, uploadedDocs, jobId, permissions.canManageTemplates])
 
   return (
     <section className="space-y-6">
@@ -203,7 +222,7 @@ export default function JobDocumentsPanel({
             </p>
           </div>
 
-          {isManager ? (
+          {!permissionsLoading && permissions.canManageTemplates ? (
             <Link
               href="/templates"
               className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"

@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import ManagerOnlyRoute from '../../components/ManagerOnlyRoute'
 import { supabase } from '../../lib/supabase'
+import {
+  getCurrentUserProfile,
+  getPermissions,
+  type UserProfile,
+} from '@/lib/auth-helpers'
 
 type JobRow = {
   id: string
