@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Suspense, useEffect, useState, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../../src/lib/supabase'
 
@@ -24,11 +24,6 @@ function SignInPageContent() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
-  const redirectTo = useMemo(
-    () => searchParams.get('redirectTo') || '/',
-    [searchParams]
-  )
-
   useEffect(() => {
     async function checkExistingSession() {
       const {
@@ -36,12 +31,13 @@ function SignInPageContent() {
       } = await supabase.auth.getSession()
 
       if (session?.user) {
+        const redirectTo = searchParams.get('redirectTo') || '/'
         router.replace(redirectTo)
       }
     }
 
-    checkExistingSession()
-  }, [router, redirectTo])
+    void checkExistingSession()
+  }, [router, searchParams])
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault()
@@ -59,6 +55,7 @@ function SignInPageContent() {
       return
     }
 
+    const redirectTo = searchParams.get('redirectTo') || '/'
     setLoading(false)
     router.replace(redirectTo)
     router.refresh()

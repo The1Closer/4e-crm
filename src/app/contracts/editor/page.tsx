@@ -1,12 +1,12 @@
 import ProtectedRoute from '../../../components/ProtectedRoute'
-import ContractsEditorClient from './ContractsEditorClient'
+import ContractsEditorDynamicClient from './ContractsEditorDynamicClient'
 
 export const dynamic = 'force-dynamic'
 
 export default function ContractsEditorPage() {
   return (
     <ProtectedRoute>
-      <ContractsEditorClient />
+      <ContractsEditorDynamicClient />
     </ProtectedRoute>
   )
 }
