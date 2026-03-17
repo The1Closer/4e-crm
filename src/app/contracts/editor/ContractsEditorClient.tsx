@@ -7,16 +7,14 @@ const ContractsEditorCoreLazy = nextDynamic(
   {
     ssr: false,
     loading: () => (
-      <main className="min-h-screen bg-gray-50 p-6 md:p-8">
-        <div className="mx-auto max-w-7xl">
-          <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h1 className="text-2xl font-bold text-gray-900">
+      <main className="space-y-6">
+        <div className="rounded-[2.25rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03))] p-8 shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+          <h1 className="text-2xl font-bold text-white">
               Loading PDF engine...
-            </h1>
-            <p className="mt-2 text-sm text-gray-600">
+          </h1>
+          <p className="mt-2 text-sm text-white/60">
               Initializing the contract editor.
-            </p>
-          </div>
+          </p>
         </div>
       </main>
     ),

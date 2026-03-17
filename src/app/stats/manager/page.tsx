@@ -223,12 +223,17 @@ function ManagerNightlyEntryContent() {
   }
 
   useEffect(() => {
-    loadTeamAndStats(reportDate)
-  }, [])
+    const loadTimer = window.setTimeout(() => {
+      void loadTeamAndStats(reportDate)
+    }, 0)
+
+    return () => {
+      window.clearTimeout(loadTimer)
+    }
+  }, [reportDate])
 
   async function handleDateChange(nextDate: string) {
     setReportDate(nextDate)
-    await loadTeamAndStats(nextDate)
   }
 
   function updateCell(

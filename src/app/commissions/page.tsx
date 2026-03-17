@@ -3,17 +3,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import ManagerOnlyRoute from '../../components/ManagerOnlyRoute'
-import { supabase } from '../../lib/supabase'
 import {
-  getCurrentUserProfile,
-  getPermissions,
-  type UserProfile,
-} from '@/lib/auth-helpers'
+  ARCHIVE_INACTIVITY_DAYS,
+  isArchivedByInactivity,
+  isPaidInFull,
+} from '@/lib/job-lifecycle'
+import { supabase } from '../../lib/supabase'
 
 type JobRow = {
   id: string
   contract_amount: number | null
   supplemented_amount: number | null
+  remaining_balance: number | null
+  updated_at: string | null
   homeowners:
     | {
         name: string | null
@@ -146,8 +148,9 @@ function normalizeCommissionType(value: string): CommissionType | null {
   return null
 }
 
-function shouldShowInQueue(stageName: string, paid: boolean) {
+function shouldShowInQueue(stageName: string, paid: boolean, paidInFull: boolean) {
   if (paid) return false
+  if (paidInFull) return true
 
   const s = stageName.toLowerCase().trim()
 
@@ -245,6 +248,23 @@ export default function CommissionsPage() {
   )
 }
 
+function CommissionHistoryFact({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}) {
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold text-gray-900">{value}</div>
+    </div>
+  )
+}
+
 function CommissionsPageContent() {
   const [loading, setLoading] = useState(true)
   const [savingJobId, setSavingJobId] = useState<string | null>(null)
@@ -265,6 +285,8 @@ function CommissionsPageContent() {
           id,
           contract_amount,
           supplemented_amount,
+          remaining_balance,
+          updated_at,
           homeowners (
             name,
             address
@@ -318,7 +340,13 @@ function CommissionsPageContent() {
   }
 
   useEffect(() => {
-    loadData()
+    const loadTimer = window.setTimeout(() => {
+      void loadData()
+    }, 0)
+
+    return () => {
+      window.clearTimeout(loadTimer)
+    }
   }, [])
 
   function updateDraft(jobId: string, field: keyof CommissionDraft, value: string) {
@@ -387,10 +415,28 @@ function CommissionsPageContent() {
 
   const queueJobs = useMemo(() => {
     return jobs.filter((job) => {
+      if (isArchivedByInactivity(job.updated_at)) {
+        return false
+      }
+
       const stageName = getStageName(job.pipeline_stages)
       const existing = commissionRows[job.id]
       const allPaid = existing?.all_commissions_paid ?? false
-      return shouldShowInQueue(stageName, allPaid)
+      const paidInFull = isPaidInFull(job.remaining_balance)
+
+      return shouldShowInQueue(stageName, allPaid, paidInFull)
+    })
+  }, [jobs, commissionRows])
+
+  const paidOutJobs = useMemo(() => {
+    return jobs.filter((job) => {
+      if (isArchivedByInactivity(job.updated_at)) {
+        return false
+      }
+
+      const existing = commissionRows[job.id]
+
+      return Boolean(existing?.all_commissions_paid) && isPaidInFull(job.remaining_balance)
     })
   }, [jobs, commissionRows])
 
@@ -401,16 +447,49 @@ function CommissionsPageContent() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Commissions Queue</h1>
             <p className="mt-2 text-sm text-gray-600">
-              Review payout-ready jobs, enter costs, lock front-end payouts, calculate backend pay, and mark commissions paid.
+              Review payout-ready jobs, enter costs, lock front-end payouts, calculate backend pay, and keep fully paid / fully paid-out jobs visible until they are cleared from the queue.
             </p>
           </div>
 
-          <Link
-            href="/"
-            className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-          >
-            Home
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/archive"
+              className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
+            >
+              Archive
+            </Link>
+            <Link
+              href="/"
+              className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
+            >
+              Home
+            </Link>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Active Queue
+            </div>
+            <div className="mt-2 text-2xl font-bold text-gray-900">{queueJobs.length}</div>
+          </div>
+
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Paid Out / Closed
+            </div>
+            <div className="mt-2 text-2xl font-bold text-gray-900">{paidOutJobs.length}</div>
+          </div>
+
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Archive Threshold
+            </div>
+            <div className="mt-2 text-2xl font-bold text-gray-900">
+              {ARCHIVE_INACTIVITY_DAYS} days
+            </div>
+          </div>
         </div>
 
         {message ? (
@@ -423,12 +502,14 @@ function CommissionsPageContent() {
           <div className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
             Loading commissions queue...
           </div>
-        ) : queueJobs.length === 0 ? (
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
-            No jobs are currently in the commissions queue.
-          </div>
         ) : (
           <div className="space-y-6">
+            {queueJobs.length === 0 ? (
+              <div className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
+                No jobs are currently in the active commissions queue.
+              </div>
+            ) : null}
+
             {queueJobs.map((job) => {
               const assignedReps = getAssignedReps(job.job_reps)
               const row = commissionRows[job.id]
@@ -933,6 +1014,74 @@ function CommissionsPageContent() {
                 </section>
               )
             })}
+
+            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-semibold text-gray-900">Paid Out / Closed</h2>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Jobs stay here once the homeowner balance is paid in full and all commissions have been marked paid.
+                  </p>
+                </div>
+              </div>
+
+              {paidOutJobs.length === 0 ? (
+                <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600">
+                  No paid-out jobs are currently being tracked here.
+                </div>
+              ) : (
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  {paidOutJobs.map((job) => {
+                    const homeowner = getHomeowner(job.homeowners)
+                    const stageName = getStageName(job.pipeline_stages)
+                    const row = commissionRows[job.id]
+
+                    return (
+                      <Link
+                        key={job.id}
+                        href={`/jobs/${job.id}`}
+                        className="block rounded-2xl border border-gray-200 bg-gray-50 p-5 transition hover:border-gray-300 hover:bg-white"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="text-lg font-semibold text-gray-900">
+                              {homeowner?.name ?? 'Unnamed Homeowner'}
+                            </div>
+                            <div className="mt-1 text-sm text-gray-600">
+                              {homeowner?.address ?? '-'}
+                            </div>
+                          </div>
+
+                          <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                            Paid Out
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <CommissionHistoryFact label="Stage" value={stageName} />
+                          <CommissionHistoryFact
+                            label="Paid In Full"
+                            value={`Yes • ${toMoney(Number(job.remaining_balance ?? 0))} balance`}
+                          />
+                          <CommissionHistoryFact
+                            label="Contract"
+                            value={toMoney(Number(job.contract_amount ?? 0))}
+                          />
+                          <CommissionHistoryFact
+                            label="Commissions Paid"
+                            value={
+                              row?.all_commissions_paid_at
+                                ? new Date(row.all_commissions_paid_at).toLocaleString('en-US')
+                                : 'Recorded'
+                            }
+                          />
+                        </div>
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
           </div>
         )}
       </div>

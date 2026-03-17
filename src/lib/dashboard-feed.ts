@@ -11,40 +11,55 @@ export type AnnouncementRow = {
 }
 
 export type ActivityFeedRow = {
-    id: string
-    job_id: string
-    event_type: string
-    event_label: string
-    metadata: Record<string, any>
-    created_at: string
-    jobs:
+  id: string
+  job_id: string
+  event_type: string
+  event_label: string
+  metadata: Record<string, unknown>
+  created_at: string
+  jobs:
     | {
         id: string
         homeowners:
-        | {
-            name: string | null
-            address: string | null
-        }
-        | {
-            name: string | null
-            address: string | null
-        }[]
-        | null
-    }
+          | {
+              name: string | null
+              address: string | null
+            }
+          | {
+              name: string | null
+              address: string | null
+            }[]
+          | null
+      }
     | {
         id: string
         homeowners:
-        | {
-            name: string | null
-            address: string | null
-        }
-        | {
-            name: string | null
-            address: string | null
-        }[]
-        | null
-    }[]
+          | {
+              name: string | null
+              address: string | null
+            }
+          | {
+              name: string | null
+              address: string | null
+            }[]
+          | null
+      }[]
     | null
+}
+
+export type DashboardActivityItem = {
+  id: string
+  jobId: string
+  eventType: string
+  eventLabel: string
+  createdAt: string
+  homeownerName: string
+  address: string
+}
+
+type JobRepRow = {
+  job_id: string
+  profile_id: string
 }
 
 function normalizeHomeowner(
@@ -134,7 +149,9 @@ export async function loadActivityFeed(params: {
             return []
         }
 
-        const allowedJobIds = new Set((jobRepRows ?? []).map((row: any) => row.job_id))
+        const allowedJobIds = new Set(
+            ((jobRepRows ?? []) as JobRepRow[]).map((row) => row.job_id)
+        )
         rows = rows.filter((row) => allowedJobIds.has(row.job_id))
     }
 

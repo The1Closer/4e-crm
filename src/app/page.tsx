@@ -8,6 +8,7 @@ import {
     ClipboardList,
     FileText,
     LayoutDashboard,
+    MapPinned,
     PenSquare,
     TrendingUp,
     Wallet,
@@ -95,6 +96,13 @@ export default function HomePage() {
                     />
 
                     <ActionCard
+                        title="Lead Map"
+                        description="See live, color-coded pins on Google Maps for every visible lead with an address."
+                        href="/map"
+                        icon={MapPinned}
+                    />
+
+                    <ActionCard
                         title="Templates & Signer"
                         description="Open templates, edit documents, sign files, and save them back into the job."
                         href="/templates"
@@ -117,6 +125,7 @@ export default function HomePage() {
 
                     <div className="space-y-3">
                         <MiniLink href="/calendar/installs" label="Install Calendar" icon={CalendarDays} />
+                        <MiniLink href="/map" label="Lead Map" icon={MapPinned} />
                         <MiniLink href="/commissions" label="Commissions" icon={Wallet} />
                         <MiniLink href="/contracts/editor" label="Signer" icon={PenSquare} />
                         <MiniLink href="/notifications" label="Notifications" icon={Bell} />

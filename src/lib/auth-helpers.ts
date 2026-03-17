@@ -18,6 +18,8 @@ export type AppPermissions = {
   canViewJobs: boolean
   canCreateJob: boolean
   canViewDashboard: boolean
+  canViewLeadMap: boolean
+  canViewArchive: boolean
 
   canViewTeamManagement: boolean
   canManageUsers: boolean
@@ -33,6 +35,7 @@ export type AppPermissions = {
 
   canUseSigner: boolean
   canViewNotifications: boolean
+  canManageLockedStages: boolean
 }
 
 export async function getCurrentUserProfile(): Promise<UserProfile | null> {
@@ -67,6 +70,8 @@ export function getPermissions(role: AppRole | null | undefined): AppPermissions
     canViewJobs: true,
     canCreateJob: true,
     canViewDashboard: true,
+    canViewLeadMap: true,
+    canViewArchive: true,
 
     canViewTeamManagement: managerLike,
     canManageUsers: managerLike,
@@ -82,5 +87,6 @@ export function getPermissions(role: AppRole | null | undefined): AppPermissions
 
     canUseSigner: true,
     canViewNotifications: true,
+    canManageLockedStages: managerLike,
   }
 }

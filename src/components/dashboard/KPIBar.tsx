@@ -4,6 +4,8 @@ export default function KPIBar({
  totals,
  projection,
  scopeLabel,
+ periodLabel,
+ showProjection = true,
 }: {
  totals: {
   contingencies: number
@@ -16,28 +18,39 @@ export default function KPIBar({
   contracts: number
   revenue: number
  }
- scopeLabel: string
+ scopeLabel?: string
+ periodLabel?: string
+ showProjection?: boolean
 }) {
+ const resolvedScopeLabel = scopeLabel ?? 'Current'
+ const projectionLabel = showProjection ? 'Projected' : periodLabel ?? 'Current Period'
+
  const cards = [
   {
-   label: `${scopeLabel} Revenue`,
+   label: `${resolvedScopeLabel} Revenue`,
    value: `$${totals.revenue_signed.toLocaleString()}`,
-   sub: `Projected $${projection.revenue.toLocaleString()}`,
+   sub: showProjection
+    ? `${projectionLabel} $${projection.revenue.toLocaleString()}`
+    : projectionLabel,
   },
   {
-   label: `${scopeLabel} Contingencies`,
+   label: `${resolvedScopeLabel} Contingencies`,
    value: totals.contingencies.toLocaleString(),
-   sub: `Projected ${projection.contingencies}`,
+   sub: showProjection
+    ? `${projectionLabel} ${projection.contingencies}`
+    : projectionLabel,
   },
   {
-   label: `${scopeLabel} Contracts`,
+   label: `${resolvedScopeLabel} Contracts`,
    value: totals.contracts_with_deposit.toLocaleString(),
-   sub: `Projected ${projection.contracts}`,
+   sub: showProjection
+    ? `${projectionLabel} ${projection.contracts}`
+    : projectionLabel,
   },
   {
-   label: `${scopeLabel} Inspections`,
+   label: `${resolvedScopeLabel} Inspections`,
    value: totals.inspections.toLocaleString(),
-   sub: 'Month to date',
+   sub: periodLabel ?? 'Month to date',
   },
  ]
 

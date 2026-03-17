@@ -1,13 +1,19 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { createNotifications } from '../../../lib/notification-utils'
+import { getCurrentUserProfile, getPermissions } from '@/lib/auth-helpers'
+import {
+  getVisibleStagesForUser,
+  isManagementLockedStage,
+} from '@/lib/job-stage-access'
 
 type Stage = {
   id: number
   name: string
+  sort_order?: number | null
 }
 
 type Rep = {
@@ -63,6 +69,17 @@ export default function EditJobForm({
   const [repToAdd, setRepToAdd] = useState('')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [canManageLockedStages, setCanManageLockedStages] = useState(false)
+
+  useEffect(() => {
+    async function loadPermissions() {
+      const profile = await getCurrentUserProfile()
+      const permissions = getPermissions(profile?.role)
+      setCanManageLockedStages(permissions.canManageLockedStages)
+    }
+
+    void loadPermissions()
+  }, [])
 
   function updateField(field: keyof FormData, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -75,6 +92,24 @@ export default function EditJobForm({
   const availableReps = useMemo(() => {
     return reps.filter((rep) => !selectedRepIds.includes(rep.id))
   }, [reps, selectedRepIds])
+
+  const visibleStages = useMemo(
+    () => getVisibleStagesForUser(stages, canManageLockedStages),
+    [canManageLockedStages, stages]
+  )
+
+  const currentStage = useMemo(
+    () => stages.find((stage) => String(stage.id) === initialData.stage_id) ?? null,
+    [initialData.stage_id, stages]
+  )
+
+  const stageLockedForUser = useMemo(
+    () =>
+      Boolean(currentStage) &&
+      isManagementLockedStage(currentStage, stages) &&
+      !canManageLockedStages,
+    [canManageLockedStages, currentStage, stages]
+  )
 
   function removeRep(repId: string) {
     setSelectedRepIds((prev) => prev.filter((id) => id !== repId))
@@ -98,6 +133,14 @@ export default function EditJobForm({
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
+
+    const nextStage = stages.find((stage) => String(stage.id) === form.stage_id) ?? null
+
+    if (nextStage && isManagementLockedStage(nextStage, stages) && !canManageLockedStages) {
+      setMessage('Only management can move jobs into Contracted and later stages.')
+      return
+    }
+
     setSaving(true)
     setMessage('')
 
@@ -196,6 +239,11 @@ export default function EditJobForm({
     setSaving(false)
     setIsEditing(false)
     setMessage('Saved')
+    window.dispatchEvent(
+      new CustomEvent('job-detail:refresh', {
+        detail: { jobId },
+      })
+    )
     router.refresh()
   }
 
@@ -220,7 +268,8 @@ export default function EditJobForm({
           <button
             type="button"
             onClick={() => setIsEditing(true)}
-            className="rounded-xl bg-gray-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-gray-800"
+            disabled={stageLockedForUser}
+            className="rounded-xl bg-gray-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Edit
           </button>
@@ -229,6 +278,12 @@ export default function EditJobForm({
         {message ? (
           <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
             {message}
+          </div>
+        ) : null}
+
+        {stageLockedForUser ? (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            This job is in a management-only stage. Only management can edit it now.
           </div>
         ) : null}
       </section>
@@ -368,8 +423,8 @@ export default function EditJobForm({
               onChange={(e) => updateField('stage_id', e.target.value)}
             >
               <option value="">Select stage</option>
-              {stages.map((stage) => (
-                <option key={stage.id} value={stage.id}>
+              {visibleStages.map((stage) => (
+                <option key={stage.id} value={String(stage.id ?? '')}>
                   {stage.name}
                 </option>
               ))}

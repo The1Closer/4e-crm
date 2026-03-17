@@ -2,6 +2,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
@@ -49,9 +50,11 @@ export default function NotificationsClient() {
   }
 
   useEffect(() => {
-    loadNotifications()
+    const loadTimer = window.setTimeout(() => {
+      void loadNotifications()
+    }, 0)
 
-    let channel: any
+    let channel: RealtimeChannel | null = null
 
     async function subscribe() {
       const {
@@ -80,6 +83,7 @@ export default function NotificationsClient() {
     subscribe()
 
     return () => {
+      window.clearTimeout(loadTimer)
       if (channel) {
         supabase.removeChannel(channel)
       }

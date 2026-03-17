@@ -10,15 +10,11 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100%;
-  font-family: Inter, system-ui, sans-serif;
 }
 
 :root {
-  --font-display: Georgia, serif;
-}
-
-.font-display {
-  font-family: var(--font-display), Georgia, serif;
+  --font-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
 
   --background: #050505;
   --foreground: #ffffff;
@@ -49,6 +45,15 @@ body {
   --ring: rgba(214, 179, 122, 0.45);
 
   --radius: 1rem;
+}
+
+html,
+body {
+  font-family: var(--font-sans);
+}
+
+.font-display {
+  font-family: var(--font-display);
 }
 
 body {

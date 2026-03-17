@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
+  Archive,
   Bell,
   Briefcase,
   CalendarDays,
@@ -12,6 +13,7 @@ import {
   FileText,
   Home,
   LayoutDashboard,
+  MapPinned,
   PenSquare,
   PlusSquare,
   Settings2,
@@ -32,7 +34,7 @@ type NavItem = {
   label: string
   icon: React.ComponentType<{ className?: string }>
   show: boolean
-  group: 'main' | 'workspace' | 'admin'
+  group: 'main' | 'workspace' | 'admin' | 'footer'
 }
 
 export default function AppShell({
@@ -43,7 +45,6 @@ export default function AppShell({
   const pathname = usePathname()
 
   const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [loadingRole, setLoadingRole] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const isAuthPage = pathname === '/sign-in'
@@ -52,15 +53,10 @@ export default function AppShell({
     async function loadProfile() {
       const nextProfile = await getCurrentUserProfile()
       setProfile(nextProfile)
-      setLoadingRole(false)
     }
 
-    loadProfile()
+    void loadProfile()
   }, [])
-
-  useEffect(() => {
-    setSidebarOpen(false)
-  }, [pathname])
 
   if (isAuthPage) {
     return <>{children}</>
@@ -105,6 +101,13 @@ export default function AppShell({
       group: 'workspace',
     },
     {
+      href: '/map',
+      label: 'Lead Map',
+      icon: MapPinned,
+      show: permissions.canViewLeadMap,
+      group: 'workspace',
+    },
+    {
       href: '/commissions',
       label: 'Commissions',
       icon: ShieldCheck,
@@ -124,6 +127,13 @@ export default function AppShell({
       icon: PenSquare,
       show: permissions.canUseSigner,
       group: 'workspace',
+    },
+    {
+      href: '/archive',
+      label: 'Archive',
+      icon: Archive,
+      show: permissions.canViewArchive,
+      group: 'footer',
     },
     {
       href: '/notifications',
@@ -148,15 +158,13 @@ export default function AppShell({
     },
   ]
 
-  const visibleNavItems = useMemo(
-    () => navItems.filter((item) => item.show),
-    [loadingRole, profile?.role]
-  )
+  const visibleNavItems = navItems.filter((item) => item.show)
 
   const groupedNav = {
     main: visibleNavItems.filter((item) => item.group === 'main'),
     workspace: visibleNavItems.filter((item) => item.group === 'workspace'),
     admin: visibleNavItems.filter((item) => item.group === 'admin'),
+    footer: visibleNavItems.filter((item) => item.group === 'footer'),
   }
 
   const roleLabel =
@@ -188,7 +196,7 @@ export default function AppShell({
               <div className="relative h-15 w-15 overflow-hidden rounded-[1.35rem] border border-[#d6b37a]/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(214,179,122,0.18),transparent_55%)]" />
                 <Image
-                  src="/4ELogo.jpeg"
+                  src="/4ELogo.png"
                   alt="4 Elements CRM"
                   fill
                   className="object-contain p-1.5 transition duration-300 group-hover:scale-[1.03]"
@@ -241,11 +249,13 @@ export default function AppShell({
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 overflow-hidden rounded-[1rem] border border-[#d6b37a]/20 bg-white/[0.04] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
-                    <img
-                      src="/4ELogo.jpeg"
+                  <div className="relative h-12 w-12 overflow-hidden rounded-[1rem] border border-[#d6b37a]/20 bg-white/[0.04] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+                    <Image
+                      src="/4ELogo.png"
                       alt="4 Elements CRM"
-                      className="h-full w-full object-contain p-1.5"
+                      fill
+                      className="object-contain p-1.5"
+                      sizes="48px"
                     />
                   </div>
 
@@ -284,12 +294,38 @@ export default function AppShell({
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-4">
-            <NavGroup title="Overview" items={groupedNav.main} pathname={pathname} />
-            <NavGroup title="Workspace" items={groupedNav.workspace} pathname={pathname} />
+            <NavGroup
+              title="Overview"
+              items={groupedNav.main}
+              pathname={pathname}
+              onNavigate={() => setSidebarOpen(false)}
+            />
+            <NavGroup
+              title="Workspace"
+              items={groupedNav.workspace}
+              pathname={pathname}
+              onNavigate={() => setSidebarOpen(false)}
+            />
             {groupedNav.admin.length > 0 ? (
-              <NavGroup title="Management" items={groupedNav.admin} pathname={pathname} />
+              <NavGroup
+                title="Management"
+                items={groupedNav.admin}
+                pathname={pathname}
+                onNavigate={() => setSidebarOpen(false)}
+              />
             ) : null}
           </div>
+
+          {groupedNav.footer.length > 0 ? (
+            <div className="border-t border-white/10 px-4 py-4">
+              <NavGroup
+                title="Archive"
+                items={groupedNav.footer}
+                pathname={pathname}
+                onNavigate={() => setSidebarOpen(false)}
+              />
+            </div>
+          ) : null}
         </div>
       </aside>
 
@@ -311,10 +347,12 @@ function NavGroup({
   title,
   items,
   pathname,
+  onNavigate,
 }: {
   title: string
   items: NavItem[]
   pathname: string
+  onNavigate: () => void
 }) {
   if (items.length === 0) return null
 
@@ -336,6 +374,7 @@ function NavGroup({
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavigate}
               className={`group flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                 active
                   ? 'bg-[linear-gradient(135deg,#d6b37a,#e2bf85)] text-black shadow-[0_12px_30px_rgba(214,179,122,0.25)]'

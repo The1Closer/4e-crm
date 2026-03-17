@@ -202,7 +202,13 @@ export default function TeamUsersPage() {
   }
 
   useEffect(() => {
-    loadData()
+    const loadTimer = window.setTimeout(() => {
+      void loadData()
+    }, 0)
+
+    return () => {
+      window.clearTimeout(loadTimer)
+    }
   }, [])
 
   async function handleCreateUser(e: React.FormEvent) {

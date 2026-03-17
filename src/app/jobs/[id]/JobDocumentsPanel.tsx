@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { authorizedFetch } from '@/lib/api-client'
 import { supabase } from '@/lib/supabase'
 import {
   getCurrentUserProfile,
@@ -171,19 +172,16 @@ export default function JobDocumentsPanel({
 
     setMessage('')
 
-    const storageRes = await supabase.storage
-      .from('job-files')
-      .remove([doc.file_path])
+    const response = await authorizedFetch(`/api/job-files/${doc.id}`, {
+      method: 'DELETE',
+    })
 
-    if (storageRes.error) {
-      setMessage(storageRes.error.message)
-      return
-    }
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null
 
-    const { error } = await supabase.from('documents').delete().eq('id', doc.id)
-
-    if (error) {
-      setMessage(error.message)
+    if (!response.ok) {
+      setMessage(result?.error || 'Delete failed.')
       return
     }
 
@@ -196,17 +194,16 @@ export default function JobDocumentsPanel({
 
     setMessage('')
 
-    if (doc.file_path) {
-      await supabase.storage.from('documents').remove([doc.file_path])
-    }
+    const response = await authorizedFetch(`/api/job-documents/${doc.id}`, {
+      method: 'DELETE',
+    })
 
-    const { error } = await supabase
-      .from('job_documents')
-      .delete()
-      .eq('id', doc.id)
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null
 
-    if (error) {
-      setMessage(error.message)
+    if (!response.ok) {
+      setMessage(result?.error || 'Delete failed.')
       return
     }
 

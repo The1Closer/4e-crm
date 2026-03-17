@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import BranchDashboard from '@/components/dashboard/BranchDashboard'
 import TeamDashboard from '@/components/dashboard/TeamDashboard'
 import IndividualDashboard from '@/components/dashboard/IndividualDashboard'
+import type { UserProfile } from '@/lib/auth-helpers'
 
 function normalizeRole(role?: string | null) {
   return (role ?? '').trim().toLowerCase()
@@ -19,7 +20,7 @@ export default function DashboardTabs({
   showProjection,
 }: {
   role?: string | null
-  profile: any
+  profile: UserProfile
   filters: { startDate: string; endDate: string }
   activeChart: 'revenue' | 'funnel' | 'leaderboard' | 'pipeline'
   onActiveChartChange: (
@@ -30,7 +31,6 @@ export default function DashboardTabs({
 }) {
   const normalizedRole = normalizeRole(role)
 
-  const showBranch = true
   const showTeam = normalizedRole === 'sales_manager'
 
   const availableTabs = useMemo(() => {
@@ -41,12 +41,7 @@ export default function DashboardTabs({
   }, [showTeam])
 
   const [tab, setTab] = useState<'branch' | 'team' | 'individual'>('branch')
-
-  useEffect(() => {
-    if (!availableTabs.includes(tab)) {
-      setTab(availableTabs[0])
-    }
-  }, [availableTabs, tab])
+  const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0]
 
   return (
     <div className="space-y-6">
@@ -58,7 +53,7 @@ export default function DashboardTabs({
               type="button"
               onClick={() => setTab(item)}
               className={`rounded-2xl px-4 py-2 text-sm font-semibold capitalize transition ${
-                tab === item
+                activeTab === item
                   ? 'bg-[#d6b37a] text-black'
                   : 'border border-white/10 bg-white/[0.04] text-white/72 hover:bg-white/[0.08] hover:text-white'
               }`}
@@ -69,7 +64,7 @@ export default function DashboardTabs({
         </div>
       </section>
 
-      {tab === 'branch' ? (
+      {activeTab === 'branch' ? (
         <BranchDashboard
           profile={profile}
           filters={filters}
@@ -80,7 +75,7 @@ export default function DashboardTabs({
         />
       ) : null}
 
-      {tab === 'team' && showTeam ? (
+      {activeTab === 'team' && showTeam ? (
         <TeamDashboard
           profile={profile}
           filters={filters}
@@ -91,7 +86,7 @@ export default function DashboardTabs({
         />
       ) : null}
 
-      {tab === 'individual' ? (
+      {activeTab === 'individual' ? (
         <IndividualDashboard
           profile={profile}
           filters={filters}

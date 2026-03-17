@@ -1,13 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { createNotifications } from '../../../lib/notification-utils'
+import { getCurrentUserProfile, getPermissions } from '@/lib/auth-helpers'
+import {
+  getVisibleStagesForUser,
+  isManagementLockedStage,
+} from '@/lib/job-stage-access'
 
 type Stage = {
   id: number
   name: string
+  sort_order?: number | null
 }
 
 type JobAssignment = {
@@ -26,8 +32,33 @@ export default function StageSelector({
   const router = useRouter()
   const [value, setValue] = useState(currentStageId ? String(currentStageId) : '')
   const [saving, setSaving] = useState(false)
+  const [canManageLockedStages, setCanManageLockedStages] = useState(false)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    async function loadPermissions() {
+      const profile = await getCurrentUserProfile()
+      const permissions = getPermissions(profile?.role)
+      setCanManageLockedStages(permissions.canManageLockedStages)
+    }
+
+    void loadPermissions()
+  }, [])
+
+  const visibleStages = useMemo(
+    () => getVisibleStagesForUser(stages, canManageLockedStages),
+    [canManageLockedStages, stages]
+  )
 
   async function handleChange(nextValue: string) {
+    const nextStage = stages.find((stage) => String(stage.id) === nextValue) ?? null
+
+    if (nextStage && isManagementLockedStage(nextStage, stages) && !canManageLockedStages) {
+      setMessage('Only management can move jobs into Contracted and later stages.')
+      return
+    }
+
+    setMessage('')
     setValue(nextValue)
     setSaving(true)
 
@@ -70,6 +101,11 @@ export default function StageSelector({
         })
       }
 
+      window.dispatchEvent(
+        new CustomEvent('job-detail:refresh', {
+          detail: { jobId },
+        })
+      )
       router.refresh()
     }
 
@@ -77,22 +113,30 @@ export default function StageSelector({
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <select
-        value={value}
-        onChange={(e) => handleChange(e.target.value)}
-        disabled={saving}
-        className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-800 shadow-sm"
-      >
-        <option value="">No Stage</option>
-        {stages.map((stage) => (
-          <option key={stage.id} value={stage.id}>
-            {stage.name}
-          </option>
-        ))}
-      </select>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <select
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
+          disabled={saving}
+          className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white shadow-sm outline-none transition focus:border-[#d6b37a]/40"
+        >
+          <option value="">No Stage</option>
+          {visibleStages.map((stage) => (
+            <option
+              key={stage.id}
+              value={String(stage.id ?? '')}
+              className="bg-[#111111] text-white"
+            >
+              {stage.name}
+            </option>
+          ))}
+        </select>
 
-      {saving ? <span className="text-xs text-gray-500">Saving...</span> : null}
+        {saving ? <span className="text-xs text-white/45">Saving...</span> : null}
+      </div>
+
+      {message ? <div className="text-xs text-[#f8c38a]">{message}</div> : null}
     </div>
   )
 }

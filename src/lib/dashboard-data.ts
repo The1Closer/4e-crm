@@ -14,6 +14,21 @@ export type DashboardFilters = {
   selectedRepId?: string
 }
 
+export type DashboardRecentJob = {
+  id: string
+  homeowner_name: string | null
+  address: string | null
+  contract_amount: number | null
+  stage_name: string | null
+}
+
+export type DashboardAlertItem = {
+  id: string
+  title: string
+  body: string
+  tone: 'gold' | 'blue' | 'red'
+}
+
 type ProfileRow = {
   id: string
   full_name: string
@@ -22,12 +37,19 @@ type ProfileRow = {
   is_active?: boolean | null
 }
 
+type JobRepLinkRow = {
+  job_id: string
+  profile_id: string
+}
+
 type JobRow = {
   id: string
   insurance_carrier: string | null
   type_of_loss: string | null
   install_date: string | null
   contract_signed_date: string | null
+  contract_amount: number | null
+  updated_at: string | null
   homeowners:
   | {
     name: string | null
@@ -73,6 +95,8 @@ export type DashboardDataset = {
     contracts: number
     revenue: number
   }
+  recentJobs: DashboardRecentJob[]
+  alertFeed: DashboardAlertItem[]
 }
 
 function normalizeStage(
@@ -80,6 +104,13 @@ function normalizeStage(
 ): { id: number; name: string | null; sort_order: number | null } | null {
   if (!stage) return null
   return Array.isArray(stage) ? stage[0] ?? null : stage
+}
+
+function normalizeHomeowner(
+  homeowner: JobRow['homeowners']
+): { name: string | null; address: string | null } | null {
+  if (!homeowner) return null
+  return Array.isArray(homeowner) ? homeowner[0] ?? null : homeowner
 }
 
 function getTodayLocalDate() {
@@ -240,6 +271,8 @@ export async function loadDashboardDataset({
       type_of_loss,
       install_date,
       contract_signed_date,
+      contract_amount,
+      updated_at,
       homeowners (
         name,
         address
@@ -259,7 +292,9 @@ export async function loadDashboardDataset({
       .select('job_id, profile_id')
       .in('profile_id', activeRepIds)
 
-    const allowedJobIds = new Set((jobRepRows ?? []).map((row: any) => row.job_id))
+    const allowedJobIds = new Set(
+      ((jobRepRows ?? []) as JobRepLinkRow[]).map((row) => row.job_id)
+    )
     if (scope !== 'branch' || filters.selectedRepId) {
       jobs = jobs.filter((job) => allowedJobIds.has(job.id))
     }
@@ -302,6 +337,64 @@ export async function loadDashboardDataset({
     revenue: projectMonthEnd(totals.revenue_signed, filters.endDate),
   }
 
+  const recentJobs = [...jobs]
+    .sort((a, b) => {
+      const aTime = new Date(a.updated_at ?? 0).getTime()
+      const bTime = new Date(b.updated_at ?? 0).getTime()
+      return bTime - aTime
+    })
+    .slice(0, 6)
+    .map((job) => {
+      const homeowner = normalizeHomeowner(job.homeowners)
+      const stage = normalizeStage(job.pipeline_stages)
+
+      return {
+        id: job.id,
+        homeowner_name: homeowner?.name ?? null,
+        address: homeowner?.address ?? null,
+        contract_amount: job.contract_amount ?? null,
+        stage_name: stage?.name ?? null,
+      }
+    })
+
+  const alertFeed: DashboardAlertItem[] = []
+
+  if (missingToday.length > 0) {
+    alertFeed.push({
+      id: 'missing-today',
+      title: 'Missing nightly reports',
+      body: `${missingToday.length} rep(s) still have not submitted today.`,
+      tone: 'red',
+    })
+  }
+
+  if ((pipelineCounts['No Stage'] ?? 0) > 0) {
+    alertFeed.push({
+      id: 'no-stage',
+      title: 'Jobs missing a stage',
+      body: `${pipelineCounts['No Stage']} job(s) need a clean pipeline stage assignment.`,
+      tone: 'gold',
+    })
+  }
+
+  if (totals.contingencies > 0 && totals.contracts_with_deposit === 0) {
+    alertFeed.push({
+      id: 'contracts-trailing',
+      title: 'Contracts are trailing contingencies',
+      body: 'There is contingency volume in play but no matching contract conversions yet.',
+      tone: 'blue',
+    })
+  }
+
+  if (alertFeed.length === 0) {
+    alertFeed.push({
+      id: 'stable-board',
+      title: 'Board looks clean',
+      body: 'No immediate branch-wide alerts are surfacing from the current dataset.',
+      tone: 'blue',
+    })
+  }
+
   return {
     repOptions: baseRepOptions,
     accessibleRepIds: activeRepIds,
@@ -312,6 +405,8 @@ export async function loadDashboardDataset({
     revenueSeries,
     funnel,
     projection,
+    recentJobs,
+    alertFeed,
   }
 }
 
@@ -325,6 +420,10 @@ export function buildSmartInsights(dataset: DashboardDataset) {
 
   if (dataset.funnel.knocks > 0 && talkRate < 25) {
     insights.push('Talk rate is low. Focus on opening stronger and stopping fewer doors from brushing you off.')
+  }
+
+  if (dataset.funnel.talks > 0 && walkRate < 35) {
+    insights.push('Walk rate is light. Work on turning conversations into physical inspections more consistently.')
   }
 
   if (dataset.funnel.walks > 0 && inspectionRate < 35) {

@@ -1,3 +1,4 @@
+import { authorizedFetch } from '@/lib/api-client'
 import { supabase } from './supabase'
 
 export function extractMentionNames(text: string): string[] {
@@ -31,7 +32,7 @@ export async function createNotifications(params: {
   link?: string | null
   jobId?: string | null
   noteId?: string | null
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   skipActor?: boolean
 }) {
   const {
@@ -54,17 +55,30 @@ export async function createNotifications(params: {
 
   if (finalUserIds.length === 0) return
 
-  const rows = finalUserIds.map((userId) => ({
-    user_id: userId,
-    actor_user_id: actorUserId,
-    type,
-    title,
-    message,
-    link,
-    job_id: jobId,
-    note_id: noteId,
-    metadata,
-  }))
+  const response = await authorizedFetch('/api/notifications', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      userIds: finalUserIds,
+      actorUserId,
+      type,
+      title,
+      message,
+      link,
+      jobId,
+      noteId,
+      metadata,
+      skipActor: false,
+    }),
+  })
 
-  await supabase.from('notifications').insert(rows)
+  if (!response.ok) {
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null
+
+    throw new Error(result?.error || 'Failed to create notifications.')
+  }
 }

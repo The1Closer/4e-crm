@@ -40,44 +40,51 @@ export default function AuthStatus() {
   const [loading, setLoading] = useState(true)
   const [signingOut, setSigningOut] = useState(false)
 
-  async function loadUserAndProfile() {
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser()
+  useEffect(() => {
+    let isActive = true
 
-    if (error || !user) {
-      setUser(null)
-      setProfile(null)
+    async function loadUserAndProfile() {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser()
+
+      if (!isActive) return
+
+      if (error || !user) {
+        setUser(null)
+        setProfile(null)
+        setLoading(false)
+        return
+      }
+
+      setUser({
+        id: user.id,
+        email: user.email,
+      })
+
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (!isActive) return
+
+      setProfile((profileData as Profile) ?? null)
       setLoading(false)
-      return
     }
 
-    setUser({
-      id: user.id,
-      email: user.email,
-    })
-
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('id, full_name, avatar_url')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    setProfile((profileData as Profile) ?? null)
-    setLoading(false)
-  }
-
-  useEffect(() => {
-    loadUserAndProfile()
+    void loadUserAndProfile()
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
-      loadUserAndProfile()
+      void loadUserAndProfile()
     })
 
     return () => {
+      isActive = false
       subscription.unsubscribe()
     }
   }, [])
@@ -99,18 +106,14 @@ export default function AuthStatus() {
   }
 
   if (loading) {
-    return (
-      <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-600">
-        Loading...
-      </div>
-    )
+    return <div className="text-sm text-white/60">Loading...</div>
   }
 
   if (!user) {
     return (
       <Link
         href="/sign-in"
-        className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
+        className="text-sm font-semibold text-white/78 transition hover:text-white"
       >
         Sign In
       </Link>
@@ -121,7 +124,7 @@ export default function AuthStatus() {
   const initials = getInitials(profile?.full_name, user.email)
 
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+    <div className="flex items-center gap-3">
       {profile?.avatar_url ? (
         <img
           src={profile.avatar_url}
@@ -135,10 +138,10 @@ export default function AuthStatus() {
       )}
 
       <div className="min-w-0">
-        <div className="truncate text-sm font-semibold text-gray-900">
+        <div className="truncate text-sm font-semibold text-white">
           {displayName}
         </div>
-        <div className="truncate text-xs text-gray-500">
+        <div className="truncate text-xs text-white/42">
           {user.email ?? ''}
         </div>
       </div>
@@ -147,7 +150,7 @@ export default function AuthStatus() {
         type="button"
         onClick={handleSignOut}
         disabled={signingOut}
-        className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100 disabled:opacity-60"
+        className="rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-medium text-white transition hover:bg-white/[0.1] disabled:opacity-60"
       >
         {signingOut ? 'Signing Out...' : 'Sign Out'}
       </button>

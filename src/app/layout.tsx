@@ -1,22 +1,15 @@
 import './globals.css'
 import AppShell from '../components/AppShell'
-import { Geist, Cormorant_Garamond } from 'next/font/google'
-import { cn } from '@/lib/utils'
-
-const geist = Geist({
-  subsets: ['latin'],
-  variable: '--font-sans',
-})
-
-const cormorant = Cormorant_Garamond({
-  subsets: ['latin'],
-  variable: '--font-display',
-  weight: ['400', '500', '600', '700'],
-})
+import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 
 export const metadata = {
   title: '4 Elements CRM',
   description: 'Internal roofing CRM',
+  manifest: '/manifest.webmanifest',
+}
+
+export const viewport = {
+  themeColor: '#050505',
 }
 
 export default function RootLayout({
@@ -25,11 +18,9 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html
-      lang="en"
-      className={cn('font-sans', geist.variable, cormorant.variable)}
-    >
+    <html lang="en">
       <body>
+        <ServiceWorkerRegister />
         <AppShell>{children}</AppShell>
       </body>
     </html>

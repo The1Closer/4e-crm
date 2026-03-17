@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { authorizedFetch } from '@/lib/api-client'
 
 export default function QuickUploadSection({
   jobId,
@@ -14,11 +14,6 @@ export default function QuickUploadSection({
   const [uploading, setUploading] = useState(false)
   const [message, setMessage] = useState('')
 
-  function inferFileType(file: File) {
-    if (file.type.startsWith('image/')) return 'photo'
-    return 'document'
-  }
-
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault()
     if (!file) return
@@ -26,44 +21,34 @@ export default function QuickUploadSection({
     setUploading(true)
     setMessage('')
 
-    const safeName = file.name.replaceAll(' ', '_')
-    const path = `${jobId}/${Date.now()}-${safeName}`
-    const fileType = inferFileType(file)
+    try {
+      const formData = new FormData()
+      formData.set('file', file)
 
-    const { error: storageError } = await supabase.storage
-      .from('job-files')
-      .upload(path, file, { upsert: false })
-
-    if (storageError) {
-      setMessage(storageError.message)
-      setUploading(false)
-      return
-    }
-
-    const { error: dbError } = await supabase
-      .from('documents')
-      .insert({
-        job_id: jobId,
-        file_name: file.name,
-        file_path: path,
-        file_type: fileType,
+      const response = await authorizedFetch(`/api/jobs/${jobId}/uploads`, {
+        method: 'POST',
+        body: formData,
       })
 
-    if (dbError) {
-      setMessage(dbError.message)
+      const result = (await response.json().catch(() => null)) as
+        | { error?: string; document?: { file_type?: string } }
+        | null
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Upload failed.')
+      }
+
+      const uploadedType = result?.document?.file_type
+
+      setFile(null)
       setUploading(false)
-      return
+      setMessage(uploadedType === 'photo' ? 'Photo uploaded' : 'Document uploaded')
+
+      router.refresh()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Upload failed.')
+      setUploading(false)
     }
-
-    setFile(null)
-    setUploading(false)
-    setMessage(
-      fileType === 'photo'
-        ? 'Photo uploaded'
-        : 'Document uploaded'
-    )
-
-    router.refresh()
   }
 
   return (

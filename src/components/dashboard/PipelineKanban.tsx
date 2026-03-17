@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { isArchivedByInactivity } from '@/lib/job-lifecycle'
 import { supabase } from '@/lib/supabase'
 
 type JobRow = {
@@ -10,6 +11,7 @@ type JobRow = {
   type_of_loss: string | null
   install_date: string | null
   contract_signed_date: string | null
+  updated_at: string | null
   homeowners:
   | {
     name: string | null
@@ -40,6 +42,11 @@ type StageRow = {
   sort_order: number | null
 }
 
+type JobRepLookupRow = {
+  job_id: string
+  profile_id: string
+}
+
 function normalizeHomeowner(
   homeowner: JobRow['homeowners']
 ): { name: string | null; address: string | null } | null {
@@ -65,6 +72,7 @@ export default function PipelineKanban({
   const [message, setMessage] = useState('')
   const [stages, setStages] = useState<StageRow[]>([])
   const [jobs, setJobs] = useState<JobRow[]>([])
+  const effectiveRepIds = useMemo(() => repIds ?? [], [repIds])
 
   useEffect(() => {
     async function loadData() {
@@ -90,6 +98,7 @@ export default function PipelineKanban({
           type_of_loss,
           install_date,
           contract_signed_date,
+          updated_at,
           homeowners (
             name,
             address
@@ -109,11 +118,11 @@ export default function PipelineKanban({
 
       let nextJobs = (jobsData ?? []) as JobRow[]
 
-      if (repIds && repIds.length > 0) {
+      if (effectiveRepIds.length > 0) {
         const { data: jobRepRows, error: jobRepError } = await supabase
           .from('job_reps')
           .select('job_id, profile_id')
-          .in('profile_id', repIds)
+          .in('profile_id', effectiveRepIds)
 
         if (jobRepError) {
           setMessage(jobRepError.message)
@@ -121,17 +130,19 @@ export default function PipelineKanban({
           return
         }
 
-        const allowedJobIds = new Set((jobRepRows ?? []).map((row: any) => row.job_id))
+        const allowedJobIds = new Set(
+          ((jobRepRows ?? []) as JobRepLookupRow[]).map((row) => row.job_id)
+        )
         nextJobs = nextJobs.filter((job) => allowedJobIds.has(job.id))
       }
 
       setStages((stagesData ?? []) as StageRow[])
-      setJobs(nextJobs)
+      setJobs(nextJobs.filter((job) => !isArchivedByInactivity(job.updated_at)))
       setLoading(false)
     }
 
-    loadData()
-  }, [repIds?.join(',')])
+    void loadData()
+  }, [effectiveRepIds])
 
   const jobsByStage = useMemo(() => {
     const grouped: Record<number, JobRow[]> = {}

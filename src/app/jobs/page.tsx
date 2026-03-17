@@ -13,6 +13,8 @@ import JobsQuickFilters, { type JobsQuickFilter } from '@/components/jobs/JobsQu
 import JobsExportTools from '@/components/jobs/JobsExportTools'
 import JobsTable from '@/components/jobs/JobsTable'
 import JobsKanban from '@/components/jobs/JobsKanban'
+import { ARCHIVE_INACTIVITY_DAYS, isArchivedByInactivity } from '@/lib/job-lifecycle'
+import { isManagementLockedStage } from '@/lib/job-stage-access'
 
 type JobRep = {
   profile_id: string
@@ -36,6 +38,7 @@ type JobRow = {
   deposit_collected: number | null
   remaining_balance: number | null
   install_date: string | null
+  updated_at: string | null
   homeowners:
     | {
         name: string | null
@@ -52,10 +55,14 @@ type JobRow = {
     | null
   pipeline_stages:
     | {
+        id?: number | null
         name: string | null
+        sort_order?: number | null
       }
     | {
+        id?: number | null
         name: string | null
+        sort_order?: number | null
       }[]
     | null
   job_reps: JobRep[] | null
@@ -64,6 +71,7 @@ type JobRow = {
 type StageOption = {
   id: number
   name: string
+  sort_order?: number | null
 }
 
 type ProfileOption = {
@@ -159,7 +167,7 @@ function JobsPageContent() {
       const [stagesRes, profilesRes] = await Promise.all([
         supabase
           .from('pipeline_stages')
-          .select('id, name')
+          .select('id, name, sort_order')
           .order('sort_order', { ascending: true }),
         supabase
           .from('profiles')
@@ -185,6 +193,7 @@ function JobsPageContent() {
 
       setStageOptions((stagesRes.data ?? []) as StageOption[])
       setProfileOptions((profilesRes.data ?? []) as ProfileOption[])
+      const stageRows = (stagesRes.data ?? []) as StageOption[]
 
       const baseQuery = supabase
         .from('jobs')
@@ -196,6 +205,7 @@ function JobsPageContent() {
           deposit_collected,
           remaining_balance,
           install_date,
+          updated_at,
           homeowners (
             name,
             phone,
@@ -203,7 +213,10 @@ function JobsPageContent() {
             email
           ),
           pipeline_stages (
+            id,
             name
+            ,
+            sort_order
           ),
           job_reps (
             profile_id,
@@ -267,7 +280,9 @@ function JobsPageContent() {
         return
       }
 
-      const rows = (data ?? []) as JobRow[]
+      const rows = ((data ?? []) as JobRow[]).filter(
+        (row) => !isManagementLockedStage(row.pipeline_stages, stageRows)
+      )
       setJobs(rows)
       setLoading(false)
     }
@@ -280,7 +295,7 @@ function JobsPageContent() {
   }, [])
 
   const filteredJobs = useMemo(() => {
-    let next = [...jobs]
+    let next = jobs.filter((job) => !isArchivedByInactivity(job.updated_at))
     const loweredSearch = search.trim().toLowerCase()
 
     if (loweredSearch) {
@@ -388,6 +403,16 @@ function JobsPageContent() {
     [profileOptions]
   )
 
+  const visibleStageOptions = useMemo(
+    () =>
+      isManagerLike(role)
+        ? stageOptions
+        : stageOptions.filter(
+            (stage) => !isManagementLockedStage(stage, stageOptions)
+          ),
+    [role, stageOptions]
+  )
+
   const normalizedJobs = useMemo<JobCardRow[]>(
     () =>
       filteredJobs.map((job) => {
@@ -425,6 +450,11 @@ function JobsPageContent() {
   const totalRemainingBalance = useMemo(
     () => filteredJobs.reduce((sum, job) => sum + Number(job.remaining_balance ?? 0), 0),
     [filteredJobs]
+  )
+
+  const archivedCount = useMemo(
+    () => jobs.filter((job) => isArchivedByInactivity(job.updated_at)).length,
+    [jobs]
   )
 
   const unassignedCount = useMemo(
@@ -469,6 +499,12 @@ function JobsPageContent() {
             <div className="flex flex-wrap gap-3">
               <JobsExportTools rows={normalizedJobs} />
               <Link
+                href="/archive"
+                className="rounded-2xl border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/[0.1]"
+              >
+                Open Archive
+              </Link>
+              <Link
                 href="/jobs/new"
                 className="rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85]"
               >
@@ -485,6 +521,9 @@ function JobsPageContent() {
             </div>
             <div className="mt-2 text-2xl font-bold tracking-tight text-white">
               {filteredJobs.length}
+            </div>
+            <div className="mt-1 text-xs text-[#d6b37a]">
+              {archivedCount} archived after {ARCHIVE_INACTIVITY_DAYS} days
             </div>
           </div>
 
@@ -540,7 +579,7 @@ function JobsPageContent() {
               onChange={(e) => setStageFilter(e.target.value)}
             >
               <option value="">All Stages</option>
-              {stageOptions.map((stage) => (
+              {visibleStageOptions.map((stage) => (
                 <option key={stage.id} value={stage.name}>
                   {stage.name}
                 </option>

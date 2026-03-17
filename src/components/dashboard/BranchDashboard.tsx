@@ -1,8 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { buildSmartInsights, loadDashboardDataset } from '@/lib/dashboard-data'
-import { loadActivityFeed } from '@/lib/dashboard-feed'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  buildSmartInsights,
+  loadDashboardDataset,
+  type DashboardDataset,
+} from '@/lib/dashboard-data'
+import {
+  loadActivityFeed,
+  type DashboardActivityItem,
+} from '@/lib/dashboard-feed'
 import KPIBar from '@/components/dashboard/KPIBar'
 import SmartInsights from '@/components/dashboard/SmartInsights'
 import PipelineKanban from '@/components/dashboard/PipelineKanban'
@@ -11,6 +18,7 @@ import RecentJobsPanel from '@/components/dashboard/RecentJobsPanel'
 import AlertFeed from '@/components/dashboard/AlertFeed'
 import ActivityFeedPanel from '@/components/dashboard/ActivityFeedPanel'
 import LeaderboardChart from '@/components/charts/LeaderboardChart'
+import type { UserProfile } from '@/lib/auth-helpers'
 
 export default function BranchDashboard({
   profile,
@@ -20,7 +28,7 @@ export default function BranchDashboard({
   periodLabel,
   showProjection,
 }: {
-  profile: any
+  profile: UserProfile
   filters: { startDate: string; endDate: string }
   activeChart: 'revenue' | 'funnel' | 'leaderboard' | 'pipeline'
   onActiveChartChange: (
@@ -30,18 +38,24 @@ export default function BranchDashboard({
   showProjection: boolean
 }) {
   const [selectedRepId, setSelectedRepId] = useState('')
-  const [dataset, setDataset] = useState<any>(null)
-  const [activityFeed, setActivityFeed] = useState<any[]>([])
+  const [dataset, setDataset] = useState<DashboardDataset | null>(null)
+  const [activityFeed, setActivityFeed] = useState<DashboardActivityItem[]>([])
+  const { startDate, endDate } = filters
+  const effectiveFilters = useMemo(
+    () => ({
+      startDate,
+      endDate,
+      selectedRepId: selectedRepId || undefined,
+    }),
+    [endDate, selectedRepId, startDate]
+  )
 
   useEffect(() => {
     async function load() {
       const data = await loadDashboardDataset({
         scope: 'branch',
         profile,
-        filters: {
-          ...filters,
-          selectedRepId: selectedRepId || undefined,
-        },
+        filters: effectiveFilters,
       })
 
       setDataset(data)
@@ -54,8 +68,8 @@ export default function BranchDashboard({
       setActivityFeed(activity)
     }
 
-    load()
-  }, [profile, filters.startDate, filters.endDate, selectedRepId])
+    void load()
+  }, [effectiveFilters, profile, selectedRepId])
 
   if (!dataset) {
     return (
@@ -87,7 +101,7 @@ export default function BranchDashboard({
               className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none"
             >
               <option value="">All Reps</option>
-              {dataset.repOptions.map((rep: any) => (
+              {dataset.repOptions.map((rep) => (
                 <option key={rep.id} value={rep.id}>
                   {rep.full_name}
                 </option>
@@ -99,12 +113,12 @@ export default function BranchDashboard({
               onClick={() => {
                 const rows = [
                   ['Rep', 'Revenue'],
-                  ...dataset.repSummaries.map((row: any) => [
+                  ...dataset.repSummaries.map((row) => [
                     row.repName,
                     row.revenue_signed,
                   ]),
                 ]
-                const csv = rows.map((row: any[]) => row.join(',')).join('\n')
+                const csv = rows.map((row) => row.join(',')).join('\n')
                 const blob = new Blob([csv], {
                   type: 'text/csv;charset=utf-8;',
                 })

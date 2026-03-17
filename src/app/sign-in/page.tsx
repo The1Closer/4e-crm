@@ -1,11 +1,21 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../../src/lib/supabase'
 
+export const dynamic = 'force-dynamic'
+
 export default function SignInPage() {
+  return (
+    <Suspense fallback={<SignInShell />}>
+      <SignInPageContent />
+    </Suspense>
+  )
+}
+
+function SignInPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -59,6 +69,50 @@ export default function SignInPage() {
   }
 
   return (
+    <SignInShell>
+      <form onSubmit={handleSignIn} className="mt-10 space-y-4">
+        <Field
+          label="Email"
+          type="email"
+          placeholder="you@4elementsrenovations.com"
+          value={email}
+          onChange={setEmail}
+          autoComplete="email"
+        />
+
+        <Field
+          label="Password"
+          type="password"
+          placeholder="Enter password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+        />
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="mt-2 w-full rounded-2xl bg-[#d6b37a] px-5 py-4 text-sm font-semibold uppercase tracking-[0.16em] text-black shadow-[0_16px_40px_rgba(214,179,122,0.26)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:opacity-60"
+        >
+          {loading ? 'Signing In...' : 'Enter Workspace'}
+        </button>
+      </form>
+
+      {message ? (
+        <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
+          {message}
+        </div>
+      ) : null}
+    </SignInShell>
+  )
+}
+
+function SignInShell({
+  children,
+}: {
+  children?: ReactNode
+}) {
+  return (
     <main className="relative min-h-screen overflow-hidden bg-[#050505] text-white">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.06),transparent_24%),radial-gradient(circle_at_top_right,rgba(214,179,122,0.16),transparent_22%),linear-gradient(180deg,#141414_0%,#080808_48%,#020202_100%)]" />
       <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.02),transparent_32%,rgba(255,255,255,0.012)_62%,transparent)]" />
@@ -97,39 +151,7 @@ export default function SignInPage() {
               </p>
             </div>
 
-            <form onSubmit={handleSignIn} className="mt-10 space-y-4">
-              <Field
-                label="Email"
-                type="email"
-                placeholder="you@4elementsrenovations.com"
-                value={email}
-                onChange={setEmail}
-                autoComplete="email"
-              />
-
-              <Field
-                label="Password"
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={setPassword}
-                autoComplete="current-password"
-              />
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="mt-2 w-full rounded-2xl bg-[#d6b37a] px-5 py-4 text-sm font-semibold uppercase tracking-[0.16em] text-black shadow-[0_16px_40px_rgba(214,179,122,0.26)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:opacity-60"
-              >
-                {loading ? 'Signing In...' : 'Enter Workspace'}
-              </button>
-            </form>
-
-            {message ? (
-              <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
-                {message}
-              </div>
-            ) : null}
+            {children}
 
             <div className="mt-6 flex items-center justify-between rounded-[1.6rem] border border-white/10 bg-black/20 px-4 py-3.5">
               <div>

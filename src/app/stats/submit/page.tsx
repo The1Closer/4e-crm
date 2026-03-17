@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
+import {
+  getCurrentUserProfile,
+  isManagerLike,
+  type UserProfile,
+} from '@/lib/auth-helpers'
 import ProtectedRoute from '@/components/ProtectedRoute'
 
 type FormState = {
@@ -70,7 +74,7 @@ function MetricInput({
 }
 
 function SubmitNumbersPageContent() {
-  const [profile, setProfile] = useState<any>(null)
+  const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [loadingEntry, setLoadingEntry] = useState(true)
   const [saving, setSaving] = useState(false)
