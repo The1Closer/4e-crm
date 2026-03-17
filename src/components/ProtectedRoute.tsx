@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { supabase } from '../lib/supabase'
+import { supabase } from '@/lib/supabase'
 
 export default function ProtectedRoute({
   children,
@@ -33,7 +33,7 @@ export default function ProtectedRoute({
       setChecking(false)
     }
 
-    checkUser()
+    void checkUser()
 
     const {
       data: { subscription },

@@ -1,172 +1,153 @@
 'use client'
 
-import Link from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
+import DashboardControls from '@/components/dashboard/DashboardControls'
+import DashboardTabs from '@/components/dashboard/DashboardTabs'
+import { getCurrentUserProfile, type UserProfile } from '@/lib/auth-helpers'
 
-export default function HomePage() {
- return (
-  <div className="space-y-8">
-   <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.04))] p-8 shadow-[0_25px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl md:p-10">
-    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.14),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(148,163,184,0.12),transparent_30%)]" />
+type DashboardPreset = 'mtd' | 'last7' | 'today' | 'custom'
 
-    <div className="relative grid gap-8 xl:grid-cols-[1.4fr_1fr]">
-     <div className="space-y-5">
-      <div className="inline-flex rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-white/55">
-       Business Operations
-      </div>
-
-      <div className="space-y-3">
-       <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-white md:text-5xl">
-        The operating hub for your branch, your pipeline, and your people.
-       </h1>
-
-       <p className="max-w-2xl text-base leading-7 text-white/70 md:text-lg">
-        Track deals, monitor performance, submit nightly numbers, and move the entire company from one place.
-       </p>
-      </div>
-
-      <div className="flex flex-wrap gap-3">
-       <Link
-        href="/dashboard"
-        className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 shadow-[0_10px_30px_rgba(255,255,255,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_16px_40px_rgba(255,255,255,0.22)]"
-       >
-        Open Dashboard
-       </Link>
-
-       <Link
-        href="/jobs/new"
-        className="rounded-2xl border border-white/15 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.10]"
-       >
-        Create Job
-       </Link>
-      </div>
-     </div>
-
-     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-      <MetricTile label="Month to Date" value="$0" sub="Revenue tracked" />
-      <MetricTile label="Projected Finish" value="$0" sub="Mon–Sat pace" />
-      <MetricTile label="Contingencies" value="0" sub="This month" />
-      <MetricTile label="Contracts" value="0" sub="This month" />
-     </div>
-    </div>
-   </section>
-
-   <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-    <div className="grid gap-6 md:grid-cols-2">
-     <ActionCard
-      title="Submit Nightly Numbers"
-      description="Log your daily activity fast so dashboards, leaderboards, and reports stay current."
-      href="/stats/submit"
-      accent="bright"
-     />
-
-     <ActionCard
-      title="Dashboard"
-      description="Branch, team, and individual performance with charts, pipeline, and projections."
-      href="/dashboard"
-     />
-
-     <ActionCard
-      title="Jobs"
-      description="View active deals, move jobs through the pipeline, and manage homeowners."
-      href="/jobs"
-     />
-
-     <ActionCard
-      title="Templates & Signer"
-      description="Open templates, edit documents, and generate signed files quickly."
-      href="/templates"
-     />
-    </div>
-
-    <section className="rounded-[2rem] border border-white/10 bg-white/[0.05] p-6 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-xl">
-     <div className="mb-5">
-      <div className="text-xs font-semibold uppercase tracking-[0.22em] text-white/45">
-       Quick Access
-      </div>
-      <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
-       Daily Workflow
-      </h2>
-     </div>
-
-     <div className="space-y-3">
-      <MiniLink href="/calendar/installs" label="Install Calendar" />
-      <MiniLink href="/commissions" label="Commissions" />
-      <MiniLink href="/contracts/editor" label="Signer" />
-      <MiniLink href="/notifications" label="Notifications" />
-     </div>
-    </section>
-   </section>
-  </div>
- )
+function formatDate(date: Date) {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
-function MetricTile({
- label,
- value,
- sub,
-}: {
- label: string
- value: string
- sub: string
-}) {
- return (
-  <div className="rounded-3xl border border-white/10 bg-black/20 p-5 shadow-[0_18px_45px_rgba(0,0,0,0.25)]">
-   <div className="text-[11px] font-semibold uppercase tracking-[0.20em] text-white/45">
-    {label}
-   </div>
-   <div className="mt-3 text-3xl font-bold tracking-tight text-white">{value}</div>
-   <div className="mt-2 text-sm text-white/55">{sub}</div>
-  </div>
- )
+function getPresetRange(preset: DashboardPreset) {
+  const now = new Date()
+  const today = formatDate(now)
+
+  if (preset === 'today') {
+    return {
+      startDate: today,
+      endDate: today,
+    }
+  }
+
+  if (preset === 'last7') {
+    const start = new Date(now)
+    start.setDate(now.getDate() - 6)
+
+    return {
+      startDate: formatDate(start),
+      endDate: today,
+    }
+  }
+
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+
+  return {
+    startDate: formatDate(monthStart),
+    endDate: today,
+  }
 }
 
-function ActionCard({
- title,
- description,
- href,
- accent,
-}: {
- title: string
- description: string
- href: string
- accent?: 'bright'
-}) {
- return (
-  <Link
-   href={href}
-   className={`group rounded-[2rem] border p-6 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-xl transition duration-200 hover:-translate-y-1 ${accent === 'bright'
-     ? 'border-white/15 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),rgba(255,255,255,0.05))]'
-     : 'border-white/10 bg-white/[0.05]'
-    }`}
-  >
-   <div className="space-y-3">
-    <div className="flex items-center justify-between gap-4">
-     <h3 className="text-xl font-semibold tracking-tight text-white">{title}</h3>
-     <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-white/45 transition group-hover:text-white/70">
-      Open
-     </span>
+export default function DashboardPage() {
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const [preset, setPreset] = useState<DashboardPreset>('mtd')
+  const [filters, setFilters] = useState(getPresetRange('mtd'))
+  const [activeChart, setActiveChart] = useState<
+    'revenue' | 'funnel' | 'leaderboard' | 'pipeline'
+  >('revenue')
+
+  useEffect(() => {
+    async function loadProfile() {
+      const currentProfile = await getCurrentUserProfile()
+      setProfile(currentProfile)
+      setLoading(false)
+    }
+
+    loadProfile()
+  }, [])
+
+  function handlePresetChange(next: DashboardPreset) {
+    setPreset(next)
+
+    if (next === 'custom') return
+    setFilters(getPresetRange(next))
+  }
+
+  function handleFiltersChange(next: { startDate: string; endDate: string }) {
+    setPreset('custom')
+    setFilters(next)
+  }
+
+  const periodLabel = useMemo(() => {
+    if (preset === 'mtd') return 'Month to Date'
+    if (preset === 'last7') return 'Last 7 Days'
+    if (preset === 'today') return 'Today'
+    return `${filters.startDate} → ${filters.endDate}`
+  }, [preset, filters])
+
+  const showProjection = preset === 'mtd'
+
+  if (loading || !profile) {
+    return (
+      <div className="space-y-6">
+        <section className="rounded-[2.25rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03))] p-8 shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+          <div className="text-sm text-white/60">Loading dashboard…</div>
+        </section>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-[2.25rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03))] p-8 shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,179,122,0.22),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_26%)]" />
+        <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(214,179,122,0.7),transparent)]" />
+
+        <div className="relative">
+          <div className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
+            Dashboard
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h1 className="text-4xl font-bold tracking-tight text-white md:text-5xl">
+                Performance War Room
+              </h1>
+              <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
+                Compact, high-signal visibility across activity, pipeline movement, rep output, and operational pressure points.
+              </p>
+            </div>
+
+            <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] px-4 py-4 text-right shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/38">
+                Active Window
+              </div>
+              <div className="mt-2 text-lg font-bold text-white">{periodLabel}</div>
+              <div className="mt-1 text-xs text-[#d6b37a]">
+                {showProjection
+                  ? 'Projections exclude Sundays.'
+                  : 'Projection rail hidden outside MTD.'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <DashboardControls
+        filters={filters}
+        preset={preset}
+        onPresetChange={handlePresetChange}
+        onFiltersChange={handleFiltersChange}
+        activeChart={activeChart}
+        onActiveChartChange={setActiveChart}
+      />
+
+      <DashboardTabs
+        role={profile.role}
+        profile={profile}
+        filters={filters}
+        activeChart={activeChart}
+        onActiveChartChange={setActiveChart}
+        periodLabel={periodLabel}
+        showProjection={showProjection}
+      />
     </div>
-
-    <p className="text-sm leading-6 text-white/65">{description}</p>
-   </div>
-  </Link>
- )
-}
-
-function MiniLink({
- href,
- label,
-}: {
- href: string
- label: string
-}) {
- return (
-  <Link
-   href={href}
-   className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
-  >
-   <span>{label}</span>
-   <span className="text-white/35">→</span>
-  </Link>
- )
+  )
 }

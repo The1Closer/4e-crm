@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import {
@@ -35,9 +35,60 @@ type TemplateRow = {
   file_url: string
 }
 
+type DocumentsPanelData = {
+  uploadedDocs: UploadedDocument[]
+  signedDocs: SignedJobDocument[]
+  templates: TemplateRow[]
+}
+
 function buildUploadedDocUrl(filePath: string) {
   const { data } = supabase.storage.from('job-files').getPublicUrl(filePath)
   return data.publicUrl
+}
+
+async function fetchDocumentsPanelData(
+  jobId: string
+): Promise<DocumentsPanelData | { error: string }> {
+  const [uploadedRes, signedRes, templatesRes] = await Promise.all([
+    supabase
+      .from('documents')
+      .select('id, file_name, file_path, file_type, created_at')
+      .eq('job_id', jobId)
+      .eq('file_type', 'document')
+      .order('created_at', { ascending: false }),
+
+    supabase
+      .from('job_documents')
+      .select(
+        'id, template_id, file_name, file_url, file_path, document_type, is_signed, created_at'
+      )
+      .eq('job_id', jobId)
+      .order('created_at', { ascending: false }),
+
+    supabase
+      .from('document_templates')
+      .select('id, name, category, file_url')
+      .eq('is_active', true)
+      .order('name', { ascending: true }),
+  ])
+
+  if (uploadedRes.error) {
+    return { error: uploadedRes.error.message }
+  }
+
+  if (signedRes.error) {
+    return { error: signedRes.error.message }
+  }
+
+  if (templatesRes.error) {
+    return { error: templatesRes.error.message }
+  }
+
+  return {
+    uploadedDocs: (uploadedRes.data ?? []) as UploadedDocument[],
+    signedDocs: (signedRes.data ?? []) as SignedJobDocument[],
+    templates: (templatesRes.data ?? []) as TemplateRow[],
+  }
 }
 
 export default function JobDocumentsPanel({
@@ -66,60 +117,54 @@ export default function JobDocumentsPanel({
 
   const permissions = getPermissions(profile?.role)
 
-  async function loadData() {
-    setLoading(true)
+  function applyPanelData(data: DocumentsPanelData) {
     setMessage('')
-
-    const [uploadedRes, signedRes, templatesRes] = await Promise.all([
-      supabase
-        .from('documents')
-        .select('id, file_name, file_path, file_type, created_at')
-        .eq('job_id', jobId)
-        .eq('file_type', 'document')
-        .order('created_at', { ascending: false }),
-
-      supabase
-        .from('job_documents')
-        .select(
-          'id, template_id, file_name, file_url, file_path, document_type, is_signed, created_at'
-        )
-        .eq('job_id', jobId)
-        .order('created_at', { ascending: false }),
-
-      supabase
-        .from('document_templates')
-        .select('id, name, category, file_url')
-        .eq('is_active', true)
-        .order('name', { ascending: true }),
-    ])
-
-    if (uploadedRes.error) {
-      setMessage(uploadedRes.error.message)
-      setLoading(false)
-      return
-    }
-
-    if (signedRes.error) {
-      setMessage(signedRes.error.message)
-      setLoading(false)
-      return
-    }
-
-    if (templatesRes.error) {
-      setMessage(templatesRes.error.message)
-      setLoading(false)
-      return
-    }
-
-    setUploadedDocs((uploadedRes.data ?? []) as UploadedDocument[])
-    setSignedDocs((signedRes.data ?? []) as SignedJobDocument[])
-    setTemplates((templatesRes.data ?? []) as TemplateRow[])
+    setUploadedDocs(data.uploadedDocs)
+    setSignedDocs(data.signedDocs)
+    setTemplates(data.templates)
     setLoading(false)
   }
 
   useEffect(() => {
-    loadData()
+    let isActive = true
+
+    async function loadInitialData() {
+      const result = await fetchDocumentsPanelData(jobId)
+
+      if (!isActive) return
+
+      if ('error' in result) {
+        setMessage(result.error)
+        setUploadedDocs([])
+        setSignedDocs([])
+        setTemplates([])
+        setLoading(false)
+        return
+      }
+
+      applyPanelData(result)
+    }
+
+    void loadInitialData()
+
+    return () => {
+      isActive = false
+    }
   }, [jobId])
+
+  async function loadData() {
+    setLoading(true)
+
+    const result = await fetchDocumentsPanelData(jobId)
+
+    if ('error' in result) {
+      setMessage(result.error)
+      setLoading(false)
+      return
+    }
+
+    applyPanelData(result)
+  }
 
   async function deleteUploadedDocument(doc: UploadedDocument) {
     if (!permissions.canManageTemplates) return
@@ -143,7 +188,7 @@ export default function JobDocumentsPanel({
     }
 
     setMessage('Document deleted.')
-    loadData()
+    void loadData()
   }
 
   async function deleteSignedDocument(doc: SignedJobDocument) {
@@ -166,44 +211,42 @@ export default function JobDocumentsPanel({
     }
 
     setMessage('Signed/generated document deleted.')
-    loadData()
+    void loadData()
   }
 
-  const mergedDocuments = useMemo(() => {
-    return [
-      ...signedDocs.map((doc) => ({
-        kind: 'generated' as const,
+  const mergedDocuments = [
+    ...signedDocs.map((doc) => ({
+      kind: 'generated' as const,
+      id: doc.id,
+      file_name: doc.file_name,
+      open_url: doc.file_url,
+      signer_url: `/contracts/editor?jobId=${jobId}&documentId=${doc.id}&sourceUrl=${encodeURIComponent(
+        doc.file_url
+      )}&name=${encodeURIComponent(doc.file_name)}`,
+      subtitle: `${doc.is_signed ? 'Signed' : 'Generated'} • ${
+        doc.document_type || 'Document'
+      }`,
+      deletable: permissions.canManageTemplates,
+      onDelete: () => deleteSignedDocument(doc),
+    })),
+
+    ...uploadedDocs.map((doc) => {
+      const url = buildUploadedDocUrl(doc.file_path)
+
+      return {
+        kind: 'uploaded' as const,
         id: doc.id,
         file_name: doc.file_name,
-        open_url: doc.file_url,
-        signer_url: `/contracts/editor?jobId=${jobId}&documentId=${doc.id}&sourceUrl=${encodeURIComponent(
-          doc.file_url
+        open_url: url,
+        signer_url: `/contracts/editor?jobId=${jobId}&sourceUrl=${encodeURIComponent(
+          url
         )}&name=${encodeURIComponent(doc.file_name)}`,
-        subtitle: `${doc.is_signed ? 'Signed' : 'Generated'} • ${
-          doc.document_type || 'Document'
-        }`,
+        subtitle: 'Uploaded document',
         deletable: permissions.canManageTemplates,
-        onDelete: () => deleteSignedDocument(doc),
-      })),
-
-      ...uploadedDocs.map((doc) => {
-        const url = buildUploadedDocUrl(doc.file_path)
-
-        return {
-          kind: 'uploaded' as const,
-          id: doc.id,
-          file_name: doc.file_name,
-          open_url: url,
-          signer_url: `/contracts/editor?jobId=${jobId}&sourceUrl=${encodeURIComponent(
-            url
-          )}&name=${encodeURIComponent(doc.file_name)}`,
-          subtitle: 'Uploaded document',
-          deletable: permissions.canManageTemplates,
-          onDelete: () => deleteUploadedDocument(doc),
-        }
-      }),
-    ].sort((a, b) => a.file_name.localeCompare(b.file_name))
-  }, [signedDocs, uploadedDocs, jobId, permissions.canManageTemplates])
+        onDelete: () => deleteUploadedDocument(doc),
+      }
+    }),
+  ].sort((a, b) => a.file_name.localeCompare(b.file_name))
 
   return (
     <section className="space-y-6">

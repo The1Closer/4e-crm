@@ -2,102 +2,185 @@
 
 import { useEffect, useState } from 'react'
 import { buildSmartInsights, loadDashboardDataset } from '@/lib/dashboard-data'
+import { loadActivityFeed } from '@/lib/dashboard-feed'
 import KPIBar from '@/components/dashboard/KPIBar'
 import SmartInsights from '@/components/dashboard/SmartInsights'
 import PipelineKanban from '@/components/dashboard/PipelineKanban'
-import RevenueChart from '@/components/charts/RevenueChart'
-import FunnelChart from '@/components/charts/FunnelChart'
+import ChartModule from '@/components/dashboard/ChartModule'
+import RecentJobsPanel from '@/components/dashboard/RecentJobsPanel'
+import AlertFeed from '@/components/dashboard/AlertFeed'
+import ActivityFeedPanel from '@/components/dashboard/ActivityFeedPanel'
 import LeaderboardChart from '@/components/charts/LeaderboardChart'
-import PipelineChart from '@/components/charts/PipelineChart'
 
 export default function TeamDashboard({
- profile,
- filters,
- activeChart,
- visibleModules,
-}: {
- profile: any
- filters: { startDate: string; endDate: string }
- activeChart: 'revenue' | 'funnel' | 'leaderboard' | 'pipeline'
- visibleModules: { kpi: boolean; insights: boolean; kanban: boolean }
-}) {
- const [selectedRepId, setSelectedRepId] = useState('')
- const [dataset, setDataset] = useState<any>(null)
-
- useEffect(() => {
-  async function load() {
-   const data = await loadDashboardDataset({
-    scope: 'team',
     profile,
-    filters: {
-     ...filters,
-     selectedRepId: selectedRepId || undefined,
-    },
-   })
-   setDataset(data)
-  }
+    filters,
+    activeChart,
+    onActiveChartChange,
+    periodLabel,
+    showProjection,
+}: {
+    profile: any
+    filters: { startDate: string; endDate: string }
+    activeChart: 'revenue' | 'funnel' | 'leaderboard' | 'pipeline'
+    onActiveChartChange: (
+        next: 'revenue' | 'funnel' | 'leaderboard' | 'pipeline'
+    ) => void
+    periodLabel: string
+    showProjection: boolean
+}) {
+    const [selectedRepId, setSelectedRepId] = useState('')
+    const [dataset, setDataset] = useState<any>(null)
+    const [activityFeed, setActivityFeed] = useState<any[]>([])
 
-  load()
- }, [profile, filters.startDate, filters.endDate, selectedRepId])
+    useEffect(() => {
+        async function load() {
+            const data = await loadDashboardDataset({
+                scope: 'team',
+                profile,
+                filters: {
+                    ...filters,
+                    selectedRepId: selectedRepId || undefined,
+                },
+            })
 
- if (!dataset) {
-  return <div className="rounded-3xl border border-white/70 bg-white/95 p-6 shadow-[0_10px_40px_rgba(15,23,42,0.08)] text-sm text-gray-600">Loading team view…</div>
- }
+            setDataset(data)
 
- const insights = buildSmartInsights(dataset)
+            const effectiveRepIds = selectedRepId
+                ? [selectedRepId]
+                : data.accessibleRepIds
 
- return (
-  <div className="space-y-6">
-   <section className="rounded-3xl border border-white/70 bg-white/95 p-5 shadow-[0_10px_40px_rgba(15,23,42,0.08)]">
-    <div className="flex flex-wrap items-end justify-between gap-4">
-     <div>
-      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">Team</div>
-      <div className="mt-1 text-2xl font-bold tracking-tight text-gray-900">Performance</div>
-     </div>
+            const activity = await loadActivityFeed({
+                repIds: effectiveRepIds,
+                limit: 6,
+            })
 
-     <select
-      value={selectedRepId}
-      onChange={(e) => setSelectedRepId(e.target.value)}
-      className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900"
-     >
-      <option value="">All Team Reps</option>
-      {dataset.repOptions.map((rep: any) => (
-       <option key={rep.id} value={rep.id}>
-        {rep.full_name}
-       </option>
-      ))}
-     </select>
-    </div>
-   </section>
+            setActivityFeed(activity)
+        }
 
-   {visibleModules.kpi ? (
-    <KPIBar totals={dataset.totals} projection={dataset.projection} scopeLabel="Team" />
-   ) : null}
+        load()
+    }, [profile, filters.startDate, filters.endDate, selectedRepId])
 
-   {visibleModules.insights ? <SmartInsights insights={insights} /> : null}
+    if (!dataset) {
+        return (
+            <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-sm text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
+                Loading team view…
+            </div>
+        )
+    }
 
-   {visibleModules.kanban ? (
-    <PipelineKanban
-     title={selectedRepId ? 'Team Pipeline · Selected Rep' : 'Team Pipeline'}
-     repIds={selectedRepId ? [selectedRepId] : dataset.accessibleRepIds}
-    />
-   ) : null}
+    const insights = buildSmartInsights(dataset)
 
-   {activeChart === 'revenue' ? (
-    <RevenueChart title="Revenue Trend" series={dataset.revenueSeries} />
-   ) : null}
+    return (
+        <div className="space-y-6">
+            <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
+                <div className="flex flex-wrap items-end justify-between gap-4">
+                    <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]">
+                            Team
+                        </div>
+                        <div className="mt-1 text-2xl font-bold tracking-tight text-white">
+                            Performance
+                        </div>
+                    </div>
 
-   {activeChart === 'funnel' ? (
-    <FunnelChart title="Conversion Funnel" funnel={dataset.funnel} />
-   ) : null}
+                    <div className="flex flex-wrap items-center gap-3">
+                        <select
+                            value={selectedRepId}
+                            onChange={(e) => setSelectedRepId(e.target.value)}
+                            className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none"
+                        >
+                            <option value="">All Team Reps</option>
+                            {dataset.repOptions.map((rep: any) => (
+                                <option key={rep.id} value={rep.id}>
+                                    {rep.full_name}
+                                </option>
+                            ))}
+                        </select>
 
-   {activeChart === 'leaderboard' ? (
-    <LeaderboardChart title="Leaderboard" rows={dataset.repSummaries} />
-   ) : null}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const rows = [
+                                    ['Rep', 'Revenue'],
+                                    ...dataset.repSummaries.map((row: any) => [
+                                        row.repName,
+                                        row.revenue_signed,
+                                    ]),
+                                ]
+                                const csv = rows.map((row: any[]) => row.join(',')).join('\n')
+                                const blob = new Blob([csv], {
+                                    type: 'text/csv;charset=utf-8;',
+                                })
+                                const url = URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = url
+                                a.download = 'team-dashboard.csv'
+                                a.click()
+                                URL.revokeObjectURL(url)
+                            }}
+                            className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white/80 transition hover:bg-white/[0.08]"
+                        >
+                            Export CSV
+                        </button>
 
-   {activeChart === 'pipeline' ? (
-    <PipelineChart title="Pipeline Stages" counts={dataset.pipelineCounts} />
-   ) : null}
-  </div>
- )
+                        <button
+                            type="button"
+                            onClick={() => window.print()}
+                            className="rounded-2xl bg-[#d6b37a] px-4 py-3 text-sm font-semibold text-black transition hover:bg-[#e2bf85]"
+                        >
+                            Export PDF
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <KPIBar
+                totals={dataset.totals}
+                projection={dataset.projection}
+                periodLabel={periodLabel}
+                showProjection={showProjection}
+            />
+
+            <div className="grid gap-6 xl:grid-cols-12">
+                <div className="xl:col-span-7">
+                    <PipelineKanban
+                        title={
+                            selectedRepId ? 'Team Pipeline · Selected Rep' : 'Team Pipeline'
+                        }
+                        repIds={selectedRepId ? [selectedRepId] : dataset.accessibleRepIds}
+                    />
+                </div>
+
+                <div className="xl:col-span-5">
+                    <ChartModule
+                        activeChart={activeChart}
+                        onActiveChartChange={onActiveChartChange}
+                        dataset={dataset}
+                    />
+                </div>
+
+                <div className="xl:col-span-4">
+                    <RecentJobsPanel rows={dataset.recentJobs} />
+                </div>
+
+                <div className="xl:col-span-3">
+                    <AlertFeed rows={dataset.alertFeed} />
+                </div>
+
+                <div className="xl:col-span-5">
+                    <LeaderboardChart
+                        title="Team Leaderboard"
+                        rows={dataset.repSummaries}
+                    />
+                </div>
+
+                <div className="xl:col-span-12">
+                    <ActivityFeedPanel rows={activityFeed} title="Team Activity" />
+                </div>
+            </div>
+
+            <SmartInsights insights={insights} />
+        </div>
+    )
 }

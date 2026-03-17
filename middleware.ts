@@ -1,9 +1,22 @@
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PROTECTED_PATHS = ['/jobs', '/notifications']
+const PROTECTED_PATHS = [
+  '/',
+  '/dashboard',
+  '/jobs',
+  '/calendar',
+  '/commissions',
+  '/templates',
+  '/contracts',
+  '/notifications',
+  '/team',
+  '/stats',
+]
 
 function isProtectedPath(pathname: string) {
-  return PROTECTED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
+  return PROTECTED_PATHS.some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`)
+  )
 }
 
 export function middleware(request: NextRequest) {
@@ -15,7 +28,10 @@ export function middleware(request: NextRequest) {
 
   const hasSupabaseAuthCookie = request.cookies
     .getAll()
-    .some((cookie) => cookie.name.startsWith('sb-') && cookie.name.endsWith('-auth-token'))
+    .some(
+      (cookie) =>
+        cookie.name.startsWith('sb-') && cookie.name.endsWith('-auth-token')
+    )
 
   if (!hasSupabaseAuthCookie) {
     const signInUrl = new URL('/sign-in', request.url)
@@ -27,5 +43,16 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/jobs/:path*', '/notifications/:path*'],
+  matcher: [
+    '/',
+    '/dashboard/:path*',
+    '/jobs/:path*',
+    '/calendar/:path*',
+    '/commissions/:path*',
+    '/templates/:path*',
+    '/contracts/:path*',
+    '/notifications/:path*',
+    '/team/:path*',
+    '/stats/:path*',
+  ],
 }

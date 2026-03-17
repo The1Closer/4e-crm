@@ -2,27 +2,36 @@
 
 import { useEffect, useState } from 'react'
 import { buildSmartInsights, loadDashboardDataset } from '@/lib/dashboard-data'
+import { loadActivityFeed } from '@/lib/dashboard-feed'
 import KPIBar from '@/components/dashboard/KPIBar'
 import SmartInsights from '@/components/dashboard/SmartInsights'
 import PipelineKanban from '@/components/dashboard/PipelineKanban'
-import RevenueChart from '@/components/charts/RevenueChart'
-import FunnelChart from '@/components/charts/FunnelChart'
+import ChartModule from '@/components/dashboard/ChartModule'
+import RecentJobsPanel from '@/components/dashboard/RecentJobsPanel'
+import AlertFeed from '@/components/dashboard/AlertFeed'
+import ActivityFeedPanel from '@/components/dashboard/ActivityFeedPanel'
 import LeaderboardChart from '@/components/charts/LeaderboardChart'
-import PipelineChart from '@/components/charts/PipelineChart'
 
 export default function BranchDashboard({
   profile,
   filters,
   activeChart,
-  visibleModules,
+  onActiveChartChange,
+  periodLabel,
+  showProjection,
 }: {
   profile: any
   filters: { startDate: string; endDate: string }
   activeChart: 'revenue' | 'funnel' | 'leaderboard' | 'pipeline'
-  visibleModules: { kpi: boolean; insights: boolean; kanban: boolean }
+  onActiveChartChange: (
+    next: 'revenue' | 'funnel' | 'leaderboard' | 'pipeline'
+  ) => void
+  periodLabel: string
+  showProjection: boolean
 }) {
   const [selectedRepId, setSelectedRepId] = useState('')
   const [dataset, setDataset] = useState<any>(null)
+  const [activityFeed, setActivityFeed] = useState<any[]>([])
 
   useEffect(() => {
     async function load() {
@@ -34,32 +43,48 @@ export default function BranchDashboard({
           selectedRepId: selectedRepId || undefined,
         },
       })
+
       setDataset(data)
+
+      const activity = await loadActivityFeed({
+        repIds: selectedRepId ? [selectedRepId] : [],
+        limit: 6,
+      })
+
+      setActivityFeed(activity)
     }
 
     load()
   }, [profile, filters.startDate, filters.endDate, selectedRepId])
 
   if (!dataset) {
-    return <div className="rounded-3xl border border-white/70 bg-white/95 p-6 shadow-[0_10px_40px_rgba(15,23,42,0.08)] text-sm text-gray-600">Loading branch view…</div>
+    return (
+      <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-sm text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
+        Loading branch view…
+      </div>
+    )
   }
 
   const insights = buildSmartInsights(dataset)
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-white/70 bg-white/95 p-5 shadow-[0_10px_40px_rgba(15,23,42,0.08)]">
+      <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">Branch</div>
-            <div className="mt-1 text-2xl font-bold tracking-tight text-gray-900">Performance</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]">
+              Branch
+            </div>
+            <div className="mt-1 text-2xl font-bold tracking-tight text-white">
+              Performance
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <select
               value={selectedRepId}
               onChange={(e) => setSelectedRepId(e.target.value)}
-              className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900"
+              className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none"
             >
               <option value="">All Reps</option>
               {dataset.repOptions.map((rep: any) => (
@@ -74,10 +99,15 @@ export default function BranchDashboard({
               onClick={() => {
                 const rows = [
                   ['Rep', 'Revenue'],
-                  ...dataset.repSummaries.map((row: any) => [row.repName, row.revenue_signed]),
+                  ...dataset.repSummaries.map((row: any) => [
+                    row.repName,
+                    row.revenue_signed,
+                  ]),
                 ]
                 const csv = rows.map((row: any[]) => row.join(',')).join('\n')
-                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+                const blob = new Blob([csv], {
+                  type: 'text/csv;charset=utf-8;',
+                })
                 const url = URL.createObjectURL(blob)
                 const a = document.createElement('a')
                 a.href = url
@@ -85,7 +115,7 @@ export default function BranchDashboard({
                 a.click()
                 URL.revokeObjectURL(url)
               }}
-              className="rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-100"
+              className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white/80 transition hover:bg-white/[0.08]"
             >
               Export CSV
             </button>
@@ -93,7 +123,7 @@ export default function BranchDashboard({
             <button
               type="button"
               onClick={() => window.print()}
-              className="rounded-2xl bg-gray-900 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+              className="rounded-2xl bg-[#d6b37a] px-4 py-3 text-sm font-semibold text-black transition hover:bg-[#e2bf85]"
             >
               Export PDF
             </button>
@@ -101,34 +131,54 @@ export default function BranchDashboard({
         </div>
       </section>
 
-      {visibleModules.kpi ? (
-        <KPIBar totals={dataset.totals} projection={dataset.projection} scopeLabel="Branch" />
-      ) : null}
+      <KPIBar
+        totals={dataset.totals}
+        projection={dataset.projection}
+        periodLabel={periodLabel}
+        showProjection={showProjection}
+      />
 
-      {visibleModules.insights ? <SmartInsights insights={insights} /> : null}
+      <div className="grid gap-6 xl:grid-cols-12">
+        <div className="xl:col-span-7">
+          <PipelineKanban
+            title={
+              selectedRepId
+                ? 'Branch Pipeline · Selected Rep'
+                : 'Branch Pipeline'
+            }
+            repIds={selectedRepId ? [selectedRepId] : undefined}
+          />
+        </div>
 
-      {visibleModules.kanban ? (
-        <PipelineKanban
-          title={selectedRepId ? 'Branch Pipeline · Selected Rep' : 'Branch Pipeline'}
-          repIds={selectedRepId ? [selectedRepId] : undefined}
-        />
-      ) : null}
+        <div className="xl:col-span-5">
+          <ChartModule
+            activeChart={activeChart}
+            onActiveChartChange={onActiveChartChange}
+            dataset={dataset}
+          />
+        </div>
 
-      {activeChart === 'revenue' ? (
-        <RevenueChart title="Revenue Trend" series={dataset.revenueSeries} />
-      ) : null}
+        <div className="xl:col-span-4">
+          <RecentJobsPanel rows={dataset.recentJobs} />
+        </div>
 
-      {activeChart === 'funnel' ? (
-        <FunnelChart title="Conversion Funnel" funnel={dataset.funnel} />
-      ) : null}
+        <div className="xl:col-span-3">
+          <AlertFeed rows={dataset.alertFeed} />
+        </div>
 
-      {activeChart === 'leaderboard' ? (
-        <LeaderboardChart title="Leaderboard" rows={dataset.repSummaries} />
-      ) : null}
+        <div className="xl:col-span-5">
+          <LeaderboardChart
+            title="Rep Leaderboard"
+            rows={dataset.repSummaries}
+          />
+        </div>
 
-      {activeChart === 'pipeline' ? (
-        <PipelineChart title="Pipeline Stages" counts={dataset.pipelineCounts} />
-      ) : null}
+        <div className="xl:col-span-12">
+          <ActivityFeedPanel rows={activityFeed} title="Recent Job Activity" />
+        </div>
+      </div>
+
+      <SmartInsights insights={insights} />
     </div>
   )
 }

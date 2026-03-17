@@ -14,13 +14,19 @@ export default function DashboardTabs({
   profile,
   filters,
   activeChart,
-  visibleModules,
+  onActiveChartChange,
+  periodLabel,
+  showProjection,
 }: {
   role?: string | null
   profile: any
   filters: { startDate: string; endDate: string }
   activeChart: 'revenue' | 'funnel' | 'leaderboard' | 'pipeline'
-  visibleModules: { kpi: boolean; insights: boolean; kanban: boolean }
+  onActiveChartChange: (
+    next: 'revenue' | 'funnel' | 'leaderboard' | 'pipeline'
+  ) => void
+  periodLabel: string
+  showProjection: boolean
 }) {
   const normalizedRole = normalizeRole(role)
 
@@ -44,17 +50,18 @@ export default function DashboardTabs({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-[0_10px_40px_rgba(15,23,42,0.08)]">
+      <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-4 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
         <div className="flex flex-wrap gap-3">
           {availableTabs.map((item) => (
             <button
               key={item}
               type="button"
               onClick={() => setTab(item)}
-              className={`rounded-2xl px-4 py-2 text-sm font-semibold capitalize transition ${tab === item
-                  ? 'bg-gray-900 text-white shadow-sm'
-                  : 'border border-gray-300 bg-white text-gray-800 hover:bg-gray-100'
-                }`}
+              className={`rounded-2xl px-4 py-2 text-sm font-semibold capitalize transition ${
+                tab === item
+                  ? 'bg-[#d6b37a] text-black'
+                  : 'border border-white/10 bg-white/[0.04] text-white/72 hover:bg-white/[0.08] hover:text-white'
+              }`}
             >
               {item}
             </button>
@@ -67,7 +74,9 @@ export default function DashboardTabs({
           profile={profile}
           filters={filters}
           activeChart={activeChart}
-          visibleModules={visibleModules}
+          onActiveChartChange={onActiveChartChange}
+          periodLabel={periodLabel}
+          showProjection={showProjection}
         />
       ) : null}
 
@@ -76,7 +85,9 @@ export default function DashboardTabs({
           profile={profile}
           filters={filters}
           activeChart={activeChart}
-          visibleModules={visibleModules}
+          onActiveChartChange={onActiveChartChange}
+          periodLabel={periodLabel}
+          showProjection={showProjection}
         />
       ) : null}
 
@@ -85,7 +96,9 @@ export default function DashboardTabs({
           profile={profile}
           filters={filters}
           activeChart={activeChart}
-          visibleModules={visibleModules}
+          onActiveChartChange={onActiveChartChange}
+          periodLabel={periodLabel}
+          showProjection={showProjection}
         />
       ) : null}
     </div>

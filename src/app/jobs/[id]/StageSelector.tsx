@@ -10,6 +10,10 @@ type Stage = {
   name: string
 }
 
+type JobAssignment = {
+  profile_id: string
+}
+
 export default function StageSelector({
   jobId,
   currentStageId,
@@ -46,7 +50,9 @@ export default function StageSelector({
         .select('profile_id')
         .eq('job_id', jobId)
 
-      const assignedUserIds = (assignments ?? []).map((a: any) => a.profile_id)
+      const assignedUserIds = ((assignments ?? []) as JobAssignment[]).map(
+        (assignment) => assignment.profile_id
+      )
 
       if (assignedUserIds.length > 0 && selectedStage) {
         await createNotifications({

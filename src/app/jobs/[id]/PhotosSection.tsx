@@ -25,29 +25,36 @@ export default function PhotosSection({
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
 
-  async function loadPhotos() {
-    setLoading(true)
-    setMessage('')
+  useEffect(() => {
+    let isActive = true
 
-    const { data, error } = await supabase
-      .from('documents')
-      .select('id, file_name, file_path, file_type, created_at')
-      .eq('job_id', jobId)
-      .eq('file_type', 'photo')
-      .order('created_at', { ascending: false })
+    async function loadPhotos() {
+      const { data, error } = await supabase
+        .from('documents')
+        .select('id, file_name, file_path, file_type, created_at')
+        .eq('job_id', jobId)
+        .eq('file_type', 'photo')
+        .order('created_at', { ascending: false })
 
-    if (error) {
-      setMessage(error.message)
+      if (!isActive) return
+
+      if (error) {
+        setMessage(error.message)
+        setPhotos([])
+        setLoading(false)
+        return
+      }
+
+      setMessage('')
+      setPhotos((data ?? []) as PhotoItem[])
       setLoading(false)
-      return
     }
 
-    setPhotos((data ?? []) as PhotoItem[])
-    setLoading(false)
-  }
+    void loadPhotos()
 
-  useEffect(() => {
-    loadPhotos()
+    return () => {
+      isActive = false
+    }
   }, [jobId])
 
   return (
