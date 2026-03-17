@@ -5,6 +5,11 @@ import { useEffect, useMemo, useState } from 'react'
 import ProtectedRoute from '../../../components/ProtectedRoute'
 import { supabase } from '../../../lib/supabase'
 import { getCurrentUserProfile, isManagerLike } from '../../../lib/auth-helpers'
+import {
+  getStageColor,
+  isManagementLockedStage,
+  normalizeStage,
+} from '@/lib/job-stage-access'
 
 type JobRow = {
   id: string
@@ -21,10 +26,14 @@ type JobRow = {
     | null
   pipeline_stages:
     | {
+        id?: number | null
         name: string | null
+        sort_order?: number | null
       }
     | {
+        id?: number | null
         name: string | null
+        sort_order?: number | null
       }[]
     | null
   job_reps:
@@ -40,6 +49,16 @@ type JobRow = {
           | null
       }[]
     | null
+}
+
+type StageRow = {
+  id: number
+  name: string
+  sort_order: number | null
+}
+
+type AssignedJobRef = {
+  job_id: string
 }
 
 type CalendarDay = {
@@ -129,8 +148,19 @@ function isToday(date: Date) {
   return formatDateKey(date) === formatDateKey(new Date())
 }
 
+function getStagePillStyle(stageName: string) {
+  const color = getStageColor(stageName)
+
+  return {
+    color,
+    borderColor: `${color}55`,
+    backgroundColor: `${color}14`,
+  }
+}
+
 function InstallCalendarContent() {
   const [jobs, setJobs] = useState<JobRow[]>([])
+  const [stages, setStages] = useState<StageRow[]>([])
   const [loading, setLoading] = useState(true)
   const [savingJobId, setSavingJobId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
@@ -139,38 +169,71 @@ function InstallCalendarContent() {
   const [dragOverDateKey, setDragOverDateKey] = useState<string | null>(null)
   const [dragOverReadyQueue, setDragOverReadyQueue] = useState(false)
 
-  async function loadJobs() {
-    setLoading(true)
-    setMessage('')
+  useEffect(() => {
+    let isActive = true
 
-    const currentProfile = await getCurrentUserProfile()
+    async function loadJobs() {
+      setLoading(true)
+      setMessage('')
 
-    if (!currentProfile) {
-      setJobs([])
-      setLoading(false)
-      return
-    }
+      const currentProfile = await getCurrentUserProfile()
 
-    let visibleJobIds: string[] | null = null
+      if (!isActive) return
 
-    if (!isManagerLike(currentProfile.role)) {
-      const { data: assignedRows } = await supabase
-        .from('job_reps')
-        .select('job_id')
-        .eq('profile_id', currentProfile.id)
+      const { data: stageData, error: stageError } = await supabase
+        .from('pipeline_stages')
+        .select('id, name, sort_order')
+        .order('sort_order', { ascending: true })
 
-      visibleJobIds = [...new Set((assignedRows ?? []).map((row: any) => row.job_id))]
+      if (!isActive) return
 
-      if (visibleJobIds.length === 0) {
+      const stageRows = (stageData ?? []) as StageRow[]
+      setStages(stageRows)
+
+      if (stageError) {
+        setJobs([])
+        setMessage(stageError.message)
+        setLoading(false)
+        return
+      }
+
+      if (!currentProfile) {
         setJobs([])
         setLoading(false)
         return
       }
-    }
 
-    let query = supabase
-      .from('jobs')
-      .select(`
+      let visibleJobIds: string[] | null = null
+
+      if (!isManagerLike(currentProfile.role)) {
+        const { data: assignedRows, error: assignedError } = await supabase
+          .from('job_reps')
+          .select('job_id')
+          .eq('profile_id', currentProfile.id)
+
+        if (!isActive) return
+
+        if (assignedError) {
+          setJobs([])
+          setMessage(assignedError.message)
+          setLoading(false)
+          return
+        }
+
+        visibleJobIds = [
+          ...new Set(
+            ((assignedRows ?? []) as AssignedJobRef[]).map((row) => row.job_id)
+          ),
+        ]
+
+        if (visibleJobIds.length === 0) {
+          setJobs([])
+          setLoading(false)
+          return
+        }
+      }
+
+      let query = supabase.from('jobs').select(`
         id,
         install_date,
         homeowners (
@@ -178,7 +241,9 @@ function InstallCalendarContent() {
           address
         ),
         pipeline_stages (
-          name
+          id,
+          name,
+          sort_order
         ),
         job_reps (
           profile_id,
@@ -188,28 +253,42 @@ function InstallCalendarContent() {
         )
       `)
 
-    if (visibleJobIds) {
-      query = query.in('id', visibleJobIds)
-    }
+      if (visibleJobIds) {
+        query = query.in('id', visibleJobIds)
+      }
 
-    const { data, error } = await query
+      const { data, error } = await query
 
-    if (error) {
-      setMessage(error.message)
+      if (!isActive) return
+
+      if (error) {
+        setJobs([])
+        setMessage(error.message)
+        setLoading(false)
+        return
+      }
+
+      const nextJobs = (data ?? []) as JobRow[]
+      const visibleJobs = isManagerLike(currentProfile.role)
+        ? nextJobs
+        : nextJobs.filter(
+            (job) => !isManagementLockedStage(job.pipeline_stages, stageRows)
+          )
+
+      setJobs(visibleJobs)
       setLoading(false)
-      return
     }
 
-    setJobs((data ?? []) as JobRow[])
-    setLoading(false)
-  }
+    void loadJobs()
 
-  useEffect(() => {
-    loadJobs()
+    return () => {
+      isActive = false
+    }
   }, [])
 
   async function updateInstallDate(jobId: string, nextDate: string | null) {
     setSavingJobId(jobId)
+    setMessage('')
 
     const { error } = await supabase
       .from('jobs')
@@ -277,322 +356,373 @@ function InstallCalendarContent() {
 
   const readyToSchedule = useMemo(() => {
     return jobs.filter((job) => {
+      const stage = normalizeStage(job.pipeline_stages)
       const stageName = getStageName(job.pipeline_stages).toLowerCase().trim()
-      return !job.install_date && stageName === 'pre-production prep'
+      return (
+        !job.install_date &&
+        (stageName === 'pre-production prep' ||
+          stageName === 'pre production prep' ||
+          isManagementLockedStage(stage, stages))
+      )
     })
-  }, [jobs])
+  }, [jobs, stages])
+
+  const scheduledCount = useMemo(
+    () => jobs.filter((job) => Boolean(job.install_date)).length,
+    [jobs]
+  )
 
   const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-50 to-white p-6 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm md:p-8">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-gray-500">
-                Scheduling
-              </p>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight text-gray-900">
-                Install Calendar
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm text-gray-600">
-                Drag jobs onto a day to schedule them. Drag scheduled jobs to another day to move them.
-                Drag them back into the ready queue to unschedule them.
-              </p>
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-[2.25rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03))] p-8 shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,179,122,0.22),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_26%)]" />
+        <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(214,179,122,0.7),transparent)]" />
+
+        <div className="relative flex flex-wrap items-end justify-between gap-6">
+          <div>
+            <div className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
+              Scheduling
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/jobs"
-                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-              >
-                Jobs
-              </Link>
+            <h1 className="mt-4 text-4xl font-bold tracking-tight text-white md:text-5xl">
+              Install Command Board
+            </h1>
 
-              <Link
-                href="/"
-                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-              >
-                Home
-              </Link>
-            </div>
+            <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
+              Drag jobs onto the calendar to schedule installs, reshuffle production dates quickly, and keep the ready queue visible in one place.
+            </p>
           </div>
 
-          {message ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {message}
-            </div>
-          ) : null}
-        </section>
-
-        <section className="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm md:p-6">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-            <button
-              type="button"
-              onClick={() =>
-                setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1))
-              }
-              className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/jobs"
+              className="rounded-2xl border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/[0.1]"
             >
-              Previous
-            </button>
-
-            <div className="text-center">
-              <h2 className="text-2xl font-semibold text-gray-900">
-                {monthLabel(viewDate)}
-              </h2>
-              <p className="mt-1 text-xs uppercase tracking-wide text-gray-500">
-                Install schedule
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() =>
-                setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1))
-              }
-              className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
+              View Jobs
+            </Link>
+            <Link
+              href="/map"
+              className="rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85]"
             >
-              Next
-            </button>
+              Open Lead Map
+            </Link>
           </div>
+        </div>
+      </section>
 
-          {loading ? (
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 text-sm text-gray-600">
-              Loading install calendar...
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="grid grid-cols-7 gap-3">
-                {weekdays.map((day) => (
-                  <div
-                    key={day}
-                    className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-gray-500"
-                  >
-                    {day}
-                  </div>
-                ))}
-              </div>
+      <section className="grid gap-3 sm:grid-cols-3">
+        <MetricCard label="Visible Jobs" value={String(jobs.length)} />
+        <MetricCard label="Scheduled" value={String(scheduledCount)} />
+        <MetricCard label="Ready Queue" value={String(readyToSchedule.length)} />
+      </section>
 
-              <div className="grid grid-cols-7 gap-3">
-                {calendarDays.map((day) => {
-                  const dayJobs = jobsByDate[day.key] ?? []
-                  const isDropTarget = dragOverDateKey === day.key
-
-                  return (
-                    <div
-                      key={day.key}
-                      onDragOver={(e) => {
-                        e.preventDefault()
-                        setDragOverDateKey(day.key)
-                        setDragOverReadyQueue(false)
-                      }}
-                      onDragLeave={() => {
-                        if (dragOverDateKey === day.key) {
-                          setDragOverDateKey(null)
-                        }
-                      }}
-                      onDrop={async (e) => {
-                        e.preventDefault()
-                        await handleDropOnDate(day.key)
-                      }}
-                      className={`min-h-[190px] rounded-2xl border p-3 transition ${
-                        day.isCurrentMonth
-                          ? 'border-gray-200 bg-white'
-                          : 'border-gray-100 bg-gray-50'
-                      } ${
-                        isDropTarget
-                          ? 'ring-2 ring-gray-900 ring-offset-2'
-                          : ''
-                      }`}
-                    >
-                      <div className="mb-3 flex items-center justify-between">
-                        <div
-                          className={`inline-flex h-8 min-w-8 items-center justify-center rounded-full px-2 text-sm font-semibold ${
-                            isToday(day.date)
-                              ? 'bg-gray-900 text-white'
-                              : day.isCurrentMonth
-                              ? 'text-gray-900'
-                              : 'text-gray-400'
-                          }`}
-                        >
-                          {day.date.getDate()}
-                        </div>
-
-                        {dayJobs.length > 0 ? (
-                          <div className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-                            {dayJobs.length} job{dayJobs.length === 1 ? '' : 's'}
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div className="space-y-2">
-                        {dayJobs.map((job) => {
-                          const homeowner = getHomeowner(job.homeowners)
-                          const repNames = getRepNames(job.job_reps)
-                          const isSaving = savingJobId === job.id
-                          const isDragging = draggedJobId === job.id
-
-                          return (
-                            <div
-                              key={job.id}
-                              draggable
-                              onDragStart={() => handleDragStart(job.id)}
-                              onDragEnd={handleDragEnd}
-                              className={`cursor-grab rounded-xl border border-gray-200 bg-gray-50 p-3 shadow-sm transition active:cursor-grabbing ${
-                                isDragging ? 'opacity-40' : 'opacity-100'
-                              }`}
-                            >
-                              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                Install
-                              </div>
-
-                              <div className="mt-1 text-sm font-semibold text-gray-900">
-                                {homeowner?.name ?? 'Unnamed Homeowner'}
-                              </div>
-
-                              <div className="mt-1 line-clamp-2 text-xs text-gray-600">
-                                {homeowner?.address ?? '-'}
-                              </div>
-
-                              <div className="mt-2 text-[11px] text-gray-700">
-                                {repNames.length > 0 ? repNames.join(', ') : 'No reps assigned'}
-                              </div>
-
-                              <div className="mt-3 flex items-center justify-between gap-2">
-                                <input
-                                  type="date"
-                                  className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-[11px]"
-                                  value={job.install_date ?? ''}
-                                  onChange={(e) => updateInstallDate(job.id, e.target.value || null)}
-                                />
-
-                                <Link
-                                  href={`/jobs/${job.id}`}
-                                  className="shrink-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-900 transition hover:bg-gray-100"
-                                >
-                                  Open
-                                </Link>
-                              </div>
-
-                              {isSaving ? (
-                                <div className="mt-2 text-[11px] text-gray-500">
-                                  Saving...
-                                </div>
-                              ) : null}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
+      {message ? (
+        <section className="rounded-[1.6rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200 shadow-[0_20px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+          {message}
         </section>
+      ) : null}
 
-        <section
-          onDragOver={(e) => {
-            e.preventDefault()
-            setDragOverReadyQueue(true)
-            setDragOverDateKey(null)
-          }}
-          onDragLeave={() => setDragOverReadyQueue(false)}
-          onDrop={async (e) => {
-            e.preventDefault()
-            await handleDropOnReadyQueue()
-          }}
-          className={`rounded-3xl border p-6 shadow-sm transition ${
-            dragOverReadyQueue
-              ? 'border-gray-900 bg-gray-100 ring-2 ring-gray-900 ring-offset-2'
-              : 'border-gray-200 bg-white'
-          }`}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-semibold text-gray-900">
-                Ready to Schedule
-              </h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Jobs in Pre-Production Prep with no install date. Drag one onto the calendar to schedule it.
-              </p>
-            </div>
+      <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <button
+            type="button"
+            onClick={() =>
+              setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1))
+            }
+            className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
+          >
+            Previous
+          </button>
 
-            <div className="rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-900">
-              {readyToSchedule.length} ready
-            </div>
+          <div className="text-center">
+            <h2 className="text-2xl font-bold tracking-tight text-white">
+              {monthLabel(viewDate)}
+            </h2>
+            <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/38">
+              Install Schedule
+            </p>
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {readyToSchedule.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-gray-300 p-6 text-sm text-gray-600">
-                No jobs are waiting to be scheduled.
-              </div>
-            ) : (
-              readyToSchedule.map((job) => {
-                const homeowner = getHomeowner(job.homeowners)
-                const repNames = getRepNames(job.job_reps)
-                const isSaving = savingJobId === job.id
-                const isDragging = draggedJobId === job.id
+          <button
+            type="button"
+            onClick={() =>
+              setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1))
+            }
+            className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
+          >
+            Next
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="rounded-[1.6rem] border border-white/10 bg-black/20 p-6 text-sm text-white/60">
+            Loading install calendar...
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-7 gap-3">
+              {weekdays.map((day) => (
+                <div
+                  key={day}
+                  className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white/38"
+                >
+                  {day}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-3">
+              {calendarDays.map((day) => {
+                const dayJobs = jobsByDate[day.key] ?? []
+                const isDropTarget = dragOverDateKey === day.key
 
                 return (
                   <div
-                    key={job.id}
-                    draggable
-                    onDragStart={() => handleDragStart(job.id)}
-                    onDragEnd={handleDragEnd}
-                    className={`cursor-grab rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-sm transition active:cursor-grabbing ${
-                      isDragging ? 'opacity-40' : 'opacity-100'
-                    }`}
+                    key={day.key}
+                    onDragOver={(event) => {
+                      event.preventDefault()
+                      setDragOverDateKey(day.key)
+                      setDragOverReadyQueue(false)
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverDateKey === day.key) {
+                        setDragOverDateKey(null)
+                      }
+                    }}
+                    onDrop={async (event) => {
+                      event.preventDefault()
+                      await handleDropOnDate(day.key)
+                    }}
+                    className={`min-h-[210px] rounded-[1.5rem] border p-3 transition ${
+                      day.isCurrentMonth
+                        ? 'border-white/10 bg-black/20'
+                        : 'border-white/6 bg-white/[0.02]'
+                    } ${isDropTarget ? 'ring-2 ring-[#d6b37a]' : ''}`}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-gray-900">
-                          {homeowner?.name ?? 'Unnamed Homeowner'}
-                        </div>
-                        <div className="mt-1 text-sm text-gray-600">
-                          {homeowner?.address ?? '-'}
-                        </div>
-                      </div>
-
-                      <div className="rounded-full bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-                        Ready
-                      </div>
-                    </div>
-
-                    <div className="mt-3 text-xs text-gray-700">
-                      {repNames.length > 0 ? repNames.join(', ') : 'No reps assigned'}
-                    </div>
-
-                    <div className="mt-4 flex items-center justify-between gap-2">
-                      <input
-                        type="date"
-                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-                        value={job.install_date ?? ''}
-                        onChange={(e) => updateInstallDate(job.id, e.target.value || null)}
-                      />
-
-                      <Link
-                        href={`/jobs/${job.id}`}
-                        className="shrink-0 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <div
+                        className={`inline-flex h-8 min-w-8 items-center justify-center rounded-full px-2 text-sm font-semibold ${
+                          isToday(day.date)
+                            ? 'bg-[#d6b37a] text-black'
+                            : day.isCurrentMonth
+                              ? 'text-white'
+                              : 'text-white/28'
+                        }`}
                       >
-                        Open
-                      </Link>
+                        {day.date.getDate()}
+                      </div>
+
+                      {dayJobs.length > 0 ? (
+                        <div className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/48">
+                          {dayJobs.length} job{dayJobs.length === 1 ? '' : 's'}
+                        </div>
+                      ) : null}
                     </div>
 
-                    {isSaving ? (
-                      <div className="mt-2 text-xs text-gray-500">Saving...</div>
-                    ) : null}
+                    <div className="space-y-2">
+                      {dayJobs.map((job) => {
+                        const homeowner = getHomeowner(job.homeowners)
+                        const repNames = getRepNames(job.job_reps)
+                        const isSaving = savingJobId === job.id
+                        const isDragging = draggedJobId === job.id
+                        const stageName = getStageName(job.pipeline_stages)
+
+                        return (
+                          <article
+                            key={job.id}
+                            draggable
+                            onDragStart={() => handleDragStart(job.id)}
+                            onDragEnd={handleDragEnd}
+                            className={`cursor-grab rounded-[1.2rem] border border-white/10 bg-white/[0.05] p-3 shadow-[0_10px_30px_rgba(0,0,0,0.18)] transition active:cursor-grabbing ${
+                              isDragging ? 'opacity-40' : 'opacity-100'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-white">
+                                  {homeowner?.name ?? 'Unnamed Homeowner'}
+                                </div>
+                                <div className="mt-1 line-clamp-2 text-xs text-white/48">
+                                  {homeowner?.address ?? '-'}
+                                </div>
+                              </div>
+
+                              <div
+                                className="rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
+                                style={getStagePillStyle(stageName)}
+                              >
+                                {stageName}
+                              </div>
+                            </div>
+
+                            <div className="mt-3 text-[11px] text-white/62">
+                              {repNames.length > 0 ? repNames.join(', ') : 'No reps assigned'}
+                            </div>
+
+                            <div className="mt-3 flex items-center justify-between gap-2">
+                              <input
+                                type="date"
+                                className="w-full rounded-xl border border-white/10 bg-black/20 px-2.5 py-2 text-[11px] text-white outline-none transition focus:border-[#d6b37a]/35"
+                                value={job.install_date ?? ''}
+                                onChange={(event) =>
+                                  void updateInstallDate(job.id, event.target.value || null)
+                                }
+                              />
+
+                              <Link
+                                href={`/jobs/${job.id}`}
+                                className="shrink-0 rounded-xl border border-white/10 bg-white/[0.05] px-2.5 py-2 text-[11px] font-semibold text-white transition hover:bg-white/[0.1]"
+                              >
+                                Open
+                              </Link>
+                            </div>
+
+                            {isSaving ? (
+                              <div className="mt-2 text-[11px] text-white/42">
+                                Saving...
+                              </div>
+                            ) : null}
+                          </article>
+                        )
+                      })}
+                    </div>
                   </div>
                 )
-              })
-            )}
+              })}
+            </div>
           </div>
-        </section>
+        )}
+      </section>
+
+      <section
+        onDragOver={(event) => {
+          event.preventDefault()
+          setDragOverReadyQueue(true)
+          setDragOverDateKey(null)
+        }}
+        onDragLeave={() => setDragOverReadyQueue(false)}
+        onDrop={async (event) => {
+          event.preventDefault()
+          await handleDropOnReadyQueue()
+        }}
+        className={`rounded-[2rem] border p-6 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl transition ${
+          dragOverReadyQueue
+            ? 'border-[#d6b37a]/40 bg-[#d6b37a]/10 ring-2 ring-[#d6b37a]'
+            : 'border-white/10 bg-white/[0.04]'
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+              Ready Queue
+            </div>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
+              Production-Ready Leads
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/62">
+              Jobs at Pre-Production Prep or later with no install date stay here until they are placed on the calendar.
+            </p>
+          </div>
+
+          <div className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-semibold text-white">
+            {readyToSchedule.length} ready
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {readyToSchedule.length === 0 ? (
+            <div className="rounded-[1.5rem] border border-dashed border-white/14 p-6 text-sm text-white/55">
+              No jobs are waiting to be scheduled.
+            </div>
+          ) : (
+            readyToSchedule.map((job) => {
+              const homeowner = getHomeowner(job.homeowners)
+              const repNames = getRepNames(job.job_reps)
+              const isSaving = savingJobId === job.id
+              const isDragging = draggedJobId === job.id
+              const stageName = getStageName(job.pipeline_stages)
+
+              return (
+                <article
+                  key={job.id}
+                  draggable
+                  onDragStart={() => handleDragStart(job.id)}
+                  onDragEnd={handleDragEnd}
+                  className={`cursor-grab rounded-[1.6rem] border border-white/10 bg-black/20 p-4 shadow-[0_16px_35px_rgba(0,0,0,0.22)] transition active:cursor-grabbing ${
+                    isDragging ? 'opacity-40' : 'opacity-100'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-white">
+                        {homeowner?.name ?? 'Unnamed Homeowner'}
+                      </div>
+                      <div className="mt-1 text-sm text-white/55">
+                        {homeowner?.address ?? '-'}
+                      </div>
+                    </div>
+
+                    <div
+                      className="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
+                      style={getStagePillStyle(stageName)}
+                    >
+                      {stageName}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 text-xs text-white/62">
+                    {repNames.length > 0 ? repNames.join(', ') : 'No reps assigned'}
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between gap-2">
+                    <input
+                      type="date"
+                      className="w-full rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
+                      value={job.install_date ?? ''}
+                      onChange={(event) =>
+                        void updateInstallDate(job.id, event.target.value || null)
+                      }
+                    />
+
+                    <Link
+                      href={`/jobs/${job.id}`}
+                      className="shrink-0 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
+                    >
+                      Open
+                    </Link>
+                  </div>
+
+                  {isSaving ? (
+                    <div className="mt-2 text-xs text-white/42">Saving...</div>
+                  ) : null}
+                </article>
+              )
+            })
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function MetricCard({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/38">
+        {label}
       </div>
-    </main>
+      <div className="mt-2 text-2xl font-bold tracking-tight text-white">
+        {value}
+      </div>
+    </div>
   )
 }
 

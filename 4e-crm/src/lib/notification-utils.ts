@@ -1,15 +1,10 @@
+import { authorizedFetch } from '@/lib/api-client'
 import { supabase } from './supabase'
-
-export function extractMentionNames(text: string): string[] {
-  const matches = text.match(/@([a-zA-Z0-9._-]+)/g) || []
-  return [...new Set(matches.map((m) => m.slice(1).toLowerCase()))]
-}
-
-export function profileMatchesMention(fullName: string, mention: string) {
-  const lowered = fullName.toLowerCase().trim()
-  const parts = lowered.split(/\s+/)
-  return lowered === mention || parts.some((part) => part === mention)
-}
+export {
+  buildMentionHandle,
+  extractMentionNames,
+  profileMatchesMention,
+} from './mention-utils'
 
 export async function getActiveProfiles() {
   const { data, error } = await supabase
@@ -31,7 +26,7 @@ export async function createNotifications(params: {
   link?: string | null
   jobId?: string | null
   noteId?: string | null
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   skipActor?: boolean
 }) {
   const {
@@ -54,17 +49,30 @@ export async function createNotifications(params: {
 
   if (finalUserIds.length === 0) return
 
-  const rows = finalUserIds.map((userId) => ({
-    user_id: userId,
-    actor_user_id: actorUserId,
-    type,
-    title,
-    message,
-    link,
-    job_id: jobId,
-    note_id: noteId,
-    metadata,
-  }))
+  const response = await authorizedFetch('/api/notifications', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      userIds: finalUserIds,
+      actorUserId,
+      type,
+      title,
+      message,
+      link,
+      jobId,
+      noteId,
+      metadata,
+      skipActor: false,
+    }),
+  })
 
-  await supabase.from('notifications').insert(rows)
+  if (!response.ok) {
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null
+
+    throw new Error(result?.error || 'Failed to create notifications.')
+  }
 }

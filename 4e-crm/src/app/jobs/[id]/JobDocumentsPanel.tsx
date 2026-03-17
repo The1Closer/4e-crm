@@ -2,8 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { supabase } from '../../../lib/supabase'
-import { getCurrentUserProfile, isManagerLike } from '../../../lib/auth-helpers'
+import { authorizedFetch } from '@/lib/api-client'
+import { supabase } from '@/lib/supabase'
+import {
+  getCurrentUserProfile,
+  getPermissions,
+  type UserProfile,
+} from '@/lib/auth-helpers'
 
 type UploadedDocument = {
   id: string
@@ -31,9 +36,60 @@ type TemplateRow = {
   file_url: string
 }
 
+type DocumentsPanelData = {
+  uploadedDocs: UploadedDocument[]
+  signedDocs: SignedJobDocument[]
+  templates: TemplateRow[]
+}
+
 function buildUploadedDocUrl(filePath: string) {
   const { data } = supabase.storage.from('job-files').getPublicUrl(filePath)
   return data.publicUrl
+}
+
+async function fetchDocumentsPanelData(
+  jobId: string
+): Promise<DocumentsPanelData | { error: string }> {
+  const [uploadedRes, signedRes, templatesRes] = await Promise.all([
+    supabase
+      .from('documents')
+      .select('id, file_name, file_path, file_type, created_at')
+      .eq('job_id', jobId)
+      .eq('file_type', 'document')
+      .order('created_at', { ascending: false }),
+
+    supabase
+      .from('job_documents')
+      .select(
+        'id, template_id, file_name, file_url, file_path, document_type, is_signed, created_at'
+      )
+      .eq('job_id', jobId)
+      .order('created_at', { ascending: false }),
+
+    supabase
+      .from('document_templates')
+      .select('id, name, category, file_url')
+      .eq('is_active', true)
+      .order('name', { ascending: true }),
+  ])
+
+  if (uploadedRes.error) {
+    return { error: uploadedRes.error.message }
+  }
+
+  if (signedRes.error) {
+    return { error: signedRes.error.message }
+  }
+
+  if (templatesRes.error) {
+    return { error: templatesRes.error.message }
+  }
+
+  return {
+    uploadedDocs: (uploadedRes.data ?? []) as UploadedDocument[],
+    signedDocs: (signedRes.data ?? []) as SignedJobDocument[],
+    templates: (templatesRes.data ?? []) as TemplateRow[],
+  }
 }
 
 export default function JobDocumentsPanel({
@@ -41,118 +97,118 @@ export default function JobDocumentsPanel({
 }: {
   jobId: string
 }) {
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [permissionsLoading, setPermissionsLoading] = useState(true)
+
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocument[]>([])
   const [signedDocs, setSignedDocs] = useState<SignedJobDocument[]>([])
   const [templates, setTemplates] = useState<TemplateRow[]>([])
-  const [isManager, setIsManager] = useState(false)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
 
-  async function loadData() {
-    setLoading(true)
+  useEffect(() => {
+    async function loadProfile() {
+      const nextProfile = await getCurrentUserProfile()
+      setProfile(nextProfile)
+      setPermissionsLoading(false)
+    }
+
+    loadProfile()
+  }, [])
+
+  const permissions = getPermissions(profile?.role)
+
+  function applyPanelData(data: DocumentsPanelData) {
     setMessage('')
-
-    const currentProfile = await getCurrentUserProfile()
-    setIsManager(isManagerLike(currentProfile?.role ?? null))
-
-    const [uploadedRes, signedRes, templatesRes] = await Promise.all([
-      supabase
-        .from('documents')
-        .select('id, file_name, file_path, file_type, created_at')
-        .eq('job_id', jobId)
-        .eq('file_type', 'document')
-        .order('created_at', { ascending: false }),
-
-      supabase
-        .from('job_documents')
-        .select('id, template_id, file_name, file_url, file_path, document_type, is_signed, created_at')
-        .eq('job_id', jobId)
-        .order('created_at', { ascending: false }),
-
-      supabase
-        .from('document_templates')
-        .select('id, name, category, file_url')
-        .eq('is_active', true)
-        .order('name', { ascending: true }),
-    ])
-
-    if (uploadedRes.error) {
-      setMessage(uploadedRes.error.message)
-      setLoading(false)
-      return
-    }
-
-    if (signedRes.error) {
-      setMessage(signedRes.error.message)
-      setLoading(false)
-      return
-    }
-
-    if (templatesRes.error) {
-      setMessage(templatesRes.error.message)
-      setLoading(false)
-      return
-    }
-
-    setUploadedDocs((uploadedRes.data ?? []) as UploadedDocument[])
-    setSignedDocs((signedRes.data ?? []) as SignedJobDocument[])
-    setTemplates((templatesRes.data ?? []) as TemplateRow[])
+    setUploadedDocs(data.uploadedDocs)
+    setSignedDocs(data.signedDocs)
+    setTemplates(data.templates)
     setLoading(false)
   }
 
   useEffect(() => {
-    loadData()
+    let isActive = true
+
+    async function loadInitialData() {
+      const result = await fetchDocumentsPanelData(jobId)
+
+      if (!isActive) return
+
+      if ('error' in result) {
+        setMessage(result.error)
+        setUploadedDocs([])
+        setSignedDocs([])
+        setTemplates([])
+        setLoading(false)
+        return
+      }
+
+      applyPanelData(result)
+    }
+
+    void loadInitialData()
+
+    return () => {
+      isActive = false
+    }
   }, [jobId])
 
-  async function deleteUploadedDocument(doc: UploadedDocument) {
-    if (!isManager) return
+  async function loadData() {
+    setLoading(true)
 
-    setMessage('')
+    const result = await fetchDocumentsPanelData(jobId)
 
-    const storageRes = await supabase.storage
-      .from('job-files')
-      .remove([doc.file_path])
-
-    if (storageRes.error) {
-      setMessage(storageRes.error.message)
+    if ('error' in result) {
+      setMessage(result.error)
+      setLoading(false)
       return
     }
 
-    const { error } = await supabase
-      .from('documents')
-      .delete()
-      .eq('id', doc.id)
+    applyPanelData(result)
+  }
 
-    if (error) {
-      setMessage(error.message)
+  async function deleteUploadedDocument(doc: UploadedDocument) {
+    if (!permissions.canManageTemplates) return
+
+    setMessage('')
+
+    const response = await authorizedFetch(`/api/job-files/${doc.id}`, {
+      method: 'DELETE',
+    })
+
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null
+
+    if (!response.ok) {
+      setMessage(result?.error || 'Delete failed.')
       return
     }
 
     setMessage('Document deleted.')
-    loadData()
+    void loadData()
   }
 
   async function deleteSignedDocument(doc: SignedJobDocument) {
-    if (!isManager) return
+    if (!permissions.canManageTemplates) return
 
     setMessage('')
 
-    if (doc.file_path) {
-      await supabase.storage.from('documents').remove([doc.file_path])
-    }
+    const response = await authorizedFetch(`/api/job-documents/${doc.id}`, {
+      method: 'DELETE',
+    })
 
-    const { error } = await supabase
-      .from('job_documents')
-      .delete()
-      .eq('id', doc.id)
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null
 
-    if (error) {
-      setMessage(error.message)
+    if (!response.ok) {
+      setMessage(result?.error || 'Delete failed.')
       return
     }
 
     setMessage('Signed/generated document deleted.')
-    loadData()
+    void loadData()
   }
 
   const mergedDocuments = [
@@ -164,10 +220,13 @@ export default function JobDocumentsPanel({
       signer_url: `/contracts/editor?jobId=${jobId}&documentId=${doc.id}&sourceUrl=${encodeURIComponent(
         doc.file_url
       )}&name=${encodeURIComponent(doc.file_name)}`,
-      subtitle: `${doc.is_signed ? 'Signed' : 'Generated'} • ${doc.document_type || 'Document'}`,
-      deletable: isManager,
+      subtitle: `${doc.is_signed ? 'Signed' : 'Generated'} • ${
+        doc.document_type || 'Document'
+      }`,
+      deletable: permissions.canManageTemplates,
       onDelete: () => deleteSignedDocument(doc),
     })),
+
     ...uploadedDocs.map((doc) => {
       const url = buildUploadedDocUrl(doc.file_path)
 
@@ -180,7 +239,7 @@ export default function JobDocumentsPanel({
           url
         )}&name=${encodeURIComponent(doc.file_name)}`,
         subtitle: 'Uploaded document',
-        deletable: isManager,
+        deletable: permissions.canManageTemplates,
         onDelete: () => deleteUploadedDocument(doc),
       }
     }),
@@ -189,24 +248,24 @@ export default function JobDocumentsPanel({
   return (
     <section className="space-y-6">
       {message ? (
-        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700 shadow-sm">
+        <div className="rounded-[1.4rem] border border-white/10 bg-[#0b0f16]/95 p-4 text-sm text-white/78 shadow-[0_18px_45px_rgba(0,0,0,0.18)]">
           {message}
         </div>
       ) : null}
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Templates</h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <h2 className="text-xl font-semibold text-white">Templates</h2>
+            <p className="mt-1 text-sm text-white/60">
               Open a master template in the signer/editor for this job.
             </p>
           </div>
 
-          {isManager ? (
+          {!permissionsLoading && permissions.canManageTemplates ? (
             <Link
               href="/templates"
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
+              className="rounded-2xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
             >
               Manage Templates
             </Link>
@@ -214,9 +273,9 @@ export default function JobDocumentsPanel({
         </div>
 
         {loading ? (
-          <div className="mt-4 text-sm text-gray-600">Loading templates...</div>
+          <div className="mt-4 text-sm text-white/60">Loading templates...</div>
         ) : templates.length === 0 ? (
-          <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600">
+          <div className="mt-4 rounded-[1.4rem] border border-dashed border-white/15 p-4 text-sm text-white/60">
             No templates available yet.
           </div>
         ) : (
@@ -224,12 +283,12 @@ export default function JobDocumentsPanel({
             {templates.map((template) => (
               <div
                 key={template.id}
-                className="rounded-xl border border-gray-200 p-4"
+                className="rounded-[1.4rem] border border-white/10 bg-black/20 p-4"
               >
-                <div className="text-sm font-semibold text-gray-900">
+                <div className="text-sm font-semibold text-white">
                   {template.name}
                 </div>
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="mt-1 text-xs text-white/45">
                   {template.category || 'Uncategorized'}
                 </div>
 
@@ -238,7 +297,7 @@ export default function JobDocumentsPanel({
                     href={`/contracts/editor?jobId=${jobId}&templateId=${template.id}&sourceUrl=${encodeURIComponent(
                       template.file_url
                     )}&name=${encodeURIComponent(template.name)}`}
-                    className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white transition hover:bg-gray-800"
+                    className="rounded-2xl bg-[#d6b37a] px-3 py-2 text-xs font-semibold text-black shadow-[0_10px_24px_rgba(214,179,122,0.24)] transition hover:bg-[#e2bf85]"
                   >
                     Open Template
                   </Link>
@@ -249,16 +308,16 @@ export default function JobDocumentsPanel({
         )}
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-semibold text-gray-900">Documents</h2>
-        <p className="mt-1 text-sm text-gray-600">
+      <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+        <h2 className="text-xl font-semibold text-white">Documents</h2>
+        <p className="mt-1 text-sm text-white/60">
           Uploaded documents and generated/signed documents all live here.
         </p>
 
         {loading ? (
-          <div className="mt-4 text-sm text-gray-600">Loading documents...</div>
+          <div className="mt-4 text-sm text-white/60">Loading documents...</div>
         ) : mergedDocuments.length === 0 ? (
-          <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600">
+          <div className="mt-4 rounded-[1.4rem] border border-dashed border-white/15 p-4 text-sm text-white/60">
             No documents yet.
           </div>
         ) : (
@@ -266,13 +325,13 @@ export default function JobDocumentsPanel({
             {mergedDocuments.map((doc) => (
               <div
                 key={`${doc.kind}-${doc.id}`}
-                className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 p-4"
+                className="flex flex-wrap items-center justify-between gap-4 rounded-[1.4rem] border border-white/10 bg-black/20 p-4"
               >
                 <div>
-                  <div className="text-sm font-semibold text-gray-900">
+                  <div className="text-sm font-semibold text-white">
                     {doc.file_name}
                   </div>
-                  <div className="mt-1 text-xs text-gray-500">
+                  <div className="mt-1 text-xs text-white/45">
                     {doc.subtitle}
                   </div>
                 </div>
@@ -282,14 +341,14 @@ export default function JobDocumentsPanel({
                     href={doc.open_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
+                    className="rounded-2xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
                   >
                     Open
                   </a>
 
                   <Link
                     href={doc.signer_url}
-                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
+                    className="rounded-2xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
                   >
                     Edit / Sign
                   </Link>
@@ -298,7 +357,7 @@ export default function JobDocumentsPanel({
                     <button
                       type="button"
                       onClick={doc.onDelete}
-                      className="rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50"
+                      className="rounded-2xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 transition hover:bg-red-500/18"
                     >
                       Delete
                     </button>

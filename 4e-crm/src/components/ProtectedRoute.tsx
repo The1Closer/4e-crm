@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { supabase } from '../lib/supabase'
+import { supabase } from '@/lib/supabase'
 
 export default function ProtectedRoute({
   children,
@@ -25,7 +25,13 @@ export default function ProtectedRoute({
       if (!mounted) return
 
       if (!session?.user) {
+        setAllowed(false)
+        setChecking(false)
         router.replace(`/sign-in?redirectTo=${encodeURIComponent(pathname)}`)
+
+        window.setTimeout(() => {
+          window.location.replace(`/sign-in?redirectTo=${encodeURIComponent(pathname)}`)
+        }, 120)
         return
       }
 
@@ -33,7 +39,7 @@ export default function ProtectedRoute({
       setChecking(false)
     }
 
-    checkUser()
+    void checkUser()
 
     const {
       data: { subscription },
@@ -59,9 +65,9 @@ export default function ProtectedRoute({
 
   if (checking) {
     return (
-      <main className="p-8">
-        <div className="mx-auto max-w-4xl rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="text-sm text-gray-600">Checking sign-in...</div>
+      <main className="space-y-6">
+        <div className="mx-auto max-w-4xl rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-sm text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
+          Checking sign-in...
         </div>
       </main>
     )

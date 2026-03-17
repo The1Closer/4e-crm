@@ -1,259 +1,232 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '../../../lib/supabase'
+import { ArrowLeft, Save } from 'lucide-react'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import JobEditorFields from '@/components/jobs/JobEditorFields'
+import {
+  buildJobEditorValues,
+  type JobEditorValues,
+  type JobRepOption,
+  type JobStageOption,
+} from '@/components/jobs/job-types'
+import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
+import { supabase } from '@/lib/supabase'
+import { authorizedFetch } from '@/lib/api-client'
+import { isManagementLockedStage } from '@/lib/job-stage-access'
 
-type Stage = {
-  id: number
-  name: string
-}
-
-type RepProfile = {
-  id: string
-  full_name: string
-  role: string
-  is_active: boolean
-}
-
-export default function NewJobPage() {
+function NewJobPageContent() {
   const router = useRouter()
 
-  const [stages, setStages] = useState<Stage[]>([])
-  const [reps, setReps] = useState<RepProfile[]>([])
-  const [selectedRepIds, setSelectedRepIds] = useState<string[]>([])
-  const [loading, setLoading] = useState(false)
-  const [errorMessage, setErrorMessage] = useState('')
-
-  const [form, setForm] = useState({
-    homeowner_name: '',
-    phone: '',
-    address: '',
-    email: '',
-    stage_id: '',
-    insurance_carrier: '',
-    deductible: '',
-    claim_number: '',
-    adjuster_name: '',
-    adjuster_phone: '',
-    adjuster_email: '',
-    date_of_loss: '',
-    type_of_loss: '',
-    install_date: '',
-    contract_signed_date: '',
-    contract_amount: '',
-    deposit_collected: '',
-    remaining_balance: '',
-    supplemented_amount: '',
-    shingle_name: '',
-  })
+  const [values, setValues] = useState<JobEditorValues>(buildJobEditorValues())
+  const [stages, setStages] = useState<JobStageOption[]>([])
+  const [reps, setReps] = useState<JobRepOption[]>([])
+  const [role, setRole] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState<'success' | 'error' | ''>('')
 
   useEffect(() => {
-    async function loadData() {
-      const [{ data: stageData }, { data: repData }] = await Promise.all([
+    let isActive = true
+
+    async function loadFormOptions() {
+      setLoading(true)
+      setMessage('')
+      setMessageType('')
+
+      const currentProfile = await getCurrentUserProfile()
+
+      if (!isActive) return
+
+      setRole(currentProfile?.role ?? null)
+
+      const [stagesRes, profilesRes] = await Promise.all([
         supabase
           .from('pipeline_stages')
-          .select('id, name')
+          .select('id, name, sort_order')
           .order('sort_order', { ascending: true }),
         supabase
           .from('profiles')
-          .select('id, full_name, role, is_active')
+          .select('id, full_name, role')
           .eq('is_active', true)
+          .eq('role', 'rep')
           .order('full_name', { ascending: true }),
       ])
 
-      if (stageData) setStages(stageData)
-      if (repData) setReps(repData)
+      if (!isActive) return
+
+      if (stagesRes.error || profilesRes.error) {
+        setStages([])
+        setReps([])
+        setMessageType('error')
+        setMessage(
+          stagesRes.error?.message ??
+            profilesRes.error?.message ??
+            'Could not load job form options.'
+        )
+        setLoading(false)
+        return
+      }
+
+      setStages((stagesRes.data ?? []) as JobStageOption[])
+      setReps((profilesRes.data ?? []) as JobRepOption[])
+      setLoading(false)
     }
 
-    loadData()
+    void loadFormOptions()
+
+    return () => {
+      isActive = false
+    }
   }, [])
 
-  function updateField(field: keyof typeof form, value: string) {
-    setForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-  }
+  const visibleStages = useMemo(
+    () =>
+      isManagerLike(role)
+        ? stages
+        : stages.filter((stage) => !isManagementLockedStage(stage, stages)),
+    [role, stages]
+  )
 
-  function toggleRep(repId: string) {
-    setSelectedRepIds((prev) =>
-      prev.includes(repId)
-        ? prev.filter((id) => id !== repId)
-        : [...prev, repId]
-    )
-  }
+  async function handleCreateJob(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    setErrorMessage('')
+    if (!values.homeowner_name.trim()) {
+      setMessageType('error')
+      setMessage('Homeowner name is required.')
+      return
+    }
+
+    setSaving(true)
+    setMessage('')
+    setMessageType('')
 
     try {
-      const { data: homeownerData, error: homeownerError } = await supabase
-        .from('homeowners')
-        .insert([
-          {
-            name: form.homeowner_name,
-            phone: form.phone || null,
-            address: form.address || null,
-            email: form.email || null,
-          },
-        ])
-        .select()
-        .single()
+      const response = await authorizedFetch('/api/jobs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(values),
+      })
 
-      if (homeownerError || !homeownerData) {
-        throw new Error(homeownerError?.message || 'Failed to create homeowner')
+      const result = (await response.json().catch(() => null)) as
+        | { error?: string; jobId?: string }
+        | null
+
+      if (!response.ok || !result?.jobId) {
+        throw new Error(result?.error || 'Could not create the job.')
       }
 
-      const { data: jobData, error: jobError } = await supabase
-        .from('jobs')
-        .insert([
-          {
-            homeowner_id: homeownerData.id,
-            stage_id: form.stage_id ? Number(form.stage_id) : null,
-            insurance_carrier: form.insurance_carrier || null,
-            deductible: form.deductible ? Number(form.deductible) : null,
-            claim_number: form.claim_number || null,
-            adjuster_name: form.adjuster_name || null,
-            adjuster_phone: form.adjuster_phone || null,
-            adjuster_email: form.adjuster_email || null,
-            date_of_loss: form.date_of_loss || null,
-            type_of_loss: form.type_of_loss || null,
-            install_date: form.install_date || null,
-            contract_signed_date: form.contract_signed_date || null,
-            contract_amount: form.contract_amount ? Number(form.contract_amount) : null,
-            deposit_collected: form.deposit_collected ? Number(form.deposit_collected) : 0,
-            remaining_balance: form.remaining_balance ? Number(form.remaining_balance) : 0,
-            supplemented_amount: form.supplemented_amount ? Number(form.supplemented_amount) : 0,
-            shingle_name: form.shingle_name || null,
-          },
-        ])
-        .select()
-        .single()
-
-      if (jobError || !jobData) {
-        throw new Error(jobError?.message || 'Failed to create job')
-      }
-
-      if (selectedRepIds.length > 0) {
-        const assignments = selectedRepIds.map((profileId) => ({
-          job_id: jobData.id,
-          profile_id: profileId,
-        }))
-
-        const { error: repError } = await supabase
-          .from('job_reps')
-          .insert(assignments)
-
-        if (repError) {
-          throw new Error(repError.message || 'Failed to assign reps')
-        }
-      }
-
-      router.push(`/jobs/${jobData.id}`)
+      setMessageType('success')
+      setMessage('Job created. Opening the file now...')
+      router.push(`/jobs/${result.jobId}`)
+      router.refresh()
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Something went wrong'
-      setErrorMessage(message)
+      setMessageType('error')
+      setMessage(error instanceof Error ? error.message : 'Could not create the job.')
     } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Create New Job</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Add a new homeowner and full roofing claim record.
-          </p>
+    <main className="space-y-6">
+      <section className="relative overflow-hidden rounded-[2.25rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03))] p-8 shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,179,122,0.22),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_26%)]" />
+        <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(214,179,122,0.7),transparent)]" />
+
+        <div className="relative flex flex-wrap items-end justify-between gap-6">
+          <div>
+            <div className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
+              New Job
+            </div>
+
+            <h1 className="mt-4 text-4xl font-bold tracking-tight text-white md:text-5xl">
+              Create a Real Job File
+            </h1>
+
+            <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
+              This replaces the old placeholder screen so you can enter the core information once and move straight into the live job.
+            </p>
+          </div>
+
+          <Link
+            href="/jobs"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/[0.1]"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Jobs
+          </Link>
+        </div>
+      </section>
+
+      <form
+        onSubmit={handleCreateJob}
+        className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+              Intake
+            </div>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
+              Start the file with the essentials
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-white/60">
+              Deeper claim, adjuster, and production details can still be added later from the job detail page.
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            disabled={saving || loading}
+            className="inline-flex items-center gap-2 rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:opacity-60"
+          >
+            <Save className="h-4 w-4" />
+            {saving ? 'Creating...' : 'Create Job'}
+          </button>
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-8 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm"
-        >
-          {errorMessage ? (
-            <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-700">
-              {errorMessage}
-            </div>
-          ) : null}
-
-          <section>
-            <h2 className="mb-4 text-xl font-semibold">Homeowner Info</h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              <input className="rounded-lg border px-4 py-3" placeholder="Homeowner name" value={form.homeowner_name} onChange={(e) => updateField('homeowner_name', e.target.value)} required />
-              <input className="rounded-lg border px-4 py-3" placeholder="Phone" value={form.phone} onChange={(e) => updateField('phone', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Address" value={form.address} onChange={(e) => updateField('address', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Email" value={form.email} onChange={(e) => updateField('email', e.target.value)} />
-            </div>
-          </section>
-
-          <section>
-            <h2 className="mb-4 text-xl font-semibold">Assigned Reps</h2>
-            <div className="grid gap-3 md:grid-cols-2">
-              {reps.map((rep) => (
-                <label
-                  key={rep.id}
-                  className="flex items-center gap-3 rounded-xl border border-gray-200 p-4"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedRepIds.includes(rep.id)}
-                    onChange={() => toggleRep(rep.id)}
-                  />
-                  <span className="text-sm font-medium text-gray-900">
-                    {rep.full_name}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </section>
-
-          <section>
-            <h2 className="mb-4 text-xl font-semibold">Claim / Job Info</h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              <select className="rounded-lg border px-4 py-3" value={form.stage_id} onChange={(e) => updateField('stage_id', e.target.value)} required>
-                <option value="">Select stage</option>
-                {stages.map((stage) => (
-                  <option key={stage.id} value={stage.id}>
-                    {stage.name}
-                  </option>
-                ))}
-              </select>
-
-              <input className="rounded-lg border px-4 py-3" placeholder="Insurance carrier" value={form.insurance_carrier} onChange={(e) => updateField('insurance_carrier', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Deductible" value={form.deductible} onChange={(e) => updateField('deductible', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Claim number" value={form.claim_number} onChange={(e) => updateField('claim_number', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Type of loss" value={form.type_of_loss} onChange={(e) => updateField('type_of_loss', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Adjuster name" value={form.adjuster_name} onChange={(e) => updateField('adjuster_name', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Adjuster phone" value={form.adjuster_phone} onChange={(e) => updateField('adjuster_phone', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Adjuster email" value={form.adjuster_email} onChange={(e) => updateField('adjuster_email', e.target.value)} />
-              <input type="date" className="rounded-lg border px-4 py-3" value={form.date_of_loss} onChange={(e) => updateField('date_of_loss', e.target.value)} />
-              <input type="date" className="rounded-lg border px-4 py-3" value={form.install_date} onChange={(e) => updateField('install_date', e.target.value)} />
-              <input type="date" className="rounded-lg border px-4 py-3" value={form.contract_signed_date} onChange={(e) => updateField('contract_signed_date', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Contract amount" value={form.contract_amount} onChange={(e) => updateField('contract_amount', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Deposit collected" value={form.deposit_collected} onChange={(e) => updateField('deposit_collected', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Remaining balance" value={form.remaining_balance} onChange={(e) => updateField('remaining_balance', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3" placeholder="Supplemented amount" value={form.supplemented_amount} onChange={(e) => updateField('supplemented_amount', e.target.value)} />
-              <input className="rounded-lg border px-4 py-3 md:col-span-2" placeholder="Shingle name" value={form.shingle_name} onChange={(e) => updateField('shingle_name', e.target.value)} />
-            </div>
-          </section>
-
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-lg bg-gray-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60"
-            >
-              {loading ? 'Creating...' : 'Create Job'}
-            </button>
+        {message ? (
+          <div
+            className={`mt-5 rounded-[1.4rem] border p-4 text-sm ${
+              messageType === 'success'
+                ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100'
+                : 'border-red-400/20 bg-red-500/10 text-red-200'
+            }`}
+          >
+            {message}
           </div>
-        </form>
-      </div>
+        ) : null}
+
+        {loading ? (
+          <div className="mt-6 rounded-[1.4rem] border border-white/10 bg-black/20 p-4 text-sm text-white/60">
+            Loading form options...
+          </div>
+        ) : (
+          <div className="mt-6">
+            <JobEditorFields
+              values={values}
+              stages={visibleStages}
+              reps={reps}
+              disabled={saving}
+              onChange={(patch) => setValues((current) => ({ ...current, ...patch }))}
+            />
+          </div>
+        )}
+      </form>
     </main>
+  )
+}
+
+export default function NewJobPage() {
+  return (
+    <ProtectedRoute>
+      <NewJobPageContent />
+    </ProtectedRoute>
   )
 }

@@ -1,51 +1,52 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
-import { getCurrentUserProfile, isManagerLike } from '../lib/auth-helpers'
+import {
+  getCurrentUserProfile,
+  isManagerLike,
+  type UserProfile,
+} from '@/lib/auth-helpers'
 
 export default function ManagerOnlyRoute({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const router = useRouter()
-  const pathname = usePathname()
-  const [checking, setChecking] = useState(true)
-  const [allowed, setAllowed] = useState(false)
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [permissionsLoading, setPermissionsLoading] = useState(true)
 
   useEffect(() => {
-    async function checkAccess() {
-      const currentProfile = await getCurrentUserProfile()
-
-      if (!currentProfile) {
-        router.replace(`/sign-in?redirectTo=${encodeURIComponent(pathname)}`)
-        return
-      }
-
-      if (!isManagerLike(currentProfile.role)) {
-        router.replace('/')
-        return
-      }
-
-      setAllowed(true)
-      setChecking(false)
+    async function loadProfile() {
+      const nextProfile = await getCurrentUserProfile()
+      setProfile(nextProfile)
+      setPermissionsLoading(false)
     }
 
-    checkAccess()
-  }, [pathname, router])
+    loadProfile()
+  }, [])
 
-  if (checking) {
+  if (permissionsLoading) {
     return (
-      <main className="p-8">
-        <div className="mx-auto max-w-4xl rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="text-sm text-gray-600">Checking access...</div>
+      <main className="space-y-6">
+        <div className="mx-auto max-w-4xl rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-sm text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
+          Checking permissions...
         </div>
       </main>
     )
   }
 
-  if (!allowed) return null
+  if (!isManagerLike(profile?.role)) {
+    return (
+      <main className="space-y-6">
+        <div className="mx-auto max-w-4xl rounded-[2rem] border border-red-400/20 bg-red-500/10 p-6 text-red-100 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
+          <h1 className="text-2xl font-bold text-white">No permission</h1>
+          <p className="mt-2 text-sm text-red-100/80">
+            You do not have access to this page.
+          </p>
+        </div>
+      </main>
+    )
+  }
 
   return <>{children}</>
 }

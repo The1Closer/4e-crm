@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { supabase } from '../lib/supabase'
+import { LogOut } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 type Profile = {
   id: string
   full_name: string | null
   avatar_url?: string | null
+  role?: string | null
 }
 
 type UserState = {
@@ -21,7 +23,7 @@ function getInitials(name: string | null | undefined, email?: string) {
     const parts = name.trim().split(/\s+/)
     return parts
       .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase())
+      .map((part) => part[0]?.toUpperCase())
       .join('')
   }
 
@@ -32,6 +34,10 @@ function getInitials(name: string | null | undefined, email?: string) {
   return 'U'
 }
 
+function formatRoleLabel(role: string | null | undefined) {
+  return role?.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase()) || 'Team Member'
+}
+
 export default function AuthStatus() {
   const router = useRouter()
 
@@ -40,44 +46,51 @@ export default function AuthStatus() {
   const [loading, setLoading] = useState(true)
   const [signingOut, setSigningOut] = useState(false)
 
-  async function loadUserAndProfile() {
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser()
+  useEffect(() => {
+    let isActive = true
 
-    if (error || !user) {
-      setUser(null)
-      setProfile(null)
+    async function loadUserAndProfile() {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser()
+
+      if (!isActive) return
+
+      if (error || !user) {
+        setUser(null)
+        setProfile(null)
+        setLoading(false)
+        return
+      }
+
+      setUser({
+        id: user.id,
+        email: user.email,
+      })
+
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, role')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (!isActive) return
+
+      setProfile((profileData as Profile) ?? null)
       setLoading(false)
-      return
     }
 
-    setUser({
-      id: user.id,
-      email: user.email,
-    })
-
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('id, full_name, avatar_url')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    setProfile((profileData as Profile) ?? null)
-    setLoading(false)
-  }
-
-  useEffect(() => {
-    loadUserAndProfile()
+    void loadUserAndProfile()
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
-      loadUserAndProfile()
+      void loadUserAndProfile()
     })
 
     return () => {
+      isActive = false
       subscription.unsubscribe()
     }
   }, [])
@@ -93,15 +106,15 @@ export default function AuthStatus() {
     router.replace('/sign-in')
     router.refresh()
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       window.location.href = '/sign-in'
     }, 100)
   }
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-600">
-        Loading...
+      <div className="hidden rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/60 shadow-[0_10px_30px_rgba(0,0,0,0.25)] sm:block">
+        Loading profile...
       </div>
     )
   }
@@ -110,46 +123,54 @@ export default function AuthStatus() {
     return (
       <Link
         href="/sign-in"
-        className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
+        className="rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-white/78 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.08] hover:text-white"
       >
         Sign In
       </Link>
     )
   }
 
-  const displayName = profile?.full_name || 'Signed In User'
+  const displayName = profile?.full_name || 'User'
   const initials = getInitials(profile?.full_name, user.email)
+  const roleLabel = formatRoleLabel(profile?.role)
 
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-      {profile?.avatar_url ? (
-        <img
-          src={profile.avatar_url}
-          alt={displayName}
-          className="h-10 w-10 rounded-full object-cover"
-        />
-      ) : (
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-900 text-xs font-semibold text-white">
-          {initials}
-        </div>
-      )}
+    <div className="flex items-center gap-2">
+      <Link
+        href="/profile"
+        className="group flex items-center gap-3 rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-3 py-2.5 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.06]"
+      >
+        {profile?.avatar_url ? (
+          <img
+            src={profile.avatar_url}
+            alt={displayName}
+            className="h-11 w-11 rounded-[1rem] object-cover"
+          />
+        ) : (
+          <div className="flex h-11 w-11 items-center justify-center rounded-[1rem] border border-white/10 bg-black/25 text-xs font-semibold text-[#d6b37a]">
+            {initials}
+          </div>
+        )}
 
-      <div className="min-w-0">
-        <div className="truncate text-sm font-semibold text-gray-900">
-          {displayName}
+        <div className="hidden min-w-0 sm:block">
+          <div className="truncate text-sm font-semibold text-white">
+            {displayName}
+          </div>
+          <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-[#d6b37a]">
+            {roleLabel}
+          </div>
         </div>
-        <div className="truncate text-xs text-gray-500">
-          {user.email ?? ''}
-        </div>
-      </div>
+      </Link>
 
       <button
         type="button"
         onClick={handleSignOut}
         disabled={signingOut}
-        className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100 disabled:opacity-60"
+        className="inline-flex h-12 w-12 items-center justify-center rounded-[1.35rem] border border-white/10 bg-white/[0.04] text-white/75 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white disabled:opacity-60"
+        aria-label="Sign out"
+        title="Sign out"
       >
-        {signingOut ? 'Signing Out...' : 'Sign Out'}
+        <LogOut className="h-4 w-4" />
       </button>
     </div>
   )

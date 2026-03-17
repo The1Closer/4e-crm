@@ -1,38 +1,75 @@
-import { redirect } from 'next/navigation'
-import { supabase } from '../../../lib/supabase'
+'use client'
+
+import { useEffect } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import { supabase } from '@/lib/supabase'
 
 type NotificationRow = {
   id: string
   job_id: string | null
 }
 
-export default async function OpenNotificationPage({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}) {
-  const { id } = await params
+function OpenNotificationPageContent() {
+  const params = useParams<{ id: string }>()
+  const router = useRouter()
+  const notificationId = params?.id
 
-  const { data, error } = await supabase
-    .from('notifications')
-    .select('id, job_id')
-    .eq('id', id)
-    .single()
+  useEffect(() => {
+    let isActive = true
 
-  if (error || !data) {
-    redirect('/notifications')
-  }
+    async function openNotification() {
+      if (!notificationId) {
+        router.replace('/notifications')
+        return
+      }
 
-  const notification = data as NotificationRow
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('id, job_id')
+        .eq('id', notificationId)
+        .single()
 
-  await supabase
-    .from('notifications')
-    .update({ is_read: true })
-    .eq('id', id)
+      if (!isActive) return
 
-  if (notification.job_id) {
-    redirect(`/jobs/${notification.job_id}`)
-  }
+      if (error || !data) {
+        router.replace('/notifications')
+        return
+      }
 
-  redirect('/notifications')
+      const notification = data as NotificationRow
+
+      await supabase
+        .from('notifications')
+        .update({ is_read: true, read_at: new Date().toISOString() })
+        .eq('id', notificationId)
+
+      router.replace(notification.job_id ? `/jobs/${notification.job_id}` : '/notifications')
+    }
+
+    const openTimer = window.setTimeout(() => {
+      void openNotification()
+    }, 0)
+
+    return () => {
+      isActive = false
+      window.clearTimeout(openTimer)
+    }
+  }, [notificationId, router])
+
+  return (
+    <main className="space-y-6">
+      <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-sm text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
+        Opening notification...
+      </section>
+    </main>
+  )
+}
+
+export default function OpenNotificationPage() {
+  return (
+    <ProtectedRoute>
+      <OpenNotificationPageContent />
+    </ProtectedRoute>
+  )
 }
