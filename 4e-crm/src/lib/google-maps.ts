@@ -111,14 +111,18 @@ declare global {
       maps: GoogleMapsNamespace
     }
     __fourElementsGoogleMapsInit?: () => void
+    gm_authFailure?: () => void
   }
 }
 
 let googleMapsPromise: Promise<GoogleMapsNamespace> | null = null
 const GOOGLE_MAPS_CALLBACK = '__fourElementsGoogleMapsInit'
 const GOOGLE_MAPS_TIMEOUT_MS = 15000
+const GOOGLE_MAPS_AUTH_SETTLE_MS = 250
 const GOOGLE_MAPS_LIBRARIES = 'places'
 const GEOCODE_CACHE_PREFIX = '4e-crm-geocode::'
+const GOOGLE_MAPS_AUTH_FAILURE_MESSAGE =
+  'Google Maps rejected this API key. Check billing, allowed site referrers, and the enabled Maps and Places APIs.'
 
 function hasMapsConstructors(
   mapsApi: GoogleMapsNamespace | undefined
@@ -128,6 +132,10 @@ function hasMapsConstructors(
     typeof mapsApi?.Marker === 'function' &&
     typeof mapsApi?.Geocoder === 'function'
   )
+}
+
+function getGoogleMapsLoaderScript() {
+  return document.querySelector<HTMLScriptElement>('script[data-google-maps-loader="true"]')
 }
 
 export function loadGoogleMapsApi(apiKey: string) {
@@ -141,6 +149,12 @@ export function loadGoogleMapsApi(apiKey: string) {
     return Promise.reject(new Error('Google Maps can only be loaded in the browser.'))
   }
 
+  const existingScript = getGoogleMapsLoaderScript()
+
+  if (existingScript?.dataset.googleMapsAuthFailed === 'true') {
+    return Promise.reject(new Error(GOOGLE_MAPS_AUTH_FAILURE_MESSAGE))
+  }
+
   if (hasMapsConstructors(window.google?.maps)) {
     return Promise.resolve(window.google.maps)
   }
@@ -150,11 +164,30 @@ export function loadGoogleMapsApi(apiKey: string) {
   }
 
   googleMapsPromise = new Promise((resolve, reject) => {
+    let settled = false
+    let settleId: number | null = null
+    const previousAuthFailureHandler = window.gm_authFailure
+    let loaderScript = existingScript
+
     const cleanup = () => {
+      if (settleId !== null) {
+        window.clearTimeout(settleId)
+        settleId = null
+      }
+
       delete window[GOOGLE_MAPS_CALLBACK]
+
+      if (previousAuthFailureHandler) {
+        window.gm_authFailure = previousAuthFailureHandler
+      } else {
+        delete window.gm_authFailure
+      }
     }
 
     const fail = (error: Error) => {
+      if (settled) return
+
+      settled = true
       cleanup()
       googleMapsPromise = null
       reject(error)
@@ -164,37 +197,80 @@ export function loadGoogleMapsApi(apiKey: string) {
       fail(new Error('Timed out while loading Google Maps.'))
     }, GOOGLE_MAPS_TIMEOUT_MS)
 
-    window[GOOGLE_MAPS_CALLBACK] = () => {
+    window.gm_authFailure = () => {
       window.clearTimeout(timeoutId)
-
-      if (hasMapsConstructors(window.google?.maps)) {
-        cleanup()
-        resolve(window.google.maps)
-        return
+      const activeLoaderScript = loaderScript ?? getGoogleMapsLoaderScript()
+      if (activeLoaderScript) {
+        activeLoaderScript.dataset.googleMapsAuthFailed = 'true'
       }
 
-      fail(new Error('Google Maps loaded without exposing the maps API.'))
+      try {
+        previousAuthFailureHandler?.()
+      } catch (error) {
+        console.error('Previous Google Maps auth failure handler threw an error.', error)
+      }
+
+      fail(new Error(GOOGLE_MAPS_AUTH_FAILURE_MESSAGE))
     }
 
-    const existingScript = document.querySelector<HTMLScriptElement>(
-      'script[data-google-maps-loader="true"]'
-    )
+    window[GOOGLE_MAPS_CALLBACK] = () => {
+      if (settled) return
 
-    if (existingScript) {
-      if (existingScript.dataset.googleMapsReady === 'true') {
-        window.clearTimeout(timeoutId)
+      window.clearTimeout(timeoutId)
+      settleId = window.setTimeout(() => {
+        if (settled) return
+
+        if ((loaderScript ?? getGoogleMapsLoaderScript())?.dataset.googleMapsAuthFailed === 'true') {
+          fail(new Error(GOOGLE_MAPS_AUTH_FAILURE_MESSAGE))
+          return
+        }
+
         if (hasMapsConstructors(window.google?.maps)) {
+          settled = true
           cleanup()
           resolve(window.google.maps)
           return
         }
+
+        fail(new Error('Google Maps loaded without exposing the maps API.'))
+      }, GOOGLE_MAPS_AUTH_SETTLE_MS)
+    }
+
+    const handleScriptError = () => {
+      window.clearTimeout(timeoutId)
+      fail(new Error('Failed to load Google Maps.'))
+    }
+
+    if (existingScript) {
+      if (existingScript.dataset.googleMapsAuthFailed === 'true') {
+        window.clearTimeout(timeoutId)
+        fail(new Error(GOOGLE_MAPS_AUTH_FAILURE_MESSAGE))
+        return
       }
 
-      existingScript.addEventListener('error', () => {
+      if (existingScript.dataset.googleMapsReady === 'true') {
         window.clearTimeout(timeoutId)
-        fail(new Error('Failed to load Google Maps.'))
-      })
+        settleId = window.setTimeout(() => {
+          if (settled) return
 
+          if (existingScript.dataset.googleMapsAuthFailed === 'true') {
+            fail(new Error(GOOGLE_MAPS_AUTH_FAILURE_MESSAGE))
+            return
+          }
+
+          if (hasMapsConstructors(window.google?.maps)) {
+            settled = true
+            cleanup()
+            resolve(window.google.maps)
+            return
+          }
+
+          fail(new Error('Google Maps loaded without exposing the maps API.'))
+        }, GOOGLE_MAPS_AUTH_SETTLE_MS)
+        return
+      }
+
+      existingScript.addEventListener('error', handleScriptError, { once: true })
       return
     }
 
@@ -205,15 +281,13 @@ export function loadGoogleMapsApi(apiKey: string) {
     script.async = true
     script.defer = true
     script.dataset.googleMapsLoader = 'true'
+    loaderScript = script
 
-    script.addEventListener('error', () => {
-      window.clearTimeout(timeoutId)
-      fail(new Error('Failed to load Google Maps.'))
-    })
+    script.addEventListener('error', handleScriptError, { once: true })
 
     script.addEventListener('load', () => {
       script.dataset.googleMapsReady = 'true'
-    })
+    }, { once: true })
 
     document.head.appendChild(script)
   })

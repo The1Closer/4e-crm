@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useEffectEvent, useRef } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import {
   loadGoogleMapsApi,
   setGeocodeCache,
@@ -37,6 +37,7 @@ export default function AddressAutocompleteInput({
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const autocompleteRef = useRef<GooglePlacesAutocompleteInstance | null>(null)
+  const [errorMessage, setErrorMessage] = useState('')
 
   const handlePlaceChanged = useEffectEvent(
     (autocomplete: GooglePlacesAutocompleteInstance) => {
@@ -58,7 +59,14 @@ export default function AddressAutocompleteInput({
   )
 
   useEffect(() => {
-    if (!GOOGLE_MAPS_KEY || !inputRef.current || autocompleteRef.current) return
+    if (!GOOGLE_MAPS_KEY) {
+      setErrorMessage(
+        'Address search is unavailable until the Google Maps API key is configured.'
+      )
+      return
+    }
+
+    if (!inputRef.current || autocompleteRef.current) return
 
     let isActive = true
 
@@ -84,8 +92,17 @@ export default function AddressAutocompleteInput({
         })
 
         autocompleteRef.current = autocomplete
+        setErrorMessage('')
       } catch (error) {
         console.error('Failed to initialize Google address autocomplete.', error)
+
+        if (!isActive) return
+
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : 'Address search is unavailable right now.'
+        )
       }
     }
 
@@ -97,17 +114,23 @@ export default function AddressAutocompleteInput({
   }, [])
 
   return (
-    <input
-      ref={inputRef}
-      id={id}
-      name={name}
-      type="text"
-      value={value}
-      disabled={disabled}
-      autoComplete="street-address"
-      placeholder={placeholder}
-      onChange={(event) => onChange(event.target.value)}
-      className={cn(DEFAULT_INPUT_CLASS_NAME, className)}
-    />
+    <div className="space-y-2">
+      <input
+        ref={inputRef}
+        id={id}
+        name={name}
+        type="text"
+        value={value}
+        disabled={disabled}
+        autoComplete="street-address"
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        className={cn(DEFAULT_INPUT_CLASS_NAME, className)}
+      />
+
+      {errorMessage ? (
+        <div className="text-xs text-amber-200/85">{errorMessage}</div>
+      ) : null}
+    </div>
   )
 }

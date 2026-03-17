@@ -168,7 +168,8 @@ function LeadMapPageContent() {
   const [loading, setLoading] = useState(true)
   const [loadingMap, setLoadingMap] = useState(true)
   const [mapsApi, setMapsApi] = useState<GoogleMapsNamespace | null>(null)
-  const [message, setMessage] = useState('')
+  const [pageMessage, setPageMessage] = useState('')
+  const [mapMessage, setMapMessage] = useState('')
   const [search, setSearch] = useState('')
   const [stageFilters, setStageFilters] = useState<string[]>([])
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null)
@@ -184,7 +185,7 @@ function LeadMapPageContent() {
 
     async function loadJobs() {
       setLoading(true)
-      setMessage('')
+      setPageMessage('')
 
       const currentProfile = await getCurrentUserProfile()
 
@@ -208,7 +209,7 @@ function LeadMapPageContent() {
 
         if (assignedError) {
           setJobs([])
-          setMessage(assignedError.message)
+          setPageMessage(assignedError.message)
           setLoading(false)
           return
         }
@@ -259,7 +260,7 @@ function LeadMapPageContent() {
 
       if (error) {
         setJobs([])
-        setMessage(error.message)
+        setPageMessage(error.message)
         setLoading(false)
         return
       }
@@ -292,9 +293,10 @@ function LeadMapPageContent() {
         if (!isActive) return
 
         setMapsApi(api)
+        setMapMessage('')
       } catch (error) {
         if (!isActive) return
-        setMessage(
+        setMapMessage(
           error instanceof Error ? error.message : 'Failed to initialize Google Maps.'
         )
       } finally {
@@ -608,9 +610,9 @@ function LeadMapPageContent() {
         </section>
       ) : null}
 
-      {message ? (
+      {pageMessage ? (
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-4 text-sm text-white/78 shadow-[0_20px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          {message}
+          {pageMessage}
         </section>
       ) : null}
 
@@ -658,10 +660,24 @@ function LeadMapPageContent() {
             )}
           </div>
 
-          <div
-            ref={mapRef}
-            className="h-[620px] rounded-[1.6rem] border border-white/10 bg-[#0f0f0f]"
-          />
+          <div className="h-[620px] overflow-hidden rounded-[1.6rem] border border-white/10 bg-[#0f0f0f]">
+            {!GOOGLE_MAPS_KEY ? (
+              <MapPanelState
+                title="Google Maps key required"
+                description="Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to your active environment before loading the live map."
+              />
+            ) : mapMessage ? (
+              <MapPanelState
+                title="Google Maps is unavailable"
+                description={mapMessage}
+              />
+            ) : (
+              <div
+                ref={mapRef}
+                className="h-full w-full rounded-[1.6rem]"
+              />
+            )}
+          </div>
         </section>
 
         <aside className="space-y-6">
@@ -770,6 +786,30 @@ function LeadMapPageContent() {
           </section>
         </aside>
       </section>
+    </div>
+  )
+}
+
+function MapPanelState({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
+  return (
+    <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_top,rgba(214,179,122,0.16),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-6 text-center">
+      <div className="max-w-lg rounded-[1.6rem] border border-white/10 bg-black/25 px-6 py-7 shadow-[0_18px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+          Map Status
+        </div>
+        <div className="mt-3 text-xl font-bold tracking-tight text-white">
+          {title}
+        </div>
+        <div className="mt-3 text-sm leading-6 text-white/62">
+          {description}
+        </div>
+      </div>
     </div>
   )
 }
