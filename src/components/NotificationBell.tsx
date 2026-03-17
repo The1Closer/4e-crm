@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Bell } from 'lucide-react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
+import { supabase } from '@/lib/supabase'
 
 export default function NotificationBell() {
   const [count, setCount] = useState(0)
@@ -81,12 +81,13 @@ export default function NotificationBell() {
   return (
     <Link
       href="/notifications"
-      className="relative inline-flex items-center gap-2 text-sm font-semibold text-white/82 transition hover:text-white"
+      className="relative inline-flex h-12 w-12 items-center justify-center rounded-[1.35rem] border border-white/10 bg-white/[0.04] text-white/82 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white"
+      aria-label={count > 0 ? `${count} unread notifications` : 'Notifications'}
+      title="Notifications"
     >
       <Bell className="h-4 w-4 text-[#d6b37a]" />
-      Notifications
       {count > 0 ? (
-        <span className="inline-flex min-w-[22px] items-center justify-center rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
+        <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[22px] items-center justify-center rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-semibold text-white shadow-[0_10px_30px_rgba(239,68,68,0.38)]">
           {count}
         </span>
       ) : null}

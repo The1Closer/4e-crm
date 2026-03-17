@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 4E CRM
 
-## Getting Started
+Internal CRM for 4 Elements Renovations built with Next.js App Router, React 19, and Supabase.
 
-First, run the development server:
+## Stack
+
+- Next.js 16.1.6 with the App Router
+- React 19.2.3
+- Supabase for auth, database, and storage
+- Google Maps JavaScript API for the lead map
+- Tailwind CSS 4
+
+## Scripts
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run lint
+npm run build
+npm run start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Required Environment Variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Copy `.env.example` to `.env.local` and provide:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
+```
 
-## Learn More
+## Production Dependencies
 
-To learn more about Next.js, take a look at the following resources:
+The deployed app expects a Supabase project with:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Auth enabled for email/password sign-in
+- Database tables used by the app:
+  `profiles`, `jobs`, `homeowners`, `job_reps`, `pipeline_stages`, `notes`,
+  `notifications`, `document_templates`, `job_documents`, `documents`,
+  `rep_types`, `rep_daily_stats`, `announcements`, `job_activity_log`,
+  `job_commissions`
+- Storage buckets:
+  `documents`, `job-files`, `avatars`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The lead map also requires a Google Maps browser key with the Maps JavaScript API enabled.
 
-## Deploy on Vercel
+## Deployment Notes
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- The app is production-validated with `npm run build`.
+- Middleware protects app routes by checking for the presence of a Supabase auth cookie.
+- API routes enforce auth using a Supabase bearer token and the service role key.
+- Signed documents, uploads, templates, and avatars all depend on the configured Supabase storage buckets.
+- A service worker is registered from `public/sw.js`, but it only caches same-origin static assets. Authenticated pages and API responses stay network-only.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Deployment Checklist
+
+1. Install dependencies with `npm ci`.
+2. Set the four required environment variables on the host.
+3. Confirm the Supabase tables and storage buckets exist.
+4. Run `npm run lint`.
+5. Run `npm run build`.
+6. Start the app with `npm run start`.
+7. Smoke-test sign-in, jobs, uploads, templates, notifications, and the lead map.
+
+## Current Status
+
+- `npm run build` passes.
+- `npm run lint` passes with image optimization warnings only.

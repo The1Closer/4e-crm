@@ -80,10 +80,23 @@ declare global {
     google?: {
       maps: GoogleMapsNamespace
     }
+    __fourElementsGoogleMapsInit?: () => void
   }
 }
 
 let googleMapsPromise: Promise<GoogleMapsNamespace> | null = null
+const GOOGLE_MAPS_CALLBACK = '__fourElementsGoogleMapsInit'
+const GOOGLE_MAPS_TIMEOUT_MS = 15000
+
+function hasMapsConstructors(
+  mapsApi: GoogleMapsNamespace | undefined
+): mapsApi is GoogleMapsNamespace {
+  return (
+    typeof mapsApi?.Map === 'function' &&
+    typeof mapsApi?.Marker === 'function' &&
+    typeof mapsApi?.Geocoder === 'function'
+  )
+}
 
 export function loadGoogleMapsApi(apiKey: string) {
   if (!apiKey) {
@@ -92,7 +105,11 @@ export function loadGoogleMapsApi(apiKey: string) {
     )
   }
 
-  if (window.google?.maps) {
+  if (typeof window === 'undefined') {
+    return Promise.reject(new Error('Google Maps can only be loaded in the browser.'))
+  }
+
+  if (hasMapsConstructors(window.google?.maps)) {
     return Promise.resolve(window.google.maps)
   }
 
@@ -101,22 +118,49 @@ export function loadGoogleMapsApi(apiKey: string) {
   }
 
   googleMapsPromise = new Promise((resolve, reject) => {
+    const cleanup = () => {
+      delete window[GOOGLE_MAPS_CALLBACK]
+    }
+
+    const fail = (error: Error) => {
+      cleanup()
+      googleMapsPromise = null
+      reject(error)
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      fail(new Error('Timed out while loading Google Maps.'))
+    }, GOOGLE_MAPS_TIMEOUT_MS)
+
+    window[GOOGLE_MAPS_CALLBACK] = () => {
+      window.clearTimeout(timeoutId)
+
+      if (hasMapsConstructors(window.google?.maps)) {
+        cleanup()
+        resolve(window.google.maps)
+        return
+      }
+
+      fail(new Error('Google Maps loaded without exposing the maps API.'))
+    }
+
     const existingScript = document.querySelector<HTMLScriptElement>(
       'script[data-google-maps-loader="true"]'
     )
 
     if (existingScript) {
-      existingScript.addEventListener('load', () => {
-        if (window.google?.maps) {
+      if (existingScript.dataset.googleMapsReady === 'true') {
+        window.clearTimeout(timeoutId)
+        if (hasMapsConstructors(window.google?.maps)) {
+          cleanup()
           resolve(window.google.maps)
           return
         }
-
-        reject(new Error('Google Maps loaded without exposing the maps API.'))
-      })
+      }
 
       existingScript.addEventListener('error', () => {
-        reject(new Error('Failed to load Google Maps.'))
+        window.clearTimeout(timeoutId)
+        fail(new Error('Failed to load Google Maps.'))
       })
 
       return
@@ -125,22 +169,18 @@ export function loadGoogleMapsApi(apiKey: string) {
     const script = document.createElement('script')
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
       apiKey
-    )}&v=weekly&loading=async`
+    )}&v=weekly&loading=async&callback=${GOOGLE_MAPS_CALLBACK}`
     script.async = true
     script.defer = true
     script.dataset.googleMapsLoader = 'true'
 
-    script.addEventListener('load', () => {
-      if (window.google?.maps) {
-        resolve(window.google.maps)
-        return
-      }
-
-      reject(new Error('Google Maps loaded without exposing the maps API.'))
+    script.addEventListener('error', () => {
+      window.clearTimeout(timeoutId)
+      fail(new Error('Failed to load Google Maps.'))
     })
 
-    script.addEventListener('error', () => {
-      reject(new Error('Failed to load Google Maps.'))
+    script.addEventListener('load', () => {
+      script.dataset.googleMapsReady = 'true'
     })
 
     document.head.appendChild(script)

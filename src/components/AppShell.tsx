@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 import {
   Archive,
   Bell,
+  BookOpenText,
   Briefcase,
   CalendarDays,
   ChevronRight,
@@ -18,7 +19,9 @@ import {
   PlusSquare,
   Settings2,
   ShieldCheck,
+  UserRound,
   Users,
+  X,
 } from 'lucide-react'
 
 import AuthStatus from '@/components/AuthStatus'
@@ -34,7 +37,22 @@ type NavItem = {
   label: string
   icon: React.ComponentType<{ className?: string }>
   show: boolean
-  group: 'main' | 'workspace' | 'admin' | 'footer'
+  group: 'main' | 'workspace' | 'admin' | 'account'
+}
+
+function formatRoleLabel(role: string | null | undefined) {
+  return role?.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase()) || 'Team Member'
+}
+
+function getInitials(name: string | null | undefined) {
+  if (!name?.trim()) return '4E'
+
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
 }
 
 export default function AppShell({
@@ -50,12 +68,27 @@ export default function AppShell({
   const isAuthPage = pathname === '/sign-in'
 
   useEffect(() => {
+    let isActive = true
+
     async function loadProfile() {
       const nextProfile = await getCurrentUserProfile()
+
+      if (!isActive) return
+
       setProfile(nextProfile)
     }
 
+    function handleProfileUpdated() {
+      void loadProfile()
+    }
+
     void loadProfile()
+    window.addEventListener('profile:updated', handleProfileUpdated)
+
+    return () => {
+      isActive = false
+      window.removeEventListener('profile:updated', handleProfileUpdated)
+    }
   }, [])
 
   if (isAuthPage) {
@@ -63,6 +96,7 @@ export default function AppShell({
   }
 
   const permissions = getPermissions(profile?.role)
+  const roleLabel = formatRoleLabel(profile?.role)
 
   const navItems: NavItem[] = [
     {
@@ -88,7 +122,7 @@ export default function AppShell({
     },
     {
       href: '/jobs/new',
-      label: 'New Job',
+      label: 'Create Job',
       icon: PlusSquare,
       show: permissions.canCreateJob,
       group: 'workspace',
@@ -105,6 +139,13 @@ export default function AppShell({
       label: 'Lead Map',
       icon: MapPinned,
       show: permissions.canViewLeadMap,
+      group: 'workspace',
+    },
+    {
+      href: '/training',
+      label: 'Training',
+      icon: BookOpenText,
+      show: true,
       group: 'workspace',
     },
     {
@@ -129,13 +170,6 @@ export default function AppShell({
       group: 'workspace',
     },
     {
-      href: '/archive',
-      label: 'Archive',
-      icon: Archive,
-      show: permissions.canViewArchive,
-      group: 'footer',
-    },
-    {
       href: '/notifications',
       label: 'Notifications',
       icon: Bell,
@@ -156,6 +190,20 @@ export default function AppShell({
       show: permissions.canViewManagerEntry,
       group: 'admin',
     },
+    {
+      href: '/profile',
+      label: 'Profile',
+      icon: UserRound,
+      show: true,
+      group: 'account',
+    },
+    {
+      href: '/archive',
+      label: 'Archive',
+      icon: Archive,
+      show: permissions.canViewArchive,
+      group: 'account',
+    },
   ]
 
   const visibleNavItems = navItems.filter((item) => item.show)
@@ -164,12 +212,8 @@ export default function AppShell({
     main: visibleNavItems.filter((item) => item.group === 'main'),
     workspace: visibleNavItems.filter((item) => item.group === 'workspace'),
     admin: visibleNavItems.filter((item) => item.group === 'admin'),
-    footer: visibleNavItems.filter((item) => item.group === 'footer'),
+    account: visibleNavItems.filter((item) => item.group === 'account'),
   }
-
-  const roleLabel =
-    profile?.role?.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase()) ||
-    'User'
 
   return (
     <div className="min-h-screen bg-[#050505] text-white">
@@ -177,12 +221,12 @@ export default function AppShell({
       <div className="fixed inset-0 -z-10 bg-[linear-gradient(135deg,rgba(255,255,255,0.02),transparent_35%,rgba(255,255,255,0.01)_62%,transparent)]" />
 
       <header className="sticky top-0 z-50 border-b border-white/10 bg-black/40 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 md:px-6">
+        <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
-              className="group inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition duration-200 hover:border-[#d6b37a]/30 hover:bg-white/[0.08] hover:text-white"
+              className="group inline-flex h-12 w-12 items-center justify-center rounded-[1.35rem] border border-white/10 bg-white/[0.04] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition duration-200 hover:border-[#d6b37a]/30 hover:bg-white/[0.08] hover:text-white"
               aria-label="Open navigation"
             >
               <span className="flex flex-col gap-1.5">
@@ -193,22 +237,22 @@ export default function AppShell({
             </button>
 
             <Link href="/" className="group flex items-center gap-4">
-              <div className="relative h-15 w-15 overflow-hidden rounded-[1.35rem] border border-[#d6b37a]/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] ring-1 ring-white/5">
+              <div className="relative h-20 w-20 overflow-hidden rounded-[1.8rem] border border-[#d6b37a]/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] ring-1 ring-white/5 sm:h-24 sm:w-24">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(214,179,122,0.18),transparent_55%)]" />
                 <Image
                   src="/4ELogo.png"
                   alt="4 Elements CRM"
                   fill
-                  className="object-contain p-1.5 transition duration-300 group-hover:scale-[1.03]"
-                  sizes="60px"
+                  className="object-contain p-2 transition duration-300 group-hover:scale-[1.03]"
+                  sizes="96px"
                 />
               </div>
 
               <div className="leading-none">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.42em] text-[#d6b37a]">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.42em] text-[#d6b37a] sm:text-[12px]">
                   4 Elements
                 </div>
-                <div className="mt-1.5 text-[1.95rem] font-bold tracking-[0.01em] text-white">
+                <div className="mt-2 text-[2rem] font-bold tracking-[0.03em] text-white sm:text-[2.35rem]">
                   CRM
                 </div>
               </div>
@@ -216,84 +260,68 @@ export default function AppShell({
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-right shadow-[0_10px_30px_rgba(0,0,0,0.25)] lg:block">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40">
-                Signed In
-              </div>
-              <div className="mt-1 text-sm font-semibold text-white/90">
-                {profile?.full_name || 'Loading...'}
-              </div>
-              <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-[#d6b37a]">
-                {roleLabel}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.06]">
-              <NotificationBell />
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.06]">
-              <AuthStatus />
-            </div>
+            <NotificationBell />
+            <AuthStatus />
           </div>
         </div>
       </header>
 
       <aside
-        className={`fixed inset-y-0 left-0 z-[60] w-[330px] transform border-r border-white/10 bg-[#0d0d0d]/95 backdrop-blur-2xl shadow-[0_30px_80px_rgba(0,0,0,0.55)] transition duration-300 ${
+        className={`fixed inset-y-0 left-0 z-[60] w-[360px] transform border-r border-white/10 bg-[#0d0d0d]/95 backdrop-blur-2xl shadow-[0_30px_80px_rgba(0,0,0,0.55)] transition duration-300 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         <div className="flex h-full flex-col">
-          <div className="border-b border-white/10 px-5 py-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="relative h-12 w-12 overflow-hidden rounded-[1rem] border border-[#d6b37a]/20 bg-white/[0.04] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
-                    <Image
-                      src="/4ELogo.png"
-                      alt="4 Elements CRM"
-                      fill
-                      className="object-contain p-1.5"
-                      sizes="48px"
-                    />
-                  </div>
+          <div className="relative border-b border-white/10 px-6 py-7">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
+              className="absolute right-5 top-5 inline-flex h-11 w-11 items-center justify-center rounded-[1.2rem] border border-white/10 bg-white/[0.04] text-white/70 transition hover:border-white/15 hover:bg-white/[0.08] hover:text-white"
+              aria-label="Close navigation"
+            >
+              <X className="h-4 w-4" />
+            </button>
 
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
-                      Navigation
-                    </div>
-                    <div className="mt-1 text-lg font-bold text-white">
-                      Workspace
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/38">
-                    Current Profile
-                  </div>
-                  <div className="mt-1 text-sm font-semibold text-white">
-                    {profile?.full_name || 'Loading...'}
-                  </div>
-                  <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-[#d6b37a]">
-                    {roleLabel}
-                  </div>
-                </div>
+            <div className="flex flex-col items-center text-center">
+              <div className="relative h-20 w-20 overflow-hidden rounded-[1.8rem] border border-[#d6b37a]/20 bg-white/[0.04] shadow-[0_10px_30px_rgba(0,0,0,0.35)] sm:h-24 sm:w-24">
+                <Image
+                  src="/4ELogo.png"
+                  alt="4 Elements CRM"
+                  fill
+                  className="object-contain p-2"
+                  sizes="96px"
+                />
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-white/70 transition hover:border-white/15 hover:bg-white/[0.08] hover:text-white"
-                aria-label="Close navigation"
-              >
-                ✕
-              </button>
+              <div className="mt-5 text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
+                Navigation
+              </div>
+              <div className="mt-2 text-2xl font-bold tracking-tight text-white">
+                Workspace Menu
+              </div>
             </div>
+
+            <Link
+              href="/profile"
+              onClick={() => setSidebarOpen(false)}
+              className="mt-6 flex items-center gap-4 rounded-[1.75rem] border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)] transition hover:border-white/15 hover:bg-white/[0.06]"
+            >
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.2rem] border border-white/10 bg-black/25 text-sm font-semibold text-[#d6b37a]">
+                {getInitials(profile?.full_name)}
+              </div>
+
+              <div className="min-w-0 text-left">
+                <div className="truncate text-base font-semibold text-white">
+                  {profile?.full_name || 'Loading profile...'}
+                </div>
+                <div className="mt-1 text-[11px] uppercase tracking-[0.2em] text-[#d6b37a]">
+                  {roleLabel}
+                </div>
+              </div>
+            </Link>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div className="flex-1 overflow-y-auto px-4 py-5">
             <NavGroup
               title="Overview"
               items={groupedNav.main}
@@ -316,11 +344,11 @@ export default function AppShell({
             ) : null}
           </div>
 
-          {groupedNav.footer.length > 0 ? (
+          {groupedNav.account.length > 0 ? (
             <div className="border-t border-white/10 px-4 py-4">
               <NavGroup
-                title="Archive"
-                items={groupedNav.footer}
+                title="Account"
+                items={groupedNav.account}
                 pathname={pathname}
                 onNavigate={() => setSidebarOpen(false)}
               />
@@ -338,7 +366,7 @@ export default function AppShell({
         />
       ) : null}
 
-      <main className="mx-auto max-w-7xl px-5 py-8 md:px-6">{children}</main>
+      <main className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
     </div>
   )
 }
@@ -375,7 +403,7 @@ function NavGroup({
               key={item.href}
               href={item.href}
               onClick={onNavigate}
-              className={`group flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+              className={`group flex items-center justify-between rounded-[1.4rem] px-4 py-3 text-sm font-semibold transition ${
                 active
                   ? 'bg-[linear-gradient(135deg,#d6b37a,#e2bf85)] text-black shadow-[0_12px_30px_rgba(214,179,122,0.25)]'
                   : 'border border-white/8 bg-white/[0.03] text-white/75 hover:border-white/15 hover:bg-white/[0.07] hover:text-white'
@@ -383,7 +411,7 @@ function NavGroup({
             >
               <span className="flex items-center gap-3">
                 <span
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-[1rem] ${
                     active
                       ? 'bg-black/10 text-black'
                       : 'border border-white/10 bg-white/[0.03] text-[#d6b37a]'

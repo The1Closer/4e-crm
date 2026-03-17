@@ -27,9 +27,9 @@ export default function ManagerOnlyRoute({
 
   if (permissionsLoading) {
     return (
-      <main className="min-h-screen bg-gray-50 p-6 md:p-8">
-        <div className="mx-auto max-w-4xl rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="text-sm text-gray-600">Checking permissions...</div>
+      <main className="space-y-6">
+        <div className="mx-auto max-w-4xl rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-sm text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
+          Checking permissions...
         </div>
       </main>
     )
@@ -37,10 +37,10 @@ export default function ManagerOnlyRoute({
 
   if (!isManagerLike(profile?.role)) {
     return (
-      <main className="min-h-screen bg-gray-50 p-6 md:p-8">
-        <div className="mx-auto max-w-4xl rounded-2xl border border-red-200 bg-white p-6 shadow-sm">
-          <h1 className="text-2xl font-bold text-gray-900">No permission</h1>
-          <p className="mt-2 text-sm text-gray-600">
+      <main className="space-y-6">
+        <div className="mx-auto max-w-4xl rounded-[2rem] border border-red-400/20 bg-red-500/10 p-6 text-red-100 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
+          <h1 className="text-2xl font-bold text-white">No permission</h1>
+          <p className="mt-2 text-sm text-red-100/80">
             You do not have access to this page.
           </p>
         </div>

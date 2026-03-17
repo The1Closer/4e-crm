@@ -1,21 +1,52 @@
-const CACHE_NAME = '4e-crm-v1'
-const APP_SHELL = [
-  '/',
-  '/dashboard',
-  '/jobs',
-  '/calendar/installs',
-  '/contracts/editor',
-  '/map',
-  '/notifications',
-  '/templates',
-  '/4ELogo.png',
-]
+const CACHE_NAME = '4e-crm-static-v2'
+const STATIC_ASSETS = ['/4ELogo.png']
+const CACHEABLE_DESTINATIONS = new Set(['style', 'script', 'worker', 'font', 'image'])
+const STATIC_FILE_PATTERN =
+  /\.(?:css|js|mjs|png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|otf)$/i
+
+function isCacheableStaticRequest(request) {
+  if (request.method !== 'GET') return false
+  if (request.mode === 'navigate') return false
+
+  const url = new URL(request.url)
+
+  if (url.origin !== self.location.origin) return false
+
+  if (url.pathname.startsWith('/api/')) return false
+
+  if (url.pathname.startsWith('/_next/')) return true
+
+  if (STATIC_ASSETS.includes(url.pathname)) return true
+
+  if (CACHEABLE_DESTINATIONS.has(request.destination)) return true
+
+  return STATIC_FILE_PATTERN.test(url.pathname)
+}
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request)
+
+  if (cached) {
+    return cached
+  }
+
+  const response = await fetch(request)
+
+  if (!response || !response.ok) {
+    return response
+  }
+
+  const cache = await caches.open(CACHE_NAME)
+  await cache.put(request, response.clone())
+
+  return response
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) => cache.addAll(STATIC_ASSETS))
       .then(() => self.skipWaiting())
   )
 })
@@ -38,43 +69,9 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event
 
-  if (request.method !== 'GET') return
-
-  const url = new URL(request.url)
-  const isSameOrigin = url.origin === self.location.origin
-  const isSupabaseAsset = url.hostname.includes('supabase.co')
-
-  if (!isSameOrigin && !isSupabaseAsset) return
-
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const responseClone = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone))
-          return response
-        })
-        .catch(async () => {
-          const cached = await caches.match(request)
-          return cached ?? caches.match('/contracts/editor') ?? caches.match('/')
-        })
-    )
+  if (!isCacheableStaticRequest(request)) {
     return
   }
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached
-
-      return fetch(request)
-        .then((response) => {
-          if (!response || response.status >= 400) return response
-
-          const responseClone = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone))
-          return response
-        })
-        .catch(() => cached)
-    })
-  )
+  event.respondWith(cacheFirst(request))
 })

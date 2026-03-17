@@ -1,18 +1,27 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../../lib/supabase'
-import ProtectedRoute from '../../components/ProtectedRoute'
-import { getCurrentUserProfile, isManagerLike } from '../../lib/auth-helpers'
-import JobCard, { type JobCardRow } from '@/components/jobs/JobCard'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
+import JobCard from '@/components/jobs/JobCard'
 import JobsStageRail from '@/components/jobs/JobsStageRail'
 import JobsViewSwitcher, { type JobsViewMode } from '@/components/jobs/JobsViewSwitcher'
 import JobsSortSelect, { type JobsSortKey } from '@/components/jobs/JobsSortSelect'
-import JobsQuickFilters, { type JobsQuickFilter } from '@/components/jobs/JobsQuickFilters'
+import JobsQuickFilters, {
+  type JobsQuickFilter,
+} from '@/components/jobs/JobsQuickFilters'
 import JobsExportTools from '@/components/jobs/JobsExportTools'
 import JobsTable from '@/components/jobs/JobsTable'
 import JobsKanban from '@/components/jobs/JobsKanban'
+import JobsQuickEditDialog from '@/components/jobs/JobsQuickEditDialog'
+import JobsPagination from '@/components/jobs/JobsPagination'
+import {
+  type JobListRow,
+  type JobRepOption,
+  type JobStageOption,
+} from '@/components/jobs/job-types'
 import { ARCHIVE_INACTIVITY_DAYS, isArchivedByInactivity } from '@/lib/job-lifecycle'
 import { isManagementLockedStage } from '@/lib/job-stage-access'
 
@@ -68,12 +77,6 @@ type JobRow = {
   job_reps: JobRep[] | null
 }
 
-type StageOption = {
-  id: number
-  name: string
-  sort_order?: number | null
-}
-
 type ProfileOption = {
   id: string
   full_name: string
@@ -83,6 +86,12 @@ type ProfileOption = {
 
 type AssignedJobRef = {
   job_id: string
+}
+
+const PAGE_SIZE_BY_VIEW: Record<JobsViewMode, number> = {
+  cards: 9,
+  table: 10,
+  kanban: 999,
 }
 
 function formatCurrency(value: number | null) {
@@ -107,10 +116,13 @@ function getHomeowner(
   return Array.isArray(homeowner) ? homeowner[0] ?? null : homeowner
 }
 
+function getStage(stage: JobRow['pipeline_stages']) {
+  if (!stage) return null
+  return Array.isArray(stage) ? stage[0] ?? null : stage
+}
+
 function getStageName(stage: JobRow['pipeline_stages']) {
-  if (!stage) return 'No Stage'
-  const item = Array.isArray(stage) ? stage[0] ?? null : stage
-  return item?.name ?? 'No Stage'
+  return getStage(stage)?.name ?? 'No Stage'
 }
 
 function getRepNames(jobReps: JobRep[] | null): string[] {
@@ -127,13 +139,20 @@ function getRepNames(jobReps: JobRep[] | null): string[] {
     .filter((name): name is string => Boolean(name))
 }
 
+function getRepIds(jobReps: JobRep[] | null): string[] {
+  if (!jobReps || jobReps.length === 0) return []
+
+  return [...new Set(jobReps.map((rep) => rep.profile_id).filter(Boolean))]
+}
+
 function JobsPageContent() {
   const [jobs, setJobs] = useState<JobRow[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
+  const [pageMessage, setPageMessage] = useState('')
   const [role, setRole] = useState<string | null>(null)
 
-  const [stageOptions, setStageOptions] = useState<StageOption[]>([])
+  const [stageOptions, setStageOptions] = useState<JobStageOption[]>([])
   const [profileOptions, setProfileOptions] = useState<ProfileOption[]>([])
 
   const [search, setSearch] = useState('')
@@ -143,136 +162,88 @@ function JobsPageContent() {
   const [viewMode, setViewMode] = useState<JobsViewMode>('cards')
   const [sortKey, setSortKey] = useState<JobsSortKey>('newest')
   const [quickFilter, setQuickFilter] = useState<JobsQuickFilter>('all')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [editingJob, setEditingJob] = useState<JobListRow | null>(null)
 
-  useEffect(() => {
-    let isActive = true
+  const loadPageData = useCallback(async () => {
+    setLoading(true)
+    setErrorMessage('')
 
-    async function loadPageData() {
-      setLoading(true)
-      setErrorMessage('')
+    const currentProfile = await getCurrentUserProfile()
 
-      const currentProfile = await getCurrentUserProfile()
+    if (!currentProfile) {
+      setRole(null)
+      setJobs([])
+      setLoading(false)
+      return
+    }
 
-      if (!isActive) return
+    setRole(currentProfile.role)
 
-      if (!currentProfile) {
-        setRole(null)
-        setJobs([])
-        setLoading(false)
-        return
-      }
+    const [stagesRes, profilesRes] = await Promise.all([
+      supabase
+        .from('pipeline_stages')
+        .select('id, name, sort_order')
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('profiles')
+        .select('id, full_name, role, manager_id')
+        .eq('is_active', true)
+        .order('full_name', { ascending: true }),
+    ])
 
-      setRole(currentProfile.role)
+    if (stagesRes.error || profilesRes.error) {
+      setStageOptions([])
+      setProfileOptions([])
+      setJobs([])
+      setErrorMessage(
+        stagesRes.error?.message ??
+          profilesRes.error?.message ??
+          'Unable to load jobs filters.'
+      )
+      setLoading(false)
+      return
+    }
 
-      const [stagesRes, profilesRes] = await Promise.all([
-        supabase
-          .from('pipeline_stages')
-          .select('id, name, sort_order')
-          .order('sort_order', { ascending: true }),
-        supabase
-          .from('profiles')
-          .select('id, full_name, role, manager_id')
-          .eq('is_active', true)
-          .order('full_name', { ascending: true }),
-      ])
+    const nextStages = (stagesRes.data ?? []) as JobStageOption[]
+    const nextProfiles = (profilesRes.data ?? []) as ProfileOption[]
+    setStageOptions(nextStages)
+    setProfileOptions(nextProfiles)
 
-      if (!isActive) return
-
-      if (stagesRes.error || profilesRes.error) {
-        setStageOptions([])
-        setProfileOptions([])
-        setJobs([])
-        setErrorMessage(
-          stagesRes.error?.message ??
-            profilesRes.error?.message ??
-            'Unable to load jobs filters.'
-        )
-        setLoading(false)
-        return
-      }
-
-      setStageOptions((stagesRes.data ?? []) as StageOption[])
-      setProfileOptions((profilesRes.data ?? []) as ProfileOption[])
-      const stageRows = (stagesRes.data ?? []) as StageOption[]
-
-      const baseQuery = supabase
-        .from('jobs')
-        .select(`
-          id,
-          insurance_carrier,
-          claim_number,
-          contract_amount,
-          deposit_collected,
-          remaining_balance,
-          install_date,
-          updated_at,
-          homeowners (
-            name,
-            phone,
-            address,
-            email
-          ),
-          pipeline_stages (
-            id,
-            name
-            ,
-            sort_order
-          ),
-          job_reps (
-            profile_id,
-            profiles (
-              full_name,
-              manager_id
-            )
-          )
-        `)
-        .order('created_at', { ascending: false })
-
-      if (isManagerLike(currentProfile.role)) {
-        const { data, error } = await baseQuery
-
-        if (!isActive) return
-
-        if (error) {
-          setErrorMessage(error.message)
-          setLoading(false)
-          return
-        }
-
-        const rows = (data ?? []) as JobRow[]
-        setJobs(rows)
-        setLoading(false)
-        return
-      }
-
-      const { data: assignedRows, error: assignedError } = await supabase
-        .from('job_reps')
-        .select('job_id')
-        .eq('profile_id', currentProfile.id)
-
-      if (!isActive) return
-
-      if (assignedError) {
-        setErrorMessage(assignedError.message)
-        setLoading(false)
-        return
-      }
-
-      const jobIds = [
-        ...new Set(
-          ((assignedRows ?? []) as AssignedJobRef[]).map((row) => row.job_id)
+    const baseQuery = supabase
+      .from('jobs')
+      .select(`
+        id,
+        insurance_carrier,
+        claim_number,
+        contract_amount,
+        deposit_collected,
+        remaining_balance,
+        install_date,
+        updated_at,
+        homeowners (
+          name,
+          phone,
+          address,
+          email
         ),
-      ]
+        pipeline_stages (
+          id,
+          name,
+          sort_order
+        ),
+        job_reps (
+          profile_id,
+          profiles (
+            full_name,
+            manager_id
+          )
+        )
+      `)
+      .order('created_at', { ascending: false })
 
-      if (jobIds.length === 0) {
-        setJobs([])
-        setLoading(false)
-        return
-      }
-
-      const { data, error } = await baseQuery.in('id', jobIds)
-
-      if (!isActive) return
+    if (isManagerLike(currentProfile.role)) {
+      const { data, error } = await baseQuery
 
       if (error) {
         setErrorMessage(error.message)
@@ -280,19 +251,62 @@ function JobsPageContent() {
         return
       }
 
-      const rows = ((data ?? []) as JobRow[]).filter(
-        (row) => !isManagementLockedStage(row.pipeline_stages, stageRows)
-      )
-      setJobs(rows)
+      setJobs((data ?? []) as JobRow[])
       setLoading(false)
+      return
     }
 
-    void loadPageData()
+    const { data: assignedRows, error: assignedError } = await supabase
+      .from('job_reps')
+      .select('job_id')
+      .eq('profile_id', currentProfile.id)
 
-    return () => {
-      isActive = false
+    if (assignedError) {
+      setErrorMessage(assignedError.message)
+      setLoading(false)
+      return
     }
+
+    const jobIds = [
+      ...new Set(((assignedRows ?? []) as AssignedJobRef[]).map((row) => row.job_id)),
+    ]
+
+    if (jobIds.length === 0) {
+      setJobs([])
+      setLoading(false)
+      return
+    }
+
+    const { data, error } = await baseQuery.in('id', jobIds)
+
+    if (error) {
+      setErrorMessage(error.message)
+      setLoading(false)
+      return
+    }
+
+    const rows = ((data ?? []) as JobRow[]).filter(
+      (row) => !isManagementLockedStage(row.pipeline_stages, nextStages)
+    )
+    setJobs(rows)
+    setLoading(false)
   }, [])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadPageData()
+    }, 0)
+
+    return () => clearTimeout(timer)
+  }, [loadPageData])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCurrentPage(1)
+    }, 0)
+
+    return () => clearTimeout(timer)
+  }, [search, stageFilter, managerFilter, repFilter, quickFilter, sortKey, viewMode])
 
   const filteredJobs = useMemo(() => {
     let next = jobs.filter((job) => !isArchivedByInactivity(job.updated_at))
@@ -390,16 +404,22 @@ function JobsPageContent() {
   const managers = useMemo(
     () =>
       profileOptions.filter(
-        (p) =>
-          p.role === 'manager' ||
-          p.role === 'admin' ||
-          p.role === 'sales_manager'
+        (profile) =>
+          profile.role === 'manager' ||
+          profile.role === 'admin' ||
+          profile.role === 'sales_manager'
       ),
     [profileOptions]
   )
 
-  const reps = useMemo(
-    () => profileOptions.filter((p) => p.role === 'rep'),
+  const reps = useMemo<JobRepOption[]>(
+    () =>
+      profileOptions
+        .filter((profile) => profile.role === 'rep')
+        .map((profile) => ({
+          id: profile.id,
+          full_name: profile.full_name,
+        })),
     [profileOptions]
   )
 
@@ -407,16 +427,15 @@ function JobsPageContent() {
     () =>
       isManagerLike(role)
         ? stageOptions
-        : stageOptions.filter(
-            (stage) => !isManagementLockedStage(stage, stageOptions)
-          ),
+        : stageOptions.filter((stage) => !isManagementLockedStage(stage, stageOptions)),
     [role, stageOptions]
   )
 
-  const normalizedJobs = useMemo<JobCardRow[]>(
+  const normalizedJobs = useMemo<JobListRow[]>(
     () =>
       filteredJobs.map((job) => {
         const homeowner = getHomeowner(job.homeowners)
+        const stage = getStage(job.pipeline_stages)
 
         return {
           id: job.id,
@@ -424,8 +443,10 @@ function JobsPageContent() {
           phone: homeowner?.phone ?? '-',
           email: homeowner?.email ?? '-',
           address: homeowner?.address ?? '-',
-          stageName: getStageName(job.pipeline_stages),
+          stageId: stage?.id ?? null,
+          stageName: stage?.name ?? 'No Stage',
           repNames: getRepNames(job.job_reps),
+          repIds: getRepIds(job.job_reps),
           insuranceCarrier: job.insurance_carrier ?? '-',
           claimNumber: job.claim_number ?? '-',
           installDate: job.install_date,
@@ -437,18 +458,45 @@ function JobsPageContent() {
     [filteredJobs]
   )
 
+  useEffect(() => {
+    if (viewMode === 'kanban') return
+
+    const maxPage = Math.max(
+      1,
+      Math.ceil(normalizedJobs.length / PAGE_SIZE_BY_VIEW[viewMode])
+    )
+
+    const timer = setTimeout(() => {
+      setCurrentPage((current) => Math.min(current, maxPage))
+    }, 0)
+
+    return () => clearTimeout(timer)
+  }, [normalizedJobs.length, viewMode])
+
+  const pageSize = PAGE_SIZE_BY_VIEW[viewMode]
+  const totalPages =
+    viewMode === 'kanban'
+      ? 1
+      : Math.max(1, Math.ceil(normalizedJobs.length / pageSize))
+  const paginatedJobs =
+    viewMode === 'kanban'
+      ? normalizedJobs
+      : normalizedJobs.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
   const totalContractAmount = useMemo(
     () => filteredJobs.reduce((sum, job) => sum + Number(job.contract_amount ?? 0), 0),
     [filteredJobs]
   )
 
   const totalDepositCollected = useMemo(
-    () => filteredJobs.reduce((sum, job) => sum + Number(job.deposit_collected ?? 0), 0),
+    () =>
+      filteredJobs.reduce((sum, job) => sum + Number(job.deposit_collected ?? 0), 0),
     [filteredJobs]
   )
 
   const totalRemainingBalance = useMemo(
-    () => filteredJobs.reduce((sum, job) => sum + Number(job.remaining_balance ?? 0), 0),
+    () =>
+      filteredJobs.reduce((sum, job) => sum + Number(job.remaining_balance ?? 0), 0),
     [filteredJobs]
   )
 
@@ -466,12 +514,17 @@ function JobsPageContent() {
     const counts = new Map<string, number>()
 
     filteredJobs.forEach((job) => {
-      const stage = getStageName(job.pipeline_stages)
-      counts.set(stage, (counts.get(stage) ?? 0) + 1)
+      const stageName = getStageName(job.pipeline_stages)
+      counts.set(stageName, (counts.get(stageName) ?? 0) + 1)
     })
 
     return Array.from(counts.entries()).map(([name, count]) => ({ name, count }))
   }, [filteredJobs])
+
+  async function handleQuickEditSaved() {
+    await loadPageData()
+    setPageMessage('Job updated.')
+  }
 
   return (
     <main>
@@ -491,8 +544,7 @@ function JobsPageContent() {
               </h1>
 
               <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
-                Search, filter, sort, export, and move through claims, contracts,
-                installs, and assigned reps from one control surface.
+                Faster list management, cleaner filters, quick edits, and shorter pages so the pipeline stays usable when volume climbs.
               </p>
             </div>
 
@@ -515,47 +567,24 @@ function JobsPageContent() {
         </section>
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/38">
-              Visible Jobs
-            </div>
-            <div className="mt-2 text-2xl font-bold tracking-tight text-white">
-              {filteredJobs.length}
-            </div>
-            <div className="mt-1 text-xs text-[#d6b37a]">
-              {archivedCount} archived after {ARCHIVE_INACTIVITY_DAYS} days
-            </div>
-          </div>
-
-          <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/38">
-              Contract Volume
-            </div>
-            <div className="mt-2 text-2xl font-bold tracking-tight text-white">
-              {formatCurrency(totalContractAmount)}
-            </div>
-          </div>
-
-          <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/38">
-              Deposits Collected
-            </div>
-            <div className="mt-2 text-2xl font-bold tracking-tight text-white">
-              {formatCurrency(totalDepositCollected)}
-            </div>
-          </div>
-
-          <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/38">
-              Remaining / Unassigned
-            </div>
-            <div className="mt-2 text-2xl font-bold tracking-tight text-white">
-              {formatCurrency(totalRemainingBalance)}
-            </div>
-            <div className="mt-1 text-xs text-[#d6b37a]">
-              {unassignedCount} unassigned job(s)
-            </div>
-          </div>
+          <MetricCard
+            label="Visible Jobs"
+            value={String(filteredJobs.length)}
+            sub={`${archivedCount} archived after ${ARCHIVE_INACTIVITY_DAYS} days`}
+          />
+          <MetricCard
+            label="Contract Volume"
+            value={formatCurrency(totalContractAmount)}
+          />
+          <MetricCard
+            label="Deposits Collected"
+            value={formatCurrency(totalDepositCollected)}
+          />
+          <MetricCard
+            label="Remaining / Unassigned"
+            value={formatCurrency(totalRemainingBalance)}
+            sub={`${unassignedCount} unassigned job(s)`}
+          />
         </section>
 
         <JobsStageRail
@@ -565,18 +594,18 @@ function JobsPageContent() {
         />
 
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr_1fr]">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <input
               className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#d6b37a]/35"
               placeholder="Search homeowner, address, carrier, claim, rep..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => setSearch(event.target.value)}
             />
 
             <select
               className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
               value={stageFilter}
-              onChange={(e) => setStageFilter(e.target.value)}
+              onChange={(event) => setStageFilter(event.target.value)}
             >
               <option value="">All Stages</option>
               {visibleStageOptions.map((stage) => (
@@ -590,7 +619,7 @@ function JobsPageContent() {
               <select
                 className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
                 value={managerFilter}
-                onChange={(e) => setManagerFilter(e.target.value)}
+                onChange={(event) => setManagerFilter(event.target.value)}
               >
                 <option value="">All Managers / Teams</option>
                 {managers.map((manager) => (
@@ -599,14 +628,12 @@ function JobsPageContent() {
                   </option>
                 ))}
               </select>
-            ) : (
-              <div />
-            )}
+            ) : null}
 
             <select
               className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
               value={repFilter}
-              onChange={(e) => setRepFilter(e.target.value)}
+              onChange={(event) => setRepFilter(event.target.value)}
             >
               <option value="">All Reps</option>
               {reps.map((rep) => (
@@ -627,6 +654,12 @@ function JobsPageContent() {
           </div>
         </section>
 
+        {pageMessage ? (
+          <section className="rounded-[1.6rem] border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100 shadow-[0_20px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+            {pageMessage}
+          </section>
+        ) : null}
+
         {loading ? (
           <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
             Loading jobs...
@@ -639,19 +672,65 @@ function JobsPageContent() {
           <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
             No jobs match the current filters.
           </div>
-        ) : viewMode === 'table' ? (
-          <JobsTable rows={normalizedJobs} />
-        ) : viewMode === 'kanban' ? (
-          <JobsKanban rows={normalizedJobs} />
         ) : (
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {normalizedJobs.map((job) => (
-              <JobCard key={job.id} job={job} />
-            ))}
-          </div>
+          <>
+            {viewMode === 'table' ? (
+              <JobsTable rows={paginatedJobs} onQuickEdit={setEditingJob} />
+            ) : viewMode === 'kanban' ? (
+              <JobsKanban rows={paginatedJobs} onQuickEdit={setEditingJob} />
+            ) : (
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {paginatedJobs.map((job) => (
+                  <JobCard key={job.id} job={job} onQuickEdit={setEditingJob} />
+                ))}
+              </div>
+            )}
+
+            {viewMode !== 'kanban' ? (
+              <JobsPagination
+                page={currentPage}
+                totalPages={totalPages}
+                totalItems={normalizedJobs.length}
+                pageSize={pageSize}
+                itemLabel="jobs"
+                onPageChange={setCurrentPage}
+              />
+            ) : null}
+          </>
         )}
       </div>
+
+      <JobsQuickEditDialog
+        open={Boolean(editingJob)}
+        job={editingJob}
+        stages={visibleStageOptions}
+        reps={reps}
+        onClose={() => setEditingJob(null)}
+        onSaved={handleQuickEditSaved}
+      />
     </main>
+  )
+}
+
+function MetricCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string
+  value: string
+  sub?: string
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/38">
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-bold tracking-tight text-white">
+        {value}
+      </div>
+      {sub ? <div className="mt-1 text-xs text-[#d6b37a]">{sub}</div> : null}
+    </div>
   )
 }
 

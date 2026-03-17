@@ -67,6 +67,8 @@ const PDF_WORKER_SRC = new URL(
 
 const PAGE_WIDTH = 880
 
+pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC
+
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
@@ -299,10 +301,6 @@ export default function ContractsEditorCore() {
   )
 
   const hasSource = Boolean(loadedPdfUrl)
-
-  useEffect(() => {
-    pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC
-  }, [])
 
   useEffect(() => {
     if (sourceUrl) {

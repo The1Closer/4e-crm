@@ -13,6 +13,8 @@ const PROTECTED_PATHS = [
   '/notifications',
   '/team',
   '/stats',
+  '/profile',
+  '/training',
 ]
 
 function isProtectedPath(pathname: string) {
@@ -58,5 +60,7 @@ export const config = {
     '/notifications/:path*',
     '/team/:path*',
     '/stats/:path*',
+    '/profile/:path*',
+    '/training/:path*',
   ],
 }
