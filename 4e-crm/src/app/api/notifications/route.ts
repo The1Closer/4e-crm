@@ -14,6 +14,27 @@ type NotificationBody = {
   skipActor?: boolean
 }
 
+type NotificationPatchBody = {
+  notificationId?: string
+  markAll?: boolean
+}
+
+const NOTIFICATION_SELECT = `
+  id,
+  user_id,
+  actor_user_id,
+  job_id,
+  note_id,
+  title,
+  message,
+  link,
+  type,
+  metadata,
+  is_read,
+  read_at,
+  created_at
+`
+
 const ALLOWED_NOTIFICATION_TYPES = new Set([
   'assignment',
   'stage_change',
@@ -21,6 +42,123 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   'chess_bot_invite',
   'note_mention',
 ])
+
+export async function GET(req: NextRequest) {
+  const authResult = await getRouteRequester(req)
+
+  if ('response' in authResult) {
+    return authResult.response
+  }
+
+  const view = req.nextUrl.searchParams.get('view')?.trim() ?? ''
+  const notificationId =
+    req.nextUrl.searchParams.get('notificationId')?.trim() ?? ''
+
+  if (view === 'unread-count') {
+    const { count, error } = await supabaseAdmin
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', authResult.requester.profile.id)
+      .eq('is_read', false)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    return NextResponse.json({ count: count ?? 0 })
+  }
+
+  if (notificationId) {
+    const { data, error } = await supabaseAdmin
+      .from('notifications')
+      .select(NOTIFICATION_SELECT)
+      .eq('user_id', authResult.requester.profile.id)
+      .eq('id', notificationId)
+      .maybeSingle()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    if (!data) {
+      return NextResponse.json({ error: 'Notification not found.' }, { status: 404 })
+    }
+
+    return NextResponse.json({ notification: data })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('notifications')
+    .select(NOTIFICATION_SELECT)
+    .eq('user_id', authResult.requester.profile.id)
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
+
+  return NextResponse.json({ notifications: data ?? [] })
+}
+
+export async function PATCH(req: NextRequest) {
+  const authResult = await getRouteRequester(req)
+
+  if ('response' in authResult) {
+    return authResult.response
+  }
+
+  const body = (await req.json().catch(() => ({}))) as NotificationPatchBody
+  const notificationId = (body.notificationId ?? '').trim()
+  const markAll = body.markAll === true
+  const readAt = new Date().toISOString()
+
+  if (!notificationId && !markAll) {
+    return NextResponse.json(
+      { error: 'Notification id or markAll is required.' },
+      { status: 400 }
+    )
+  }
+
+  if (markAll) {
+    const { data, error } = await supabaseAdmin
+      .from('notifications')
+      .update({
+        is_read: true,
+        read_at: readAt,
+      })
+      .eq('user_id', authResult.requester.profile.id)
+      .eq('is_read', false)
+      .select('id')
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    return NextResponse.json({ success: true, updated: data?.length ?? 0 })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('notifications')
+    .update({
+      is_read: true,
+      read_at: readAt,
+    })
+    .eq('user_id', authResult.requester.profile.id)
+    .eq('id', notificationId)
+    .select(NOTIFICATION_SELECT)
+    .maybeSingle()
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
+
+  if (!data) {
+    return NextResponse.json({ error: 'Notification not found.' }, { status: 404 })
+  }
+
+  return NextResponse.json({ success: true, notification: data })
+}
 
 export async function POST(req: NextRequest) {
   const authResult = await getRouteRequester(req)

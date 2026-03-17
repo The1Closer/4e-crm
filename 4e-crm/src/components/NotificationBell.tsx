@@ -2,8 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Bell } from 'lucide-react'
+import { Bell, BellRing } from 'lucide-react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import {
+  fetchUnreadNotificationCount,
+  NOTIFICATIONS_REFRESH_EVENT,
+} from '@/lib/notifications-client'
 import { supabase } from '@/lib/supabase'
 
 export default function NotificationBell() {
@@ -14,26 +18,17 @@ export default function NotificationBell() {
     let channel: RealtimeChannel | null = null
 
     async function loadUnreadCount() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
+      try {
+        const nextCount = await fetchUnreadNotificationCount()
 
-      if (!isActive) return
+        if (!isActive) return
 
-      if (!session?.user) {
+        setCount(nextCount)
+      } catch {
+        if (!isActive) return
+
         setCount(0)
-        return
       }
-
-      const { count } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', session.user.id)
-        .eq('is_read', false)
-
-      if (!isActive) return
-
-      setCount(count ?? 0)
     }
 
     async function subscribe() {
@@ -60,8 +55,24 @@ export default function NotificationBell() {
         .subscribe()
     }
 
+    function handleRefresh() {
+      void loadUnreadCount()
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        void loadUnreadCount()
+      }
+    }
+
     void loadUnreadCount()
     void subscribe()
+
+    const pollInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void loadUnreadCount()
+      }
+    }, 30000)
 
     const {
       data: { subscription },
@@ -69,27 +80,45 @@ export default function NotificationBell() {
       void loadUnreadCount()
     })
 
+    window.addEventListener(NOTIFICATIONS_REFRESH_EVENT, handleRefresh)
+    window.addEventListener('focus', handleRefresh)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     return () => {
       isActive = false
+      window.clearInterval(pollInterval)
       subscription.unsubscribe()
+      window.removeEventListener(NOTIFICATIONS_REFRESH_EVENT, handleRefresh)
+      window.removeEventListener('focus', handleRefresh)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (channel) {
         supabase.removeChannel(channel)
       }
     }
   }, [])
 
+  const hasUnread = count > 0
+  const BellIcon = hasUnread ? BellRing : Bell
+
   return (
     <Link
       href="/notifications"
-      className="relative inline-flex h-12 w-12 items-center justify-center rounded-[1.35rem] border border-white/10 bg-white/[0.04] text-white/82 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white"
+      className={`relative inline-flex h-12 w-12 items-center justify-center rounded-[1.35rem] border shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:text-white ${
+        hasUnread
+          ? 'border-[#d6b37a]/35 bg-[#d6b37a]/12 text-white hover:border-[#d6b37a]/55 hover:bg-[#d6b37a]/18'
+          : 'border-white/10 bg-white/[0.04] text-white/82 hover:border-white/15 hover:bg-white/[0.06]'
+      }`}
       aria-label={count > 0 ? `${count} unread notifications` : 'Notifications'}
       title="Notifications"
     >
-      <Bell className="h-4 w-4 text-[#d6b37a]" />
+      <BellIcon className={`h-4 w-4 ${hasUnread ? 'text-[#f0ce94]' : 'text-[#d6b37a]'}`} />
       {count > 0 ? (
         <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[22px] items-center justify-center rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-semibold text-white shadow-[0_10px_30px_rgba(239,68,68,0.38)]">
-          {count}
+          {count > 99 ? '99+' : count}
         </span>
+      ) : null}
+      {hasUnread ? (
+        <span className="absolute bottom-1.5 right-1.5 h-2.5 w-2.5 rounded-full bg-[#f0ce94] shadow-[0_0_16px_rgba(240,206,148,0.9)]" />
       ) : null}
     </Link>
   )

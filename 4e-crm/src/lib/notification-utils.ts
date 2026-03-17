@@ -1,10 +1,26 @@
 import { authorizedFetch } from '@/lib/api-client'
+import { dispatchNotificationsRefresh } from '@/lib/notifications-client'
 import { supabase } from './supabase'
-export {
-  buildMentionHandle,
-  extractMentionNames,
-  profileMatchesMention,
-} from './mention-utils'
+
+export function buildMentionHandle(fullName: string | null | undefined) {
+  return (fullName ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9.\s_-]+/g, '')
+    .replace(/\s+/g, '.')
+}
+
+export function extractMentionNames(text: string): string[] {
+  const matches = text.match(/@([a-zA-Z0-9._-]+)/g) || []
+  return [...new Set(matches.map((match) => match.slice(1).toLowerCase()))]
+}
+
+export function profileMatchesMention(fullName: string, mention: string) {
+  const lowered = fullName.toLowerCase().trim()
+  const parts = lowered.split(/\s+/)
+  const handle = buildMentionHandle(fullName)
+  return lowered === mention || handle === mention || parts.some((part) => part === mention)
+}
 
 export async function getActiveProfiles() {
   const { data, error } = await supabase
@@ -75,4 +91,6 @@ export async function createNotifications(params: {
 
     throw new Error(result?.error || 'Failed to create notifications.')
   }
+
+  dispatchNotificationsRefresh()
 }

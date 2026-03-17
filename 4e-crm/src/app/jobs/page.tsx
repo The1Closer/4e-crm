@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
@@ -23,7 +24,6 @@ import {
   type JobStageOption,
 } from '@/components/jobs/job-types'
 import { ARCHIVE_INACTIVITY_DAYS, isArchivedByInactivity } from '@/lib/job-lifecycle'
-import { isManagementLockedStage } from '@/lib/job-stage-access'
 
 type JobRep = {
   profile_id: string
@@ -146,6 +146,8 @@ function getRepIds(jobReps: JobRep[] | null): string[] {
 }
 
 function JobsPageContent() {
+  const searchParams = useSearchParams()
+  const requestedSearch = searchParams.get('search')?.trim() ?? ''
   const [jobs, setJobs] = useState<JobRow[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
@@ -155,7 +157,7 @@ function JobsPageContent() {
   const [stageOptions, setStageOptions] = useState<JobStageOption[]>([])
   const [profileOptions, setProfileOptions] = useState<ProfileOption[]>([])
 
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(requestedSearch)
   const [stageFilters, setStageFilters] = useState<string[]>([])
   const [managerFilter, setManagerFilter] = useState('')
   const [repFilter, setRepFilter] = useState('')
@@ -285,10 +287,7 @@ function JobsPageContent() {
       return
     }
 
-    const rows = ((data ?? []) as JobRow[]).filter(
-      (row) => !isManagementLockedStage(row.pipeline_stages, nextStages)
-    )
-    setJobs(rows)
+    setJobs((data ?? []) as JobRow[])
     setLoading(false)
   }, [])
 
@@ -307,6 +306,10 @@ function JobsPageContent() {
 
     return () => clearTimeout(timer)
   }, [search, stageFilters, managerFilter, repFilter, quickFilter, sortKey, viewMode])
+
+  useEffect(() => {
+    setSearch(requestedSearch)
+  }, [requestedSearch])
 
   const baseFilteredJobs = useMemo(() => {
     let next = jobs.filter((job) => !isArchivedByInactivity(job.updated_at))
@@ -432,13 +435,7 @@ function JobsPageContent() {
     [profileOptions]
   )
 
-  const visibleStageOptions = useMemo(
-    () =>
-      isManagerLike(role)
-        ? stageOptions
-        : stageOptions.filter((stage) => !isManagementLockedStage(stage, stageOptions)),
-    [role, stageOptions]
-  )
+  const visibleStageOptions = useMemo(() => stageOptions, [stageOptions])
 
   const normalizedJobs = useMemo<JobListRow[]>(
     () =>

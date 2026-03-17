@@ -6,7 +6,6 @@ import StageSelector from './StageSelector'
 import EditJobForm from './EditJobForm'
 import QuickUploadSection from './QuickUploadSection'
 import JobDetailTabs from './JobDetailTabs'
-import ManagementStageGate from './ManagementStageGate'
 import { authorizedFetch } from '@/lib/api-client'
 import { getStageColor } from '@/lib/job-stage-access'
 
@@ -345,9 +344,8 @@ export default function JobDetailPageClient({
   }
 
   return (
-    <ManagementStageGate currentStage={currentStage} stages={payload.stages}>
-      <main className="p-6 md:p-8">
-        <div className="mx-auto max-w-7xl space-y-6">
+    <main className="p-6 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
           <section className="relative overflow-hidden rounded-[2.25rem] border border-white/10 bg-[linear-gradient(145deg,#1a1a1a,#090909)] p-8 shadow-[0_24px_70px_rgba(0,0,0,0.32)]">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,179,122,0.22),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.06),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_40%)]" />
             <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(214,179,122,0.7),transparent)]" />
@@ -533,9 +531,8 @@ export default function JobDetailPageClient({
             </div>
           </section>
 
-          <JobDetailTabs jobId={payload.job.id} initialNotes={payload.initialNotes} />
-        </div>
-      </main>
-    </ManagementStageGate>
+        <JobDetailTabs jobId={payload.job.id} initialNotes={payload.initialNotes} />
+      </div>
+    </main>
   )
 }

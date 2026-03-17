@@ -269,13 +269,7 @@ function InstallCalendarContent() {
       }
 
       const nextJobs = (data ?? []) as JobRow[]
-      const visibleJobs = isManagerLike(currentProfile.role)
-        ? nextJobs
-        : nextJobs.filter(
-            (job) => !isManagementLockedStage(job.pipeline_stages, stageRows)
-          )
-
-      setJobs(visibleJobs)
+      setJobs(nextJobs)
       setLoading(false)
     }
 

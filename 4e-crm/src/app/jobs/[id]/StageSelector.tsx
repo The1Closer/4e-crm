@@ -46,9 +46,34 @@ export default function StageSelector({
   }, [])
 
   const visibleStages = useMemo(
-    () => getVisibleStagesForUser(stages, canManageLockedStages),
-    [canManageLockedStages, stages]
+    () => {
+      const unlockedStages = getVisibleStagesForUser(stages, canManageLockedStages)
+      const currentStage =
+        stages.find((stage) => String(stage.id) === String(currentStageId)) ?? null
+
+      if (
+        !currentStage ||
+        canManageLockedStages ||
+        unlockedStages.some((stage) => stage.id === currentStage.id)
+      ) {
+        return unlockedStages
+      }
+
+      return [currentStage, ...unlockedStages]
+    },
+    [canManageLockedStages, currentStageId, stages]
   )
+
+  const stageLockedForUser = useMemo(() => {
+    const currentStage =
+      stages.find((stage) => String(stage.id) === String(currentStageId)) ?? null
+
+    return (
+      Boolean(currentStage) &&
+      isManagementLockedStage(currentStage, stages) &&
+      !canManageLockedStages
+    )
+  }, [canManageLockedStages, currentStageId, stages])
 
   async function handleChange(nextValue: string) {
     const nextStage = stages.find((stage) => String(stage.id) === nextValue) ?? null
@@ -118,7 +143,7 @@ export default function StageSelector({
         <select
           value={value}
           onChange={(e) => handleChange(e.target.value)}
-          disabled={saving}
+          disabled={saving || stageLockedForUser}
           className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white shadow-sm outline-none transition focus:border-[#d6b37a]/40"
         >
           <option value="">No Stage</option>
@@ -135,6 +160,12 @@ export default function StageSelector({
 
         {saving ? <span className="text-xs text-white/45">Saving...</span> : null}
       </div>
+
+      {stageLockedForUser ? (
+        <div className="text-xs text-[#f8c38a]">
+          Only management can change the stage once a job reaches Contracted or later.
+        </div>
+      ) : null}
 
       {message ? <div className="text-xs text-[#f8c38a]">{message}</div> : null}
     </div>

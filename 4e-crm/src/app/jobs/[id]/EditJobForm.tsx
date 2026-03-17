@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Loader2, PencilLine, X } from 'lucide-react'
 import { authorizedFetch } from '@/lib/api-client'
 import { getCurrentUserProfile, getPermissions } from '@/lib/auth-helpers'
+import AddressAutocompleteInput from '@/components/forms/AddressAutocompleteInput'
 import {
   getVisibleStagesForUser,
   isManagementLockedStage,
@@ -144,15 +145,24 @@ export default function EditJobForm({
     return reps.filter((rep) => !selectedRepIds.includes(rep.id))
   }, [reps, selectedRepIds])
 
-  const visibleStages = useMemo(
-    () => getVisibleStagesForUser(stages, canManageLockedStages),
-    [canManageLockedStages, stages]
-  )
-
   const currentStage = useMemo(
     () => stages.find((stage) => String(stage.id) === initialData.stage_id) ?? null,
     [initialData.stage_id, stages]
   )
+
+  const visibleStages = useMemo(() => {
+    const unlockedStages = getVisibleStagesForUser(stages, canManageLockedStages)
+
+    if (
+      !currentStage ||
+      canManageLockedStages ||
+      unlockedStages.some((stage) => stage.id === currentStage.id)
+    ) {
+      return unlockedStages
+    }
+
+    return [currentStage, ...unlockedStages]
+  }, [canManageLockedStages, currentStage, stages])
 
   const stageLockedForUser = useMemo(
     () =>
@@ -247,12 +257,6 @@ export default function EditJobForm({
       <button
         type="button"
         onClick={handleOpenEdit}
-        disabled={stageLockedForUser}
-        title={
-          stageLockedForUser
-            ? 'Only management can edit jobs in this stage.'
-            : undefined
-        }
         className={
           buttonClassName ||
           'rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-45'
@@ -331,11 +335,11 @@ export default function EditJobForm({
                     </FormField>
 
                     <FormField label="Address">
-                      <input
+                      <AddressAutocompleteInput
+                        value={form.address}
                         className={INPUT_CLASS_NAME}
                         placeholder="Street address"
-                        value={form.address}
-                        onChange={(event) => updateField('address', event.target.value)}
+                        onChange={(value) => updateField('address', value)}
                       />
                     </FormField>
 
@@ -531,6 +535,7 @@ export default function EditJobForm({
                       <select
                         className={INPUT_CLASS_NAME}
                         value={form.stage_id}
+                        disabled={stageLockedForUser}
                         onChange={(event) => updateField('stage_id', event.target.value)}
                       >
                         <option value="">Select stage</option>
@@ -541,6 +546,13 @@ export default function EditJobForm({
                         ))}
                       </select>
                     </FormField>
+
+                    {stageLockedForUser ? (
+                      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
+                        This job is already in Contracted or a later stage. Management can
+                        change the stage, but you can still edit the rest of the file.
+                      </div>
+                    ) : null}
 
                     <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/38">

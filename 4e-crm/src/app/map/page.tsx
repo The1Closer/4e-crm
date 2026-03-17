@@ -8,11 +8,12 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
 import {
   getStageColor,
-  isManagementLockedStage,
   normalizeStageName,
 } from '@/lib/job-stage-access'
 import {
+  getGeocodeCache,
   loadGoogleMapsApi,
+  setGeocodeCache,
   type GoogleGeocoderInstance,
   type GoogleLatLngLiteral,
   type GoogleMapInstance,
@@ -62,12 +63,6 @@ type JobRow = {
       }[]
     | null
   job_reps: JobRep[] | null
-}
-
-type StageRow = {
-  id: number
-  name: string
-  sort_order: number | null
 }
 
 type AssignedJobRef = {
@@ -146,33 +141,6 @@ function buildMarkerIcon(mapsApi: GoogleMapsNamespace, color: string, selected: 
   }
 }
 
-function getGeocodeCache(address: string) {
-  const rawValue = localStorage.getItem(`4e-crm-geocode::${address}`)
-
-  if (!rawValue) return null
-
-  try {
-    const parsed = JSON.parse(rawValue) as GoogleLatLngLiteral
-
-    if (
-      typeof parsed.lat === 'number' &&
-      Number.isFinite(parsed.lat) &&
-      typeof parsed.lng === 'number' &&
-      Number.isFinite(parsed.lng)
-    ) {
-      return parsed
-    }
-  } catch (error) {
-    console.error('Failed to read cached geocode.', error)
-  }
-
-  return null
-}
-
-function setGeocodeCache(address: string, position: GoogleLatLngLiteral) {
-  localStorage.setItem(`4e-crm-geocode::${address}`, JSON.stringify(position))
-}
-
 function geocodeAddress(geocoder: GoogleGeocoderInstance, address: string) {
   return new Promise<GoogleLatLngLiteral>((resolve, reject) => {
     geocoder.geocode({ address }, (results, status) => {
@@ -224,22 +192,6 @@ function LeadMapPageContent() {
 
       if (!currentProfile) {
         setJobs([])
-        setLoading(false)
-        return
-      }
-
-      const { data: stageData, error: stageError } = await supabase
-        .from('pipeline_stages')
-        .select('id, name, sort_order')
-        .order('sort_order', { ascending: true })
-
-      if (!isActive) return
-
-      const stageRows = (stageData ?? []) as StageRow[]
-
-      if (stageError) {
-        setJobs([])
-        setMessage(stageError.message)
         setLoading(false)
         return
       }
@@ -313,13 +265,8 @@ function LeadMapPageContent() {
       }
 
       const nextJobs = (data ?? []) as JobRow[]
-      const visibleJobs = isManagerLike(currentProfile.role)
-        ? nextJobs
-        : nextJobs.filter(
-            (job) => !isManagementLockedStage(job.pipeline_stages, stageRows)
-          )
 
-      setJobs(visibleJobs.filter((job) => !isArchivedByInactivity(job.updated_at)))
+      setJobs(nextJobs.filter((job) => !isArchivedByInactivity(job.updated_at)))
       setLoading(false)
     }
 

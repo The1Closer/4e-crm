@@ -82,3 +82,45 @@ img {
   display: block;
   max-width: 100%;
 }
+
+.pac-container {
+  z-index: 2147483647 !important;
+  margin-top: 0.5rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  background: rgba(10, 10, 10, 0.96);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(18px);
+}
+
+.pac-item {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.85rem 1rem;
+  color: rgba(255, 255, 255, 0.82);
+  background: transparent;
+  cursor: pointer;
+}
+
+.pac-item:first-child {
+  border-top: 0;
+}
+
+.pac-item:hover,
+.pac-item-selected {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.pac-item-query {
+  color: #ffffff;
+  font-size: 0.95rem;
+}
+
+.pac-matched {
+  color: #d6b37a;
+  font-weight: 600;
+}
+
+.pac-icon {
+  filter: invert(1) opacity(0.45);
+}

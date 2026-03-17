@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { Search } from 'lucide-react'
 import ManagerOnlyRoute from '../../components/ManagerOnlyRoute'
 import {
   ARCHIVE_INACTIVITY_DAYS,
@@ -92,6 +93,43 @@ const COMMISSION_OPTIONS: { value: CommissionType; label: string }[] = [
   { value: 'senior', label: 'Senior' },
   { value: 'legend', label: 'Legend' },
 ]
+
+const SURFACE_CLASS =
+  'relative overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl before:pointer-events-none before:absolute before:inset-x-8 before:top-0 before:h-px before:bg-[linear-gradient(90deg,transparent,rgba(214,179,122,0.72),transparent)]'
+
+const SUB_SURFACE_CLASS =
+  'rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))]'
+
+const INPUT_CLASS =
+  'w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/24 focus:border-[#d6b37a]/35'
+
+const FIELD_LABEL_CLASS =
+  'mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-white/42'
+
+const SECONDARY_BUTTON_CLASS =
+  'rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-50'
+
+const PRIMARY_BUTTON_CLASS =
+  'rounded-2xl bg-[#d6b37a] px-4 py-2.5 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:cursor-not-allowed disabled:opacity-50'
+
+const MUTED_TEXT_CLASS = 'text-white/60'
+
+function QueueMetricCard({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}) {
+  return (
+    <div className={`${SURFACE_CLASS} p-4`}>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#d6b37a]/88">
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-bold tracking-tight text-white">{value}</div>
+    </div>
+  )
+}
 
 function getHomeowner(
   homeowner: JobRow['homeowners']
@@ -240,6 +278,25 @@ function buildDraft(job: JobRow, row?: CommissionRow): CommissionDraft {
   }
 }
 
+function matchesCommissionSearch(job: JobRow, search: string) {
+  const normalizedSearch = search.trim().toLowerCase()
+
+  if (!normalizedSearch) return true
+
+  const homeowner = getHomeowner(job.homeowners)
+  const stageName = getStageName(job.pipeline_stages).toLowerCase()
+  const repNames = getAssignedReps(job.job_reps)
+    .map((rep) => rep.full_name.toLowerCase())
+    .join(' ')
+
+  return (
+    homeowner?.name?.toLowerCase().includes(normalizedSearch) ||
+    homeowner?.address?.toLowerCase().includes(normalizedSearch) ||
+    stageName.includes(normalizedSearch) ||
+    repNames.includes(normalizedSearch)
+  )
+}
+
 export default function CommissionsPage() {
   return (
     <ManagerOnlyRoute>
@@ -257,10 +314,27 @@ function CommissionHistoryFact({
 }) {
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
         {label}
       </div>
-      <div className="mt-1 text-sm font-semibold text-gray-900">{value}</div>
+      <div className="mt-1 text-sm font-semibold text-white">{value}</div>
+    </div>
+  )
+}
+
+function ValueCard({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}) {
+  return (
+    <div className={`${SUB_SURFACE_CLASS} p-4`}>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/82">
+        {label}
+      </div>
+      <div className="mt-2 text-xl font-bold tracking-tight text-white">{value}</div>
     </div>
   )
 }
@@ -269,6 +343,7 @@ function CommissionsPageContent() {
   const [loading, setLoading] = useState(true)
   const [savingJobId, setSavingJobId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
+  const [search, setSearch] = useState('')
 
   const [jobs, setJobs] = useState<JobRow[]>([])
   const [commissionRows, setCommissionRows] = useState<Record<string, CommissionRow>>({})
@@ -440,77 +515,111 @@ function CommissionsPageContent() {
     })
   }, [jobs, commissionRows])
 
+  const filteredQueueJobs = useMemo(
+    () => queueJobs.filter((job) => matchesCommissionSearch(job, search)),
+    [queueJobs, search]
+  )
+
+  const filteredPaidOutJobs = useMemo(
+    () => paidOutJobs.filter((job) => matchesCommissionSearch(job, search)),
+    [paidOutJobs, search]
+  )
+
   return (
-    <main className="p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <main className="space-y-6">
+      <section className="relative overflow-hidden rounded-[2.25rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03))] p-8 shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,179,122,0.22),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_26%)]" />
+        <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(214,179,122,0.7),transparent)]" />
+
+        <div className="relative flex flex-wrap items-end justify-between gap-6">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Commissions Queue</h1>
-            <p className="mt-2 text-sm text-gray-600">
-              Review payout-ready jobs, enter costs, lock front-end payouts, calculate backend pay, and keep fully paid / fully paid-out jobs visible until they are cleared from the queue.
+            <div className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
+              Commissions
+            </div>
+
+            <h1 className="mt-4 text-4xl font-bold tracking-tight text-white md:text-5xl">
+              Payout Command Queue
+            </h1>
+
+            <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
+              Review payout-ready jobs, lock front-end payouts, calculate backend commissions, and keep fully paid files visible until the team closes them out.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="/archive"
-              className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-            >
+            <Link href="/archive" className={SECONDARY_BUTTON_CLASS}>
               Archive
             </Link>
-            <Link
-              href="/"
-              className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-            >
+            <Link href="/" className={PRIMARY_BUTTON_CLASS}>
               Home
             </Link>
           </div>
         </div>
+      </section>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Active Queue
-            </div>
-            <div className="mt-2 text-2xl font-bold text-gray-900">{queueJobs.length}</div>
-          </div>
+      <section className="grid gap-4 md:grid-cols-3">
+        <QueueMetricCard label="Active Queue" value={String(queueJobs.length)} />
+        <QueueMetricCard label="Paid Out / Closed" value={String(paidOutJobs.length)} />
+        <QueueMetricCard
+          label="Archive Threshold"
+          value={`${ARCHIVE_INACTIVITY_DAYS} days`}
+        />
+      </section>
 
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Paid Out / Closed
+      <section className={`${SURFACE_CLASS} p-5`}>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <label className="block">
+            <div className={FIELD_LABEL_CLASS}>Search Queue</div>
+            <div className="flex items-center gap-3 rounded-[1.35rem] border border-white/10 bg-black/20 px-4 py-3">
+              <Search className="h-4 w-4 text-[#d6b37a]" />
+              <input
+                className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
+                placeholder="Search homeowner, address, stage, or rep..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
             </div>
-            <div className="mt-2 text-2xl font-bold text-gray-900">{paidOutJobs.length}</div>
-          </div>
+          </label>
 
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Archive Threshold
+          <div className={`${SUB_SURFACE_CLASS} flex items-center justify-between gap-4 px-4 py-3`}>
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/82">
+                Visible Results
+              </div>
+              <div className="mt-2 text-2xl font-bold tracking-tight text-white">
+                {filteredQueueJobs.length + filteredPaidOutJobs.length}
+              </div>
             </div>
-            <div className="mt-2 text-2xl font-bold text-gray-900">
-              {ARCHIVE_INACTIVITY_DAYS} days
+
+            <div className="text-right text-sm text-white/55">
+              <div>{filteredQueueJobs.length} queue items</div>
+              <div className="mt-1">{filteredPaidOutJobs.length} paid-out items</div>
             </div>
           </div>
         </div>
+      </section>
 
-        {message ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700 shadow-sm">
-            {message}
-          </div>
-        ) : null}
+      {message ? (
+        <section className="rounded-[1.5rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100 shadow-[0_20px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+          {message}
+        </section>
+      ) : null}
 
-        {loading ? (
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
-            Loading commissions queue...
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {queueJobs.length === 0 ? (
-              <div className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
-                No jobs are currently in the active commissions queue.
-              </div>
-            ) : null}
+      {loading ? (
+        <section className={`${SURFACE_CLASS} p-6 text-sm ${MUTED_TEXT_CLASS}`}>
+          Loading commissions queue...
+        </section>
+      ) : (
+        <div className="space-y-6">
+          {filteredQueueJobs.length === 0 ? (
+            <section className={`${SURFACE_CLASS} p-6 text-sm ${MUTED_TEXT_CLASS}`}>
+              {search.trim()
+                ? 'No jobs in the active commissions queue match this search.'
+                : 'No jobs are currently in the active commissions queue.'}
+            </section>
+          ) : null}
 
-            {queueJobs.map((job) => {
+            {filteredQueueJobs.map((job) => {
               const assignedReps = getAssignedReps(job.job_reps)
               const row = commissionRows[job.id]
               const draft = drafts[job.id] ?? buildDraft(job, row)
@@ -573,68 +682,51 @@ function CommissionsPageContent() {
               return (
                 <section
                   key={job.id}
-                  className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm"
+                  className={`${SURFACE_CLASS} p-6`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                      <h2 className="text-xl font-semibold text-gray-900">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/82">
+                        Queue Item
+                      </div>
+                      <h2 className="mt-2 text-2xl font-semibold text-white">
                         {homeowner?.name ?? 'Unnamed Homeowner'}
                       </h2>
-                      <p className="mt-1 text-sm text-gray-600">
+                      <p className={`mt-1 text-sm ${MUTED_TEXT_CLASS}`}>
                         {homeowner?.address ?? '-'}
                       </p>
-                      <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/46">
                         Stage: {stageName}
                       </p>
                     </div>
 
-                    <Link
-                      href={`/jobs/${job.id}`}
-                      className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-                    >
+                    <Link href={`/jobs/${job.id}`} className={SECONDARY_BUTTON_CLASS}>
                       Open Job
                     </Link>
                   </div>
 
                   <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                      <div className="text-sm font-semibold text-gray-900">Original Contract</div>
-                      <div className="mt-2 text-xl font-bold text-gray-900">
-                        {toMoney(contractAmount)}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                      <div className="text-sm font-semibold text-gray-900">Supplemented Amount</div>
-                      <div className="mt-2 text-xl font-bold text-gray-900">
-                        {toMoney(supplementedAmount)}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                      <div className="text-sm font-semibold text-gray-900">Effective Contract Total</div>
-                      <div className="mt-2 text-xl font-bold text-gray-900">
-                        {toMoney(effectiveContractTotal)}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                      <div className="text-sm font-semibold text-gray-900">Gross Profit Margin</div>
-                      <div className="mt-2 text-xl font-bold text-gray-900">
-                        {grossProfitMargin.toFixed(2)}%
-                      </div>
-                    </div>
+                    <ValueCard label="Original Contract" value={toMoney(contractAmount)} />
+                    <ValueCard label="Supplemented Amount" value={toMoney(supplementedAmount)} />
+                    <ValueCard
+                      label="Effective Contract Total"
+                      value={toMoney(effectiveContractTotal)}
+                    />
+                    <ValueCard
+                      label="Gross Profit Margin"
+                      value={`${grossProfitMargin.toFixed(2)}%`}
+                    />
                   </div>
 
                   <div className="mt-6">
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                      <h3 className="text-lg font-semibold text-gray-900">Job Costs & Rep Setup</h3>
+                      <h3 className="text-lg font-semibold text-white">Job Costs & Rep Setup</h3>
 
                       <button
                         type="button"
                         disabled={isSaving}
                         onClick={() => saveCommissionRow(job.id)}
-                        className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
+                        className={PRIMARY_BUTTON_CLASS}
                       >
                         Save Job Setup
                       </button>
@@ -642,22 +734,22 @@ function CommissionsPageContent() {
 
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                       <div>
-                        <label className="mb-2 block text-sm font-medium text-gray-700">
+                        <label className={FIELD_LABEL_CLASS}>
                           Material Cost
                         </label>
                         <input
-                          className="w-full rounded-xl border px-4 py-3 text-sm"
+                          className={INPUT_CLASS}
                           value={draft.material_cost}
                           onChange={(e) => updateDraft(job.id, 'material_cost', e.target.value)}
                         />
                       </div>
 
                       <div>
-                        <label className="mb-2 block text-sm font-medium text-gray-700">
+                        <label className={FIELD_LABEL_CLASS}>
                           Additional Material Cost
                         </label>
                         <input
-                          className="w-full rounded-xl border px-4 py-3 text-sm"
+                          className={INPUT_CLASS}
                           value={draft.additional_material_cost}
                           onChange={(e) =>
                             updateDraft(job.id, 'additional_material_cost', e.target.value)
@@ -666,22 +758,22 @@ function CommissionsPageContent() {
                       </div>
 
                       <div>
-                        <label className="mb-2 block text-sm font-medium text-gray-700">
+                        <label className={FIELD_LABEL_CLASS}>
                           Material Refund
                         </label>
                         <input
-                          className="w-full rounded-xl border px-4 py-3 text-sm"
+                          className={INPUT_CLASS}
                           value={draft.material_refund}
                           onChange={(e) => updateDraft(job.id, 'material_refund', e.target.value)}
                         />
                       </div>
 
                       <div>
-                        <label className="mb-2 block text-sm font-medium text-gray-700">
+                        <label className={FIELD_LABEL_CLASS}>
                           Labor Cost
                         </label>
                         <input
-                          className="w-full rounded-xl border px-4 py-3 text-sm"
+                          className={INPUT_CLASS}
                           value={draft.labor_cost}
                           onChange={(e) => updateDraft(job.id, 'labor_cost', e.target.value)}
                         />
@@ -690,11 +782,11 @@ function CommissionsPageContent() {
 
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <div>
-                        <label className="mb-2 block text-sm font-medium text-gray-700">
+                        <label className={FIELD_LABEL_CLASS}>
                           Rep 1 Commission Type
                         </label>
                         <select
-                          className="w-full rounded-xl border px-4 py-3 text-sm"
+                          className={INPUT_CLASS}
                           value={draft.rep_1_commission_type}
                           onChange={(e) =>
                             updateDraft(job.id, 'rep_1_commission_type', e.target.value)
@@ -710,11 +802,11 @@ function CommissionsPageContent() {
                       </div>
 
                       <div>
-                        <label className="mb-2 block text-sm font-medium text-gray-700">
+                        <label className={FIELD_LABEL_CLASS}>
                           Rep 2 Commission Type
                         </label>
                         <select
-                          className="w-full rounded-xl border px-4 py-3 text-sm"
+                          className={INPUT_CLASS}
                           value={draft.rep_2_commission_type}
                           onChange={(e) =>
                             updateDraft(job.id, 'rep_2_commission_type', e.target.value)
@@ -732,80 +824,63 @@ function CommissionsPageContent() {
                     </div>
 
                     <div className="mt-4 grid gap-4 md:grid-cols-3">
-                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                        <div className="text-sm font-semibold text-gray-900">Net Material Cost</div>
-                        <div className="mt-2 text-lg font-bold text-gray-900">
-                          {toMoney(netMaterialCost)}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                        <div className="text-sm font-semibold text-gray-900">Total Cost</div>
-                        <div className="mt-2 text-lg font-bold text-gray-900">
-                          {toMoney(totalCost)}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                        <div className="text-sm font-semibold text-gray-900">Gross Profit</div>
-                        <div className="mt-2 text-lg font-bold text-gray-900">
-                          {toMoney(grossProfit)}
-                        </div>
-                      </div>
+                      <ValueCard label="Net Material Cost" value={toMoney(netMaterialCost)} />
+                      <ValueCard label="Total Cost" value={toMoney(totalCost)} />
+                      <ValueCard label="Gross Profit" value={toMoney(grossProfit)} />
                     </div>
                   </div>
 
                   <div className="mt-6 grid gap-6 xl:grid-cols-2">
-                    <div className="rounded-xl border border-gray-200 p-4">
+                    <div className={`${SUB_SURFACE_CLASS} p-4`}>
                       <div className="flex items-center justify-between gap-4">
-                        <h3 className="text-lg font-semibold text-gray-900">{rep1Name}</h3>
-                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <h3 className="text-lg font-semibold text-white">{rep1Name}</h3>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/82">
                           Rep 1
                         </div>
                       </div>
 
                       <div className="mt-4 grid gap-3 md:grid-cols-2">
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                             Type
                           </div>
-                          <div className="mt-2 text-sm font-semibold text-gray-900">
+                          <div className="mt-2 text-sm font-semibold text-white">
                             {commissionLabel(rep1Type)}
                           </div>
                         </div>
 
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                             Front End Status
                           </div>
-                          <div className="mt-2 text-sm font-semibold text-gray-900">
+                          <div className="mt-2 text-sm font-semibold text-white">
                             {row?.rep_1_front_end_paid ? 'Locked / Paid' : 'Not Paid'}
                           </div>
                         </div>
 
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                             Front End
                           </div>
-                          <div className="mt-2 text-lg font-bold text-gray-900">
+                          <div className="mt-2 text-lg font-bold text-white">
                             {toMoney(rep1Calc.frontEndDisplay)}
                           </div>
                         </div>
 
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                             Back End
                           </div>
-                          <div className="mt-2 text-lg font-bold text-gray-900">
+                          <div className="mt-2 text-lg font-bold text-white">
                             {toMoney(rep1Calc.backEndCommission)}
                           </div>
                         </div>
 
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:col-span-2">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <div className={`${SUB_SURFACE_CLASS} p-3 md:col-span-2`}>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                             Total Commission
                           </div>
-                          <div className="mt-2 text-lg font-bold text-gray-900">
+                          <div className="mt-2 text-lg font-bold text-white">
                             {toMoney(rep1Calc.totalCommission)}
                           </div>
                         </div>
@@ -821,7 +896,7 @@ function CommissionsPageContent() {
                               rep_1_front_end_locked_amount: rep1Calc.frontEndCurrent,
                             })
                           }
-                          className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100 disabled:opacity-50"
+                          className={SECONDARY_BUTTON_CLASS}
                         >
                           Lock Front End
                         </button>
@@ -836,7 +911,7 @@ function CommissionsPageContent() {
                                 rep_1_front_end_locked_amount: 0,
                               })
                             }
-                            className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100 disabled:opacity-50"
+                            className={SECONDARY_BUTTON_CLASS}
                           >
                             Unlock Front End
                           </button>
@@ -844,12 +919,12 @@ function CommissionsPageContent() {
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-gray-200 p-4">
+                    <div className={`${SUB_SURFACE_CLASS} p-4`}>
                       <div className="flex items-center justify-between gap-4">
-                        <h3 className="text-lg font-semibold text-gray-900">
+                        <h3 className="text-lg font-semibold text-white">
                           {rep2Id ? rep2Name : 'No Split Rep'}
                         </h3>
-                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/82">
                           Rep 2
                         </div>
                       </div>
@@ -857,47 +932,47 @@ function CommissionsPageContent() {
                       {rep2Id ? (
                         <>
                           <div className="mt-4 grid gap-3 md:grid-cols-2">
-                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                                 Type
                               </div>
-                              <div className="mt-2 text-sm font-semibold text-gray-900">
+                              <div className="mt-2 text-sm font-semibold text-white">
                                 {commissionLabel(rep2Type)}
                               </div>
                             </div>
 
-                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                                 Front End Status
                               </div>
-                              <div className="mt-2 text-sm font-semibold text-gray-900">
+                              <div className="mt-2 text-sm font-semibold text-white">
                                 {row?.rep_2_front_end_paid ? 'Locked / Paid' : 'Not Paid'}
                               </div>
                             </div>
 
-                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                                 Front End
                               </div>
-                              <div className="mt-2 text-lg font-bold text-gray-900">
+                              <div className="mt-2 text-lg font-bold text-white">
                                 {toMoney(rep2Calc.frontEndDisplay)}
                               </div>
                             </div>
 
-                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                                 Back End
                               </div>
-                              <div className="mt-2 text-lg font-bold text-gray-900">
+                              <div className="mt-2 text-lg font-bold text-white">
                                 {toMoney(rep2Calc.backEndCommission)}
                               </div>
                             </div>
 
-                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:col-span-2">
-                              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            <div className={`${SUB_SURFACE_CLASS} p-3 md:col-span-2`}>
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                                 Total Commission
                               </div>
-                              <div className="mt-2 text-lg font-bold text-gray-900">
+                              <div className="mt-2 text-lg font-bold text-white">
                                 {toMoney(rep2Calc.totalCommission)}
                               </div>
                             </div>
@@ -913,7 +988,7 @@ function CommissionsPageContent() {
                                   rep_2_front_end_locked_amount: rep2Calc.frontEndCurrent,
                                 })
                               }
-                              className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100 disabled:opacity-50"
+                              className={SECONDARY_BUTTON_CLASS}
                             >
                               Lock Front End
                             </button>
@@ -928,7 +1003,7 @@ function CommissionsPageContent() {
                                     rep_2_front_end_locked_amount: 0,
                                   })
                                 }
-                                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100 disabled:opacity-50"
+                                className={SECONDARY_BUTTON_CLASS}
                               >
                                 Unlock Front End
                               </button>
@@ -936,38 +1011,38 @@ function CommissionsPageContent() {
                           </div>
                         </>
                       ) : (
-                        <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600">
+                        <div className="mt-4 rounded-[1.35rem] border border-dashed border-white/14 p-4 text-sm text-white/55">
                           This job does not currently have a second assigned rep.
                         </div>
                       )}
                     </div>
                   </div>
 
-                  <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-[linear-gradient(135deg,rgba(214,179,122,0.14),rgba(255,255,255,0.04))] p-4">
                     <div className="grid gap-4 md:grid-cols-3">
                       <div>
-                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                           Rep 1 Type
                         </div>
-                        <div className="mt-2 text-sm font-semibold text-gray-900">
+                        <div className="mt-2 text-sm font-semibold text-white">
                           {commissionLabel(rep1Type)}
                         </div>
                       </div>
 
                       <div>
-                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                           Rep 2 Type
                         </div>
-                        <div className="mt-2 text-sm font-semibold text-gray-900">
+                        <div className="mt-2 text-sm font-semibold text-white">
                           {rep2Id ? commissionLabel(rep2Type) : 'No Split Rep'}
                         </div>
                       </div>
 
                       <div>
-                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                           Total Projected Payout
                         </div>
-                        <div className="mt-2 text-lg font-bold text-gray-900">
+                        <div className="mt-2 text-lg font-bold text-white">
                           {toMoney(rep1Calc.totalCommission + rep2Calc.totalCommission)}
                         </div>
                       </div>
@@ -984,7 +1059,7 @@ function CommissionsPageContent() {
                           all_commissions_paid_at: new Date().toISOString(),
                         })
                       }
-                      className="rounded-xl bg-gray-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
+                      className={PRIMARY_BUTTON_CLASS}
                     >
                       Mark All Commissions Paid
                     </button>
@@ -999,14 +1074,14 @@ function CommissionsPageContent() {
                             all_commissions_paid_at: null,
                           })
                         }
-                        className="rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-900 transition hover:bg-gray-100 disabled:opacity-50"
+                        className={SECONDARY_BUTTON_CLASS}
                       >
                         Reopen
                       </button>
                     ) : null}
 
                     {isSaving ? (
-                      <div className="flex items-center text-sm text-gray-500">
+                      <div className="flex items-center text-sm text-white/55">
                         Saving...
                       </div>
                     ) : null}
@@ -1015,23 +1090,28 @@ function CommissionsPageContent() {
               )
             })}
 
-            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <section className={`${SURFACE_CLASS} p-6`}>
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
-                  <h2 className="text-2xl font-semibold text-gray-900">Paid Out / Closed</h2>
-                  <p className="mt-2 text-sm text-gray-600">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/82">
+                    Closed Queue
+                  </div>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">Paid Out / Closed</h2>
+                  <p className={`mt-2 text-sm ${MUTED_TEXT_CLASS}`}>
                     Jobs stay here once the homeowner balance is paid in full and all commissions have been marked paid.
                   </p>
                 </div>
               </div>
 
-              {paidOutJobs.length === 0 ? (
-                <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600">
-                  No paid-out jobs are currently being tracked here.
+              {filteredPaidOutJobs.length === 0 ? (
+                <div className="mt-4 rounded-[1.35rem] border border-dashed border-white/14 p-4 text-sm text-white/55">
+                  {search.trim()
+                    ? 'No paid-out jobs match this search.'
+                    : 'No paid-out jobs are currently being tracked here.'}
                 </div>
               ) : (
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  {paidOutJobs.map((job) => {
+                  {filteredPaidOutJobs.map((job) => {
                     const homeowner = getHomeowner(job.homeowners)
                     const stageName = getStageName(job.pipeline_stages)
                     const row = commissionRows[job.id]
@@ -1040,19 +1120,19 @@ function CommissionsPageContent() {
                       <Link
                         key={job.id}
                         href={`/jobs/${job.id}`}
-                        className="block rounded-2xl border border-gray-200 bg-gray-50 p-5 transition hover:border-gray-300 hover:bg-white"
+                        className="block rounded-[1.6rem] border border-white/10 bg-black/20 p-5 transition hover:-translate-y-0.5 hover:border-white/18 hover:bg-white/[0.06]"
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div>
-                            <div className="text-lg font-semibold text-gray-900">
+                            <div className="text-lg font-semibold text-white">
                               {homeowner?.name ?? 'Unnamed Homeowner'}
                             </div>
-                            <div className="mt-1 text-sm text-gray-600">
+                            <div className={`mt-1 text-sm ${MUTED_TEXT_CLASS}`}>
                               {homeowner?.address ?? '-'}
                             </div>
                           </div>
 
-                          <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                          <div className="rounded-full border border-emerald-400/30 bg-emerald-500/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
                             Paid Out
                           </div>
                         </div>
@@ -1084,7 +1164,6 @@ function CommissionsPageContent() {
             </section>
           </div>
         )}
-      </div>
     </main>
   )
 }

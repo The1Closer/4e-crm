@@ -9,7 +9,6 @@ import {
   getArchiveCutoffDate,
   isArchivedByInactivity,
 } from '@/lib/job-lifecycle'
-import { isManagementLockedStage } from '@/lib/job-stage-access'
 import { supabase } from '@/lib/supabase'
 
 type JobRep = {
@@ -55,12 +54,6 @@ type JobRow = {
       }[]
     | null
   job_reps: JobRep[] | null
-}
-
-type StageOption = {
-  id: number
-  name: string
-  sort_order?: number | null
 }
 
 type AssignedJobRef = {
@@ -143,20 +136,6 @@ function ArchivePageContent() {
         return
       }
 
-      const { data: stageData, error: stageError } = await supabase
-        .from('pipeline_stages')
-        .select('id, name, sort_order')
-        .order('sort_order', { ascending: true })
-
-      if (!isActive) return
-
-      if (stageError) {
-        setJobs([])
-        setMessage(stageError.message)
-        setLoading(false)
-        return
-      }
-
       let visibleJobIds: string[] | null = null
 
       if (!isManagerLike(currentProfile.role)) {
@@ -230,15 +209,8 @@ function ArchivePageContent() {
         return
       }
 
-      const stageRows = (stageData ?? []) as StageOption[]
       const nextJobs = (data ?? []) as JobRow[]
-      const visibleJobs = isManagerLike(currentProfile.role)
-        ? nextJobs
-        : nextJobs.filter(
-            (job) => !isManagementLockedStage(job.pipeline_stages, stageRows)
-          )
-
-      setJobs(visibleJobs.filter((job) => isArchivedByInactivity(job.updated_at)))
+      setJobs(nextJobs.filter((job) => isArchivedByInactivity(job.updated_at)))
       setLoading(false)
     }
 

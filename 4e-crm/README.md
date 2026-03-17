@@ -43,7 +43,7 @@ The deployed app expects a Supabase project with:
 - Storage buckets:
   `documents`, `job-files`, `avatars`
 
-The lead map also requires a Google Maps browser key with the Maps JavaScript API enabled.
+The lead map and job address autocomplete require a Google Maps browser key with the Maps JavaScript API and Places API enabled.
 
 ## Deployment Notes
 
