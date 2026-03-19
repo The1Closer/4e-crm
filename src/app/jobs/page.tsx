@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { authorizedFetch } from '@/lib/api-client'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
 import JobCard from '@/components/jobs/JobCard'
@@ -152,8 +153,12 @@ function JobsPageContent() {
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
   const [pageMessage, setPageMessage] = useState('')
+  const [pageMessageTone, setPageMessageTone] = useState<'success' | 'error'>(
+    'success'
+  )
   const [role, setRole] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState('')
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null)
 
   const [stageOptions, setStageOptions] = useState<JobStageOption[]>([])
   const [profileOptions, setProfileOptions] = useState<ProfileOption[]>([])
@@ -575,8 +580,55 @@ function JobsPageContent() {
 
   async function handleQuickEditSaved() {
     await loadPageData()
+    setPageMessageTone('success')
     setPageMessage('Job updated.')
   }
+
+  async function handleDeleteJob(job: JobListRow) {
+    if (deletingJobId) return
+
+    const confirmed = window.confirm(
+      `Delete ${job.homeownerName}? This will remove the job, notes, uploads, and related records.`
+    )
+
+    if (!confirmed) return
+
+    setDeletingJobId(job.id)
+    setPageMessage('')
+
+    try {
+      const response = await authorizedFetch(`/api/jobs/${job.id}`, {
+        method: 'DELETE',
+      })
+
+      const result = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null
+
+      if (!response.ok) {
+        setPageMessageTone('error')
+        setPageMessage(result?.error || 'Could not delete the job.')
+        return
+      }
+
+      if (editingJob?.id === job.id) {
+        setEditingJob(null)
+      }
+
+      await loadPageData()
+      setPageMessageTone('success')
+      setPageMessage('Job deleted.')
+    } catch (error) {
+      setPageMessageTone('error')
+      setPageMessage(
+        error instanceof Error ? error.message : 'Could not delete the job.'
+      )
+    } finally {
+      setDeletingJobId(null)
+    }
+  }
+
+  const canDeleteJobs = isManagerLike(role)
 
   return (
     <main>
@@ -719,7 +771,13 @@ function JobsPageContent() {
         </section>
 
         {pageMessage ? (
-          <section className="rounded-[1.6rem] border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100 shadow-[0_20px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+          <section
+            className={
+              pageMessageTone === 'error'
+                ? 'rounded-[1.6rem] border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-100 shadow-[0_20px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl'
+                : 'rounded-[1.6rem] border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100 shadow-[0_20px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl'
+            }
+          >
             {pageMessage}
           </section>
         ) : null}
@@ -739,13 +797,32 @@ function JobsPageContent() {
         ) : (
           <>
             {viewMode === 'table' ? (
-              <JobsTable rows={paginatedJobs} onQuickEdit={setEditingJob} />
+              <JobsTable
+                rows={paginatedJobs}
+                onQuickEdit={setEditingJob}
+                canDelete={canDeleteJobs}
+                deletingJobId={deletingJobId}
+                onDelete={handleDeleteJob}
+              />
             ) : viewMode === 'kanban' ? (
-              <JobsKanban rows={paginatedJobs} onQuickEdit={setEditingJob} />
+              <JobsKanban
+                rows={paginatedJobs}
+                onQuickEdit={setEditingJob}
+                canDelete={canDeleteJobs}
+                deletingJobId={deletingJobId}
+                onDelete={handleDeleteJob}
+              />
             ) : (
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                 {paginatedJobs.map((job) => (
-                  <JobCard key={job.id} job={job} onQuickEdit={setEditingJob} />
+                  <JobCard
+                    key={job.id}
+                    job={job}
+                    onQuickEdit={setEditingJob}
+                    canDelete={canDeleteJobs}
+                    deletingJobId={deletingJobId}
+                    onDelete={handleDeleteJob}
+                  />
                 ))}
               </div>
             )}

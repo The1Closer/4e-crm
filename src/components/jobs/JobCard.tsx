@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { FilePenLine } from 'lucide-react'
+import { FilePenLine, Trash2 } from 'lucide-react'
 import { type JobListRow } from '@/components/jobs/job-types'
 
 export type JobCardRow = JobListRow
@@ -32,11 +32,19 @@ function StagePill({ stageName }: { stageName: string }) {
 export default function JobCard({
   job,
   onQuickEdit,
+  canDelete,
+  deletingJobId,
+  onDelete,
 }: {
   job: JobCardRow
   onQuickEdit?: (job: JobCardRow) => void
+  canDelete?: boolean
+  deletingJobId?: string | null
+  onDelete?: (job: JobCardRow) => void | Promise<void>
 }) {
   const noRepAssigned = job.repNames.length === 0
+  const deleting = deletingJobId === job.id
+  const deleteDisabled = Boolean(deletingJobId)
 
   return (
     <section className="group rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.25)] backdrop-blur-2xl transition duration-200 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.06]">
@@ -116,6 +124,20 @@ export default function JobCard({
           <FilePenLine className="h-4 w-4 text-[#d6b37a]" />
           Quick Edit
         </button>
+
+        {canDelete ? (
+          <button
+            type="button"
+            onClick={() => {
+              void onDelete?.(job)
+            }}
+            disabled={deleteDisabled}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Trash2 className="h-4 w-4" />
+            {deleting ? 'Deleting...' : 'Delete'}
+          </button>
+        ) : null}
       </div>
     </section>
   )

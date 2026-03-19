@@ -9,6 +9,7 @@ import {
   isManagerRole,
   requireExistingJob,
   requireJobAccess,
+  requireManager,
 } from '@/lib/server-auth'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 
@@ -46,6 +47,10 @@ type StageRow = {
   id: number
   name: string
   sort_order: number | null
+}
+
+type JobFileRow = {
+  file_path: string | null
 }
 
 function normalizeText(value: unknown) {
@@ -135,6 +140,29 @@ async function notifyAssignedReps(params: {
   if (rows.length === 0) return
 
   await supabaseAdmin.from('notifications').insert(rows)
+}
+
+async function removeStoragePaths(
+  bucketName: 'documents' | 'job-files',
+  filePaths: (string | null | undefined)[]
+) {
+  const uniquePaths = [
+    ...new Set(
+      filePaths.filter(
+        (path): path is string => typeof path === 'string' && path.trim().length > 0
+      )
+    ),
+  ]
+
+  if (uniquePaths.length === 0) {
+    return
+  }
+
+  const { error } = await supabaseAdmin.storage.from(bucketName).remove(uniquePaths)
+
+  if (error) {
+    console.error(`Could not remove ${bucketName} files for deleted job.`, error)
+  }
 }
 
 export async function GET(req: NextRequest, context: RouteContext) {
@@ -388,6 +416,167 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : 'Could not update the job.',
+      },
+      { status: 400 }
+    )
+  }
+}
+
+export async function DELETE(req: NextRequest, context: RouteContext) {
+  const authResult = await getRouteRequester(req)
+
+  if ('response' in authResult) {
+    return authResult.response
+  }
+
+  const managerError = requireManager(authResult.requester)
+
+  if (managerError) {
+    return managerError
+  }
+
+  const { jobId } = await context.params
+  const existingJobResult = await requireExistingJob(jobId)
+
+  if ('response' in existingJobResult) {
+    return existingJobResult.response
+  }
+
+  try {
+    const [jobRes, signedDocsRes, uploadedDocsRes] = await Promise.all([
+      supabaseAdmin
+        .from('jobs')
+        .select('id, homeowner_id')
+        .eq('id', jobId)
+        .single(),
+      supabaseAdmin
+        .from('job_documents')
+        .select('file_path')
+        .eq('job_id', jobId),
+      supabaseAdmin
+        .from('documents')
+        .select('file_path')
+        .eq('job_id', jobId),
+    ])
+
+    if (jobRes.error || !jobRes.data) {
+      return NextResponse.json({ error: 'Job not found.' }, { status: 404 })
+    }
+
+    if (signedDocsRes.error) {
+      throw new Error(signedDocsRes.error.message)
+    }
+
+    if (uploadedDocsRes.error) {
+      throw new Error(uploadedDocsRes.error.message)
+    }
+
+    const signedFilePaths = (signedDocsRes.data ?? []) as JobFileRow[]
+    const uploadedFilePaths = (uploadedDocsRes.data ?? []) as JobFileRow[]
+
+    const { error: notificationsError } = await supabaseAdmin
+      .from('notifications')
+      .delete()
+      .eq('job_id', jobId)
+
+    if (notificationsError) {
+      throw new Error(notificationsError.message)
+    }
+
+    const { error: notesError } = await supabaseAdmin
+      .from('notes')
+      .delete()
+      .eq('job_id', jobId)
+
+    if (notesError) {
+      throw new Error(notesError.message)
+    }
+
+    const { error: repsError } = await supabaseAdmin
+      .from('job_reps')
+      .delete()
+      .eq('job_id', jobId)
+
+    if (repsError) {
+      throw new Error(repsError.message)
+    }
+
+    const { error: commissionsError } = await supabaseAdmin
+      .from('job_commissions')
+      .delete()
+      .eq('job_id', jobId)
+
+    if (
+      commissionsError &&
+      !/relation .* does not exist/i.test(commissionsError.message)
+    ) {
+      throw new Error(commissionsError.message)
+    }
+
+    const { error: signedDocsDeleteError } = await supabaseAdmin
+      .from('job_documents')
+      .delete()
+      .eq('job_id', jobId)
+
+    if (signedDocsDeleteError) {
+      throw new Error(signedDocsDeleteError.message)
+    }
+
+    const { error: uploadsDeleteError } = await supabaseAdmin
+      .from('documents')
+      .delete()
+      .eq('job_id', jobId)
+
+    if (uploadsDeleteError) {
+      throw new Error(uploadsDeleteError.message)
+    }
+
+    const { error: jobDeleteError } = await supabaseAdmin
+      .from('jobs')
+      .delete()
+      .eq('id', jobId)
+
+    if (jobDeleteError) {
+      throw new Error(jobDeleteError.message)
+    }
+
+    if (jobRes.data.homeowner_id) {
+      const { data: remainingJobs, error: remainingJobsError } = await supabaseAdmin
+        .from('jobs')
+        .select('id')
+        .eq('homeowner_id', jobRes.data.homeowner_id)
+        .limit(1)
+
+      if (remainingJobsError) {
+        console.error('Could not confirm remaining jobs for deleted homeowner.', remainingJobsError)
+      } else if ((remainingJobs ?? []).length === 0) {
+        const { error: homeownerDeleteError } = await supabaseAdmin
+          .from('homeowners')
+          .delete()
+          .eq('id', jobRes.data.homeowner_id)
+
+        if (homeownerDeleteError) {
+          console.error('Could not remove orphaned homeowner after job delete.', homeownerDeleteError)
+        }
+      }
+    }
+
+    await Promise.allSettled([
+      removeStoragePaths(
+        'documents',
+        signedFilePaths.map((file) => file.file_path)
+      ),
+      removeStoragePaths(
+        'job-files',
+        uploadedFilePaths.map((file) => file.file_path)
+      ),
+    ])
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'Could not delete the job.',
       },
       { status: 400 }
     )

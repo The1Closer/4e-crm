@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { FilePenLine } from 'lucide-react'
+import { FilePenLine, Trash2 } from 'lucide-react'
 import { type JobCardRow } from '@/components/jobs/JobCard'
 
 function formatCurrency(value: number | null) {
@@ -22,9 +22,15 @@ function formatDate(value: string | null) {
 export default function JobsTable({
   rows,
   onQuickEdit,
+  canDelete,
+  deletingJobId,
+  onDelete,
 }: {
   rows: JobCardRow[]
   onQuickEdit?: (job: JobCardRow) => void
+  canDelete?: boolean
+  deletingJobId?: string | null
+  onDelete?: (job: JobCardRow) => void | Promise<void>
 }) {
   return (
     <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
@@ -44,46 +50,64 @@ export default function JobsTable({
           </thead>
 
           <tbody>
-            {rows.map((job) => (
-              <tr
-                key={job.id}
-                className="border-b border-white/10 last:border-b-0"
-              >
-                <td className="px-4 py-4">
-                  <Link href={`/jobs/${job.id}`} className="block">
-                    <div className="font-semibold text-white">{job.homeownerName}</div>
-                    <div className="mt-1 text-xs text-white/45">{job.address}</div>
-                  </Link>
-                </td>
+            {rows.map((job) => {
+              const deleting = deletingJobId === job.id
+              const deleteDisabled = Boolean(deletingJobId)
 
-                <td className="px-4 py-4 text-white/75">{job.stageName}</td>
-                <td className="px-4 py-4 text-white/75">
-                  {job.repNames.length ? job.repNames.join(', ') : '—'}
-                </td>
-                <td className="px-4 py-4 text-white/75">{job.insuranceCarrier}</td>
-                <td className="px-4 py-4 text-white/75">{formatDate(job.installDate)}</td>
-                <td className="px-4 py-4 text-white">{formatCurrency(job.contractAmount)}</td>
-                <td className="px-4 py-4 text-white">{formatCurrency(job.remainingBalance)}</td>
-                <td className="px-4 py-4">
-                  <div className="flex flex-wrap gap-2">
-                    <Link
-                      href={`/jobs/${job.id}`}
-                      className="rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
-                    >
-                      Open
+              return (
+                <tr
+                  key={job.id}
+                  className="border-b border-white/10 last:border-b-0"
+                >
+                  <td className="px-4 py-4">
+                    <Link href={`/jobs/${job.id}`} className="block">
+                      <div className="font-semibold text-white">{job.homeownerName}</div>
+                      <div className="mt-1 text-xs text-white/45">{job.address}</div>
                     </Link>
-                    <button
-                      type="button"
-                      onClick={() => onQuickEdit?.(job)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
-                    >
-                      <FilePenLine className="h-3.5 w-3.5 text-[#d6b37a]" />
-                      Quick Edit
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+
+                  <td className="px-4 py-4 text-white/75">{job.stageName}</td>
+                  <td className="px-4 py-4 text-white/75">
+                    {job.repNames.length ? job.repNames.join(', ') : '—'}
+                  </td>
+                  <td className="px-4 py-4 text-white/75">{job.insuranceCarrier}</td>
+                  <td className="px-4 py-4 text-white/75">{formatDate(job.installDate)}</td>
+                  <td className="px-4 py-4 text-white">{formatCurrency(job.contractAmount)}</td>
+                  <td className="px-4 py-4 text-white">{formatCurrency(job.remainingBalance)}</td>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        href={`/jobs/${job.id}`}
+                        className="rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
+                      >
+                        Open
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => onQuickEdit?.(job)}
+                        className="inline-flex items-center gap-2 rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
+                      >
+                        <FilePenLine className="h-3.5 w-3.5 text-[#d6b37a]" />
+                        Quick Edit
+                      </button>
+                      {canDelete ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void onDelete?.(job)
+                          }}
+                          disabled={deleteDisabled}
+                          className="inline-flex items-center gap-2 rounded-xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {deleting ? 'Deleting...' : 'Delete'}
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
