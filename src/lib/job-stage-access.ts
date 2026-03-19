@@ -16,6 +16,16 @@ const CONTRACTED_LABELS = [
   'contract executed',
 ]
 
+const PRE_PRODUCTION_PREP_LABELS = new Set(
+  ['pre-production prep', 'pre production prep'].map((label) =>
+    normalizeStageName(label)
+  )
+)
+
+const INSTALL_SCHEDULED_LABELS = new Set(
+  ['install scheduled'].map((label) => normalizeStageName(label))
+)
+
 const KNOWN_POST_CONTRACTED_LABELS = new Set([
   'contracted',
   'pre-production prep',
@@ -46,6 +56,38 @@ function isContractedLabel(name: string | null | undefined) {
   return CONTRACTED_LABELS.some(
     (label) => normalized === label || normalized.includes(label)
   )
+}
+
+function hasExactStageLabel(
+  name: string | null | undefined,
+  labels: Set<string>
+) {
+  return labels.has(normalizeStageName(name))
+}
+
+function findStageByLabels(
+  stages: PipelineStageRecord[],
+  labels: Set<string>
+) {
+  return stages.find((stage) => hasExactStageLabel(stage.name, labels)) ?? null
+}
+
+export function isPreProductionPrepStage(stageInput: PipelineStageInput) {
+  const stage = normalizeStage(stageInput)
+  return hasExactStageLabel(stage?.name, PRE_PRODUCTION_PREP_LABELS)
+}
+
+export function isInstallScheduledStage(stageInput: PipelineStageInput) {
+  const stage = normalizeStage(stageInput)
+  return hasExactStageLabel(stage?.name, INSTALL_SCHEDULED_LABELS)
+}
+
+export function findPreProductionPrepStage(stages: PipelineStageRecord[]) {
+  return findStageByLabels(stages, PRE_PRODUCTION_PREP_LABELS)
+}
+
+export function findInstallScheduledStage(stages: PipelineStageRecord[]) {
+  return findStageByLabels(stages, INSTALL_SCHEDULED_LABELS)
 }
 
 export function getManagementStageThreshold(stages: PipelineStageRecord[]) {

@@ -6,8 +6,11 @@ import ProtectedRoute from '../../../components/ProtectedRoute'
 import { supabase } from '../../../lib/supabase'
 import { getCurrentUserProfile, isManagerLike } from '../../../lib/auth-helpers'
 import {
+  findInstallScheduledStage,
+  findPreProductionPrepStage,
   getStageColor,
-  isManagementLockedStage,
+  isInstallScheduledStage,
+  isPreProductionPrepStage,
   normalizeStage,
 } from '@/lib/job-stage-access'
 
@@ -158,6 +161,13 @@ function getStagePillStyle(stageName: string) {
   }
 }
 
+function compareJobsByHomeowner(left: JobRow, right: JobRow) {
+  const leftName = getHomeowner(left.homeowners)?.name ?? ''
+  const rightName = getHomeowner(right.homeowners)?.name ?? ''
+
+  return leftName.localeCompare(rightName)
+}
+
 function InstallCalendarContent() {
   const [jobs, setJobs] = useState<JobRow[]>([])
   const [stages, setStages] = useState<StageRow[]>([])
@@ -168,6 +178,8 @@ function InstallCalendarContent() {
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
   const [dragOverDateKey, setDragOverDateKey] = useState<string | null>(null)
   const [dragOverReadyQueue, setDragOverReadyQueue] = useState(false)
+  const installScheduledStage = useMemo(() => findInstallScheduledStage(stages), [stages])
+  const preProductionPrepStage = useMemo(() => findPreProductionPrepStage(stages), [stages])
 
   useEffect(() => {
     let isActive = true
@@ -269,13 +281,7 @@ function InstallCalendarContent() {
       }
 
       const nextJobs = (data ?? []) as JobRow[]
-      const visibleJobs = isManagerLike(currentProfile.role)
-        ? nextJobs
-        : nextJobs.filter(
-            (job) => !isManagementLockedStage(job.pipeline_stages, stageRows)
-          )
-
-      setJobs(visibleJobs)
+      setJobs(nextJobs)
       setLoading(false)
     }
 
@@ -286,15 +292,58 @@ function InstallCalendarContent() {
     }
   }, [])
 
-  async function updateInstallDate(jobId: string, nextDate: string | null) {
+  async function updateInstallDate(
+    jobId: string,
+    nextDate: string | null,
+    options?: {
+      returnToReadyQueue?: boolean
+    }
+  ) {
+    const targetJob = jobs.find((job) => job.id === jobId) ?? null
+
+    if (!targetJob) {
+      return
+    }
+
+    const currentStage = normalizeStage(targetJob.pipeline_stages)
+    let nextStage = currentStage
+
+    if (nextDate) {
+      if (installScheduledStage) {
+        nextStage = installScheduledStage
+      } else if (!currentStage || !isInstallScheduledStage(currentStage)) {
+        setMessage('Install Scheduled is missing from your pipeline stages.')
+        return
+      }
+    } else if (
+      options?.returnToReadyQueue ||
+      (currentStage && isInstallScheduledStage(currentStage))
+    ) {
+      if (preProductionPrepStage) {
+        nextStage = preProductionPrepStage
+      } else if (options?.returnToReadyQueue) {
+        setMessage('Pre-Production Prep is missing from your pipeline stages.')
+        return
+      }
+    }
+
     setSavingJobId(jobId)
     setMessage('')
 
+    const updates: {
+      install_date: string | null
+      stage_id?: number | null
+    } = {
+      install_date: nextDate,
+    }
+
+    if (nextStage?.id !== undefined) {
+      updates.stage_id = nextStage.id
+    }
+
     const { error } = await supabase
       .from('jobs')
-      .update({
-        install_date: nextDate,
-      })
+      .update(updates)
       .eq('id', jobId)
 
     if (error) {
@@ -309,6 +358,13 @@ function InstallCalendarContent() {
           ? {
               ...job,
               install_date: nextDate,
+              pipeline_stages: nextStage
+                ? {
+                    id: nextStage.id ?? null,
+                    name: nextStage.name ?? null,
+                    sort_order: nextStage.sort_order ?? null,
+                  }
+                : job.pipeline_stages,
             }
           : job
       )
@@ -337,7 +393,7 @@ function InstallCalendarContent() {
 
   async function handleDropOnReadyQueue() {
     if (!draggedJobId) return
-    await updateInstallDate(draggedJobId, null)
+    await updateInstallDate(draggedJobId, null, { returnToReadyQueue: true })
   }
 
   const calendarDays = useMemo(() => buildCalendarDays(viewDate), [viewDate])
@@ -346,29 +402,29 @@ function InstallCalendarContent() {
     const grouped: Record<string, JobRow[]> = {}
 
     jobs.forEach((job) => {
-      if (!job.install_date) return
+      if (!job.install_date || !isInstallScheduledStage(job.pipeline_stages)) return
       if (!grouped[job.install_date]) grouped[job.install_date] = []
       grouped[job.install_date].push(job)
+    })
+
+    Object.values(grouped).forEach((entries) => {
+      entries.sort(compareJobsByHomeowner)
     })
 
     return grouped
   }, [jobs])
 
   const readyToSchedule = useMemo(() => {
-    return jobs.filter((job) => {
-      const stage = normalizeStage(job.pipeline_stages)
-      const stageName = getStageName(job.pipeline_stages).toLowerCase().trim()
-      return (
-        !job.install_date &&
-        (stageName === 'pre-production prep' ||
-          stageName === 'pre production prep' ||
-          isManagementLockedStage(stage, stages))
-      )
-    })
-  }, [jobs, stages])
+    return [...jobs]
+      .filter((job) => !job.install_date && isPreProductionPrepStage(job.pipeline_stages))
+      .sort(compareJobsByHomeowner)
+  }, [jobs])
 
   const scheduledCount = useMemo(
-    () => jobs.filter((job) => Boolean(job.install_date)).length,
+    () =>
+      jobs.filter(
+        (job) => Boolean(job.install_date) && isInstallScheduledStage(job.pipeline_stages)
+      ).length,
     [jobs]
   )
 
@@ -391,7 +447,7 @@ function InstallCalendarContent() {
             </h1>
 
             <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
-              Drag jobs onto the calendar to schedule installs, reshuffle production dates quickly, and keep the ready queue visible in one place.
+              Drag pre-production jobs onto the calendar to schedule installs, move them into Install Scheduled automatically, and keep each day compact even when the board gets busy.
             </p>
           </div>
 
@@ -495,7 +551,7 @@ function InstallCalendarContent() {
                       event.preventDefault()
                       await handleDropOnDate(day.key)
                     }}
-                    className={`min-h-[210px] rounded-[1.5rem] border p-3 transition ${
+                    className={`flex h-[280px] flex-col rounded-[1.5rem] border p-3 transition ${
                       day.isCurrentMonth
                         ? 'border-white/10 bg-black/20'
                         : 'border-white/6 bg-white/[0.02]'
@@ -521,7 +577,7 @@ function InstallCalendarContent() {
                       ) : null}
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
                       {dayJobs.map((job) => {
                         const homeowner = getHomeowner(job.homeowners)
                         const repNames = getRepNames(job.job_reps)
@@ -535,7 +591,7 @@ function InstallCalendarContent() {
                             draggable
                             onDragStart={() => handleDragStart(job.id)}
                             onDragEnd={handleDragEnd}
-                            className={`cursor-grab rounded-[1.2rem] border border-white/10 bg-white/[0.05] p-3 shadow-[0_10px_30px_rgba(0,0,0,0.18)] transition active:cursor-grabbing ${
+                            className={`shrink-0 cursor-grab rounded-[1.2rem] border border-white/10 bg-white/[0.05] p-3 shadow-[0_10px_30px_rgba(0,0,0,0.18)] transition active:cursor-grabbing ${
                               isDragging ? 'opacity-40' : 'opacity-100'
                             }`}
                           >
@@ -619,10 +675,10 @@ function InstallCalendarContent() {
               Ready Queue
             </div>
             <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
-              Production-Ready Leads
+              Pre-Production Prep
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-white/62">
-              Jobs at Pre-Production Prep or later with no install date stay here until they are placed on the calendar.
+              Only jobs in Pre-Production Prep without an install date stay here. Dropping one onto the calendar moves it straight into Install Scheduled.
             </p>
           </div>
 

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
@@ -23,7 +24,6 @@ import {
   type JobStageOption,
 } from '@/components/jobs/job-types'
 import { ARCHIVE_INACTIVITY_DAYS, isArchivedByInactivity } from '@/lib/job-lifecycle'
-import { isManagementLockedStage } from '@/lib/job-stage-access'
 
 type JobRep = {
   profile_id: string
@@ -146,17 +146,20 @@ function getRepIds(jobReps: JobRep[] | null): string[] {
 }
 
 function JobsPageContent() {
+  const searchParams = useSearchParams()
+  const requestedSearch = searchParams.get('search')?.trim() ?? ''
   const [jobs, setJobs] = useState<JobRow[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
   const [pageMessage, setPageMessage] = useState('')
   const [role, setRole] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = useState('')
 
   const [stageOptions, setStageOptions] = useState<JobStageOption[]>([])
   const [profileOptions, setProfileOptions] = useState<ProfileOption[]>([])
 
-  const [search, setSearch] = useState('')
-  const [stageFilter, setStageFilter] = useState('')
+  const [search, setSearch] = useState(requestedSearch)
+  const [stageFilters, setStageFilters] = useState<string[]>([])
   const [managerFilter, setManagerFilter] = useState('')
   const [repFilter, setRepFilter] = useState('')
   const [viewMode, setViewMode] = useState<JobsViewMode>('cards')
@@ -173,12 +176,14 @@ function JobsPageContent() {
 
     if (!currentProfile) {
       setRole(null)
+      setCurrentUserId('')
       setJobs([])
       setLoading(false)
       return
     }
 
     setRole(currentProfile.role)
+    setCurrentUserId(currentProfile.id)
 
     const [stagesRes, profilesRes] = await Promise.all([
       supabase
@@ -285,10 +290,7 @@ function JobsPageContent() {
       return
     }
 
-    const rows = ((data ?? []) as JobRow[]).filter(
-      (row) => !isManagementLockedStage(row.pipeline_stages, nextStages)
-    )
-    setJobs(rows)
+    setJobs((data ?? []) as JobRow[])
     setLoading(false)
   }, [])
 
@@ -306,9 +308,13 @@ function JobsPageContent() {
     }, 0)
 
     return () => clearTimeout(timer)
-  }, [search, stageFilter, managerFilter, repFilter, quickFilter, sortKey, viewMode])
+  }, [search, stageFilters, managerFilter, repFilter, quickFilter, sortKey, viewMode])
 
-  const filteredJobs = useMemo(() => {
+  useEffect(() => {
+    setSearch(requestedSearch)
+  }, [requestedSearch])
+
+  const baseFilteredJobs = useMemo(() => {
     let next = jobs.filter((job) => !isArchivedByInactivity(job.updated_at))
     const loweredSearch = search.trim().toLowerCase()
 
@@ -327,10 +333,6 @@ function JobsPageContent() {
           repNames.includes(loweredSearch)
         )
       })
-    }
-
-    if (stageFilter) {
-      next = next.filter((job) => getStageName(job.pipeline_stages) === stageFilter)
     }
 
     if (repFilter) {
@@ -353,6 +355,12 @@ function JobsPageContent() {
       next = next.filter((job) => (job.job_reps ?? []).length === 0)
     }
 
+    if (quickFilter === 'mine' && currentUserId) {
+      next = next.filter((job) =>
+        (job.job_reps ?? []).some((rep) => rep.profile_id === currentUserId)
+      )
+    }
+
     if (quickFilter === 'has_install') {
       next = next.filter((job) => Boolean(job.install_date))
     }
@@ -364,6 +372,25 @@ function JobsPageContent() {
     if (quickFilter === 'high_value') {
       next = next.filter((job) => Number(job.contract_amount ?? 0) >= 15000)
     }
+
+    return next
+  }, [
+    jobs,
+    search,
+    repFilter,
+    managerFilter,
+    profileOptions,
+    quickFilter,
+    currentUserId,
+  ])
+
+  const filteredJobs = useMemo(() => {
+    const next =
+      stageFilters.length > 0
+        ? baseFilteredJobs.filter((job) =>
+            stageFilters.includes(getStageName(job.pipeline_stages))
+          )
+        : [...baseFilteredJobs]
 
     next.sort((a, b) => {
       if (sortKey === 'contract_high') {
@@ -391,24 +418,14 @@ function JobsPageContent() {
 
     return next
   }, [
-    jobs,
-    search,
-    stageFilter,
-    repFilter,
-    managerFilter,
-    profileOptions,
-    quickFilter,
+    baseFilteredJobs,
+    stageFilters,
     sortKey,
   ])
 
   const managers = useMemo(
     () =>
-      profileOptions.filter(
-        (profile) =>
-          profile.role === 'manager' ||
-          profile.role === 'admin' ||
-          profile.role === 'sales_manager'
-      ),
+      profileOptions.filter((profile) => profile.role === 'sales_manager'),
     [profileOptions]
   )
 
@@ -423,13 +440,24 @@ function JobsPageContent() {
     [profileOptions]
   )
 
-  const visibleStageOptions = useMemo(
-    () =>
-      isManagerLike(role)
-        ? stageOptions
-        : stageOptions.filter((stage) => !isManagementLockedStage(stage, stageOptions)),
-    [role, stageOptions]
+  const visibleReps = useMemo<JobRepOption[]>(
+    () => {
+      if (!managerFilter) {
+        return reps
+      }
+
+      const managerTeamIds = new Set(
+        profileOptions
+          .filter((profile) => profile.role === 'rep' && profile.manager_id === managerFilter)
+          .map((profile) => profile.id)
+      )
+
+      return reps.filter((rep) => managerTeamIds.has(rep.id))
+    },
+    [managerFilter, profileOptions, reps]
   )
+
+  const visibleStageOptions = useMemo(() => stageOptions, [stageOptions])
 
   const normalizedJobs = useMemo<JobListRow[]>(
     () =>
@@ -473,6 +501,22 @@ function JobsPageContent() {
     return () => clearTimeout(timer)
   }, [normalizedJobs.length, viewMode])
 
+  useEffect(() => {
+    if (!repFilter) {
+      return
+    }
+
+    if (visibleReps.some((rep) => rep.id === repFilter)) {
+      return
+    }
+
+    const timer = setTimeout(() => {
+      setRepFilter('')
+    }, 0)
+
+    return () => clearTimeout(timer)
+  }, [repFilter, visibleReps])
+
   const pageSize = PAGE_SIZE_BY_VIEW[viewMode]
   const totalPages =
     viewMode === 'kanban'
@@ -513,13 +557,21 @@ function JobsPageContent() {
   const stageCounts = useMemo(() => {
     const counts = new Map<string, number>()
 
-    filteredJobs.forEach((job) => {
+    baseFilteredJobs.forEach((job) => {
       const stageName = getStageName(job.pipeline_stages)
       counts.set(stageName, (counts.get(stageName) ?? 0) + 1)
     })
 
     return Array.from(counts.entries()).map(([name, count]) => ({ name, count }))
-  }, [filteredJobs])
+  }, [baseFilteredJobs])
+
+  function toggleStageFilter(stageName: string) {
+    setStageFilters((current) =>
+      current.includes(stageName)
+        ? current.filter((value) => value !== stageName)
+        : [...current, stageName]
+    )
+  }
 
   async function handleQuickEditSaved() {
     await loadPageData()
@@ -589,8 +641,9 @@ function JobsPageContent() {
 
         <JobsStageRail
           counts={stageCounts}
-          activeStage={stageFilter}
-          onStageChange={setStageFilter}
+          activeStages={stageFilters}
+          onStageToggle={toggleStageFilter}
+          onClearStages={() => setStageFilters([])}
         />
 
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
@@ -602,26 +655,37 @@ function JobsPageContent() {
               onChange={(event) => setSearch(event.target.value)}
             />
 
-            <select
-              className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
-              value={stageFilter}
-              onChange={(event) => setStageFilter(event.target.value)}
-            >
-              <option value="">All Stages</option>
-              {visibleStageOptions.map((stage) => (
-                <option key={stage.id} value={stage.name}>
-                  {stage.name}
-                </option>
-              ))}
-            </select>
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/72">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/38">
+                Stage Stack
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {stageFilters.length === 0 ? (
+                  <span className="text-sm text-white/45">
+                    Use the status rail above to stack multiple stages.
+                  </span>
+                ) : (
+                  stageFilters.map((stageName) => (
+                    <button
+                      key={stageName}
+                      type="button"
+                      onClick={() => toggleStageFilter(stageName)}
+                      className="rounded-full border border-white/10 bg-white/[0.08] px-3 py-1 text-xs font-semibold text-white transition hover:bg-white/[0.14]"
+                    >
+                      {stageName}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
 
             {isManagerLike(role) ? (
               <select
                 className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
-                value={managerFilter}
-                onChange={(event) => setManagerFilter(event.target.value)}
-              >
-                <option value="">All Managers / Teams</option>
+              value={managerFilter}
+              onChange={(event) => setManagerFilter(event.target.value)}
+            >
+                <option value="">All Sales Managers</option>
                 {managers.map((manager) => (
                   <option key={manager.id} value={manager.id}>
                     {manager.full_name}
@@ -635,8 +699,8 @@ function JobsPageContent() {
               value={repFilter}
               onChange={(event) => setRepFilter(event.target.value)}
             >
-              <option value="">All Reps</option>
-              {reps.map((rep) => (
+              <option value="">{managerFilter ? 'All Team Reps' : 'All Reps'}</option>
+              {visibleReps.map((rep) => (
                 <option key={rep.id} value={rep.id}>
                   {rep.full_name}
                 </option>

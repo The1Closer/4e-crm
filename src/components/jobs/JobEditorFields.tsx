@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { Plus, UserRound, X } from 'lucide-react'
+import AddressAutocompleteInput from '@/components/forms/AddressAutocompleteInput'
 import {
   type JobEditorValues,
   type JobRepOption,
@@ -78,13 +79,17 @@ export default function JobEditorFields({
             placeholder="Phone number"
             onChange={(value) => onChange({ phone: value })}
           />
-          <Field
-            label="Address"
-            value={values.address}
-            disabled={disabled}
-            placeholder="Property address"
-            onChange={(value) => onChange({ address: value })}
-          />
+          <label className="block">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
+              Address
+            </div>
+            <AddressAutocompleteInput
+              value={values.address}
+              disabled={disabled}
+              placeholder="Property address"
+              onChange={(value) => onChange({ address: value })}
+            />
+          </label>
           <Field
             label="Email"
             value={values.email}

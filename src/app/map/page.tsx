@@ -8,11 +8,12 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
 import {
   getStageColor,
-  isManagementLockedStage,
   normalizeStageName,
 } from '@/lib/job-stage-access'
 import {
+  getGeocodeCache,
   loadGoogleMapsApi,
+  setGeocodeCache,
   type GoogleGeocoderInstance,
   type GoogleLatLngLiteral,
   type GoogleMapInstance,
@@ -64,12 +65,6 @@ type JobRow = {
   job_reps: JobRep[] | null
 }
 
-type StageRow = {
-  id: number
-  name: string
-  sort_order: number | null
-}
-
 type AssignedJobRef = {
   job_id: string
 }
@@ -84,6 +79,12 @@ type GeocodedLead = {
   installDate: string | null
   repNames: string[]
   position: GoogleLatLngLiteral
+}
+
+type FailedGeocodeLead = {
+  id: string
+  homeownerName: string
+  address: string
 }
 
 const GOOGLE_MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? ''
@@ -140,33 +141,6 @@ function buildMarkerIcon(mapsApi: GoogleMapsNamespace, color: string, selected: 
   }
 }
 
-function getGeocodeCache(address: string) {
-  const rawValue = localStorage.getItem(`4e-crm-geocode::${address}`)
-
-  if (!rawValue) return null
-
-  try {
-    const parsed = JSON.parse(rawValue) as GoogleLatLngLiteral
-
-    if (
-      typeof parsed.lat === 'number' &&
-      Number.isFinite(parsed.lat) &&
-      typeof parsed.lng === 'number' &&
-      Number.isFinite(parsed.lng)
-    ) {
-      return parsed
-    }
-  } catch (error) {
-    console.error('Failed to read cached geocode.', error)
-  }
-
-  return null
-}
-
-function setGeocodeCache(address: string, position: GoogleLatLngLiteral) {
-  localStorage.setItem(`4e-crm-geocode::${address}`, JSON.stringify(position))
-}
-
 function geocodeAddress(geocoder: GoogleGeocoderInstance, address: string) {
   return new Promise<GoogleLatLngLiteral>((resolve, reject) => {
     geocoder.geocode({ address }, (results, status) => {
@@ -194,11 +168,13 @@ function LeadMapPageContent() {
   const [loading, setLoading] = useState(true)
   const [loadingMap, setLoadingMap] = useState(true)
   const [mapsApi, setMapsApi] = useState<GoogleMapsNamespace | null>(null)
-  const [message, setMessage] = useState('')
+  const [pageMessage, setPageMessage] = useState('')
+  const [mapMessage, setMapMessage] = useState('')
   const [search, setSearch] = useState('')
-  const [stageFilter, setStageFilter] = useState('')
+  const [stageFilters, setStageFilters] = useState<string[]>([])
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null)
   const [geocodedLeads, setGeocodedLeads] = useState<GeocodedLead[]>([])
+  const [failedGeocodes, setFailedGeocodes] = useState<FailedGeocodeLead[]>([])
   const [geocodingProgress, setGeocodingProgress] = useState({
     resolved: 0,
     total: 0,
@@ -209,7 +185,7 @@ function LeadMapPageContent() {
 
     async function loadJobs() {
       setLoading(true)
-      setMessage('')
+      setPageMessage('')
 
       const currentProfile = await getCurrentUserProfile()
 
@@ -217,22 +193,6 @@ function LeadMapPageContent() {
 
       if (!currentProfile) {
         setJobs([])
-        setLoading(false)
-        return
-      }
-
-      const { data: stageData, error: stageError } = await supabase
-        .from('pipeline_stages')
-        .select('id, name, sort_order')
-        .order('sort_order', { ascending: true })
-
-      if (!isActive) return
-
-      const stageRows = (stageData ?? []) as StageRow[]
-
-      if (stageError) {
-        setJobs([])
-        setMessage(stageError.message)
         setLoading(false)
         return
       }
@@ -249,7 +209,7 @@ function LeadMapPageContent() {
 
         if (assignedError) {
           setJobs([])
-          setMessage(assignedError.message)
+          setPageMessage(assignedError.message)
           setLoading(false)
           return
         }
@@ -300,19 +260,14 @@ function LeadMapPageContent() {
 
       if (error) {
         setJobs([])
-        setMessage(error.message)
+        setPageMessage(error.message)
         setLoading(false)
         return
       }
 
       const nextJobs = (data ?? []) as JobRow[]
-      const visibleJobs = isManagerLike(currentProfile.role)
-        ? nextJobs
-        : nextJobs.filter(
-            (job) => !isManagementLockedStage(job.pipeline_stages, stageRows)
-          )
 
-      setJobs(visibleJobs.filter((job) => !isArchivedByInactivity(job.updated_at)))
+      setJobs(nextJobs.filter((job) => !isArchivedByInactivity(job.updated_at)))
       setLoading(false)
     }
 
@@ -338,9 +293,10 @@ function LeadMapPageContent() {
         if (!isActive) return
 
         setMapsApi(api)
+        setMapMessage('')
       } catch (error) {
         if (!isActive) return
-        setMessage(
+        setMapMessage(
           error instanceof Error ? error.message : 'Failed to initialize Google Maps.'
         )
       } finally {
@@ -395,12 +351,14 @@ function LeadMapPageContent() {
     async function geocodeJobs() {
       const geocoder = new activeMapsApi.Geocoder()
       const nextLeads: GeocodedLead[] = []
+      const nextFailedGeocodes: FailedGeocodeLead[] = []
       let resolved = 0
 
       setGeocodingProgress({
         resolved: 0,
         total: addressableJobs.length,
       })
+      setFailedGeocodes([])
 
       for (const job of addressableJobs) {
         if (!isActive) return
@@ -431,6 +389,11 @@ function LeadMapPageContent() {
           })
         } catch (error) {
           console.error(error)
+          nextFailedGeocodes.push({
+            id: job.id,
+            homeownerName: job.homeownerName,
+            address: job.address,
+          })
         } finally {
           resolved += 1
           setGeocodingProgress({
@@ -443,6 +406,7 @@ function LeadMapPageContent() {
       if (!isActive) return
 
       setGeocodedLeads(nextLeads)
+      setFailedGeocodes(nextFailedGeocodes)
 
       if (!selectedLeadId && nextLeads[0]) {
         setSelectedLeadId(nextLeads[0].id)
@@ -488,7 +452,7 @@ function LeadMapPageContent() {
     const loweredSearch = search.trim().toLowerCase()
 
     return geocodedLeads.filter((lead) => {
-      if (stageFilter && lead.stageName !== stageFilter) {
+      if (stageFilters.length > 0 && !stageFilters.includes(lead.stageName)) {
         return false
       }
 
@@ -504,7 +468,7 @@ function LeadMapPageContent() {
         lead.repNames.join(' ').toLowerCase().includes(loweredSearch)
       )
     })
-  }, [geocodedLeads, search, stageFilter])
+  }, [geocodedLeads, search, stageFilters])
 
   const stageCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -561,6 +525,14 @@ function LeadMapPageContent() {
   }, [filteredLeads, mapsApi, selectedLead])
 
   const unresolvedAddressCount = addressableJobs.length - geocodedLeads.length
+
+  function toggleStageFilter(stageName: string) {
+    setStageFilters((current) =>
+      current.includes(stageName)
+        ? current.filter((value) => value !== stageName)
+        : [...current, stageName]
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -625,8 +597,9 @@ function LeadMapPageContent() {
         <div className="mt-4">
           <JobsStageRail
             counts={stageCounts}
-            activeStage={stageFilter}
-            onStageChange={setStageFilter}
+            activeStages={stageFilters}
+            onStageToggle={toggleStageFilter}
+            onClearStages={() => setStageFilters([])}
           />
         </div>
       </section>
@@ -637,9 +610,34 @@ function LeadMapPageContent() {
         </section>
       ) : null}
 
-      {message ? (
+      {pageMessage ? (
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-4 text-sm text-white/78 shadow-[0_20px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          {message}
+          {pageMessage}
+        </section>
+      ) : null}
+
+      {failedGeocodes.length > 0 ? (
+        <section className="rounded-[2rem] border border-amber-400/20 bg-amber-500/10 p-5 text-amber-100 shadow-[0_20px_60px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-200/85">
+            Unresolved Addresses
+          </div>
+          <div className="mt-2 text-sm text-amber-100/85">
+            {failedGeocodes.length} lead{failedGeocodes.length === 1 ? '' : 's'} could not
+            be geocoded, so they do not have map pins yet.
+          </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-2">
+            {failedGeocodes.slice(0, 8).map((lead) => (
+              <div
+                key={lead.id}
+                className="rounded-[1.2rem] border border-amber-300/15 bg-black/15 p-3"
+              >
+                <div className="text-sm font-semibold text-amber-50">
+                  {lead.homeownerName}
+                </div>
+                <div className="mt-1 text-xs text-amber-100/70">{lead.address}</div>
+              </div>
+            ))}
+          </div>
         </section>
       ) : null}
 
@@ -662,10 +660,24 @@ function LeadMapPageContent() {
             )}
           </div>
 
-          <div
-            ref={mapRef}
-            className="h-[620px] rounded-[1.6rem] border border-white/10 bg-[#0f0f0f]"
-          />
+          <div className="h-[620px] overflow-hidden rounded-[1.6rem] border border-white/10 bg-[#0f0f0f]">
+            {!GOOGLE_MAPS_KEY ? (
+              <MapPanelState
+                title="Google Maps key required"
+                description="Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to your active environment before loading the live map."
+              />
+            ) : mapMessage ? (
+              <MapPanelState
+                title="Google Maps is unavailable"
+                description={mapMessage}
+              />
+            ) : (
+              <div
+                ref={mapRef}
+                className="h-full w-full rounded-[1.6rem]"
+              />
+            )}
+          </div>
         </section>
 
         <aside className="space-y-6">
@@ -774,6 +786,30 @@ function LeadMapPageContent() {
           </section>
         </aside>
       </section>
+    </div>
+  )
+}
+
+function MapPanelState({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
+  return (
+    <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_top,rgba(214,179,122,0.16),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-6 text-center">
+      <div className="max-w-lg rounded-[1.6rem] border border-white/10 bg-black/25 px-6 py-7 shadow-[0_18px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+          Map Status
+        </div>
+        <div className="mt-3 text-xl font-bold tracking-tight text-white">
+          {title}
+        </div>
+        <div className="mt-3 text-sm leading-6 text-white/62">
+          {description}
+        </div>
+      </div>
     </div>
   )
 }

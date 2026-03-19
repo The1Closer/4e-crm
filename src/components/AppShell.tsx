@@ -11,6 +11,7 @@ import {
   Briefcase,
   CalendarDays,
   ChevronRight,
+  ClipboardList,
   FileText,
   Home,
   LayoutDashboard,
@@ -25,6 +26,8 @@ import {
 } from 'lucide-react'
 
 import AuthStatus from '@/components/AuthStatus'
+import HeaderWorkspaceSearch from '@/components/HeaderWorkspaceSearch'
+import LiveNotificationToasts from '@/components/LiveNotificationToasts'
 import NotificationBell from '@/components/NotificationBell'
 import {
   getCurrentUserProfile,
@@ -135,6 +138,13 @@ export default function AppShell({
       group: 'workspace',
     },
     {
+      href: '/stats/submit',
+      label: 'Submit Numbers',
+      icon: ClipboardList,
+      show: true,
+      group: 'workspace',
+    },
+    {
       href: '/map',
       label: 'Lead Map',
       icon: MapPinned,
@@ -185,7 +195,7 @@ export default function AppShell({
     },
     {
       href: '/stats/manager',
-      label: 'Manager',
+      label: 'Branch Numbers',
       icon: Settings2,
       show: permissions.canViewManagerEntry,
       group: 'admin',
@@ -217,51 +227,91 @@ export default function AppShell({
 
   return (
     <div className="min-h-screen bg-[#050505] text-white">
+      <LiveNotificationToasts />
       <div className="fixed inset-0 -z-20 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.07),transparent_24%),radial-gradient(circle_at_top_right,rgba(214,179,122,0.14),transparent_18%),linear-gradient(180deg,#151515_0%,#0b0b0b_46%,#030303_100%)]" />
       <div className="fixed inset-0 -z-10 bg-[linear-gradient(135deg,rgba(255,255,255,0.02),transparent_35%,rgba(255,255,255,0.01)_62%,transparent)]" />
 
       <header className="sticky top-0 z-50 border-b border-white/10 bg-black/40 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="group inline-flex h-12 w-12 items-center justify-center rounded-[1.35rem] border border-white/10 bg-white/[0.04] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition duration-200 hover:border-[#d6b37a]/30 hover:bg-white/[0.08] hover:text-white"
-              aria-label="Open navigation"
-            >
-              <span className="flex flex-col gap-1.5">
-                <span className="block h-0.5 w-5 rounded-full bg-current transition-transform duration-200 group-hover:translate-x-0.5" />
-                <span className="block h-0.5 w-5 rounded-full bg-current" />
-                <span className="block h-0.5 w-5 rounded-full bg-current transition-transform duration-200 group-hover:-translate-x-0.5" />
-              </span>
-            </button>
+        <div className="mx-auto max-w-[1500px] px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="group inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.35rem] border border-white/10 bg-white/[0.04] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition duration-200 hover:border-[#d6b37a]/30 hover:bg-white/[0.08] hover:text-white"
+                aria-label="Open navigation"
+              >
+                <span className="flex flex-col gap-1.5">
+                  <span className="block h-0.5 w-5 rounded-full bg-current transition-transform duration-200 group-hover:translate-x-0.5" />
+                  <span className="block h-0.5 w-5 rounded-full bg-current" />
+                  <span className="block h-0.5 w-5 rounded-full bg-current transition-transform duration-200 group-hover:-translate-x-0.5" />
+                </span>
+              </button>
 
-            <Link href="/" className="group flex items-center gap-4">
-              <div className="relative h-20 w-20 overflow-hidden rounded-[1.8rem] border border-[#d6b37a]/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] ring-1 ring-white/5 sm:h-24 sm:w-24">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(214,179,122,0.18),transparent_55%)]" />
-                <Image
-                  src="/4ELogo.png"
-                  alt="4 Elements CRM"
-                  fill
-                  className="object-contain p-2 transition duration-300 group-hover:scale-[1.03]"
-                  sizes="96px"
-                />
-              </div>
+              <Link href="/" className="group flex min-w-0 items-center gap-4">
+                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-[1.8rem] border border-[#d6b37a]/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] ring-1 ring-white/5 sm:h-24 sm:w-24">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(214,179,122,0.18),transparent_55%)]" />
+                  <Image
+                    src="/4ELogo.png"
+                    alt="4 Elements CRM"
+                    fill
+                    className="object-contain p-2 transition duration-300 group-hover:scale-[1.03]"
+                    sizes="96px"
+                  />
+                </div>
 
-              <div className="leading-none">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.42em] text-[#d6b37a] sm:text-[12px]">
-                  4 Elements
+                <div className="min-w-0 leading-none">
+                  <div className="truncate text-[11px] font-semibold uppercase tracking-[0.42em] text-[#d6b37a] sm:text-[12px]">
+                    4 Elements
+                  </div>
+                  <div className="mt-2 truncate text-[2rem] font-bold tracking-[0.03em] text-white sm:text-[2.35rem]">
+                    CRM
+                  </div>
                 </div>
-                <div className="mt-2 text-[2rem] font-bold tracking-[0.03em] text-white sm:text-[2.35rem]">
-                  CRM
-                </div>
-              </div>
-            </Link>
+              </Link>
+            </div>
+
+            <div className="hidden min-w-0 flex-1 xl:flex xl:justify-center">
+              <HeaderWorkspaceSearch
+                profile={profile}
+                className="w-full max-w-3xl"
+              />
+            </div>
+
+            <div className="flex shrink-0 items-center gap-3">
+              {permissions.canCreateJob ? (
+                <Link
+                  href="/jobs/new"
+                  className="hidden xl:inline-flex items-center gap-2 rounded-[1.35rem] border border-[#d6b37a]/20 bg-[#d6b37a] px-4 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85]"
+                >
+                  <PlusSquare className="h-4 w-4" />
+                  Create Job
+                </Link>
+              ) : null}
+
+              <NotificationBell />
+              <AuthStatus />
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <NotificationBell />
-            <AuthStatus />
+          <div
+            className={`mt-4 gap-3 ${
+              permissions.canCreateJob
+                ? 'grid xl:hidden sm:grid-cols-[minmax(0,1fr)_auto]'
+                : 'xl:hidden'
+            }`}
+          >
+            <HeaderWorkspaceSearch profile={profile} className="w-full" />
+
+            {permissions.canCreateJob ? (
+              <Link
+                href="/jobs/new"
+                className="inline-flex items-center justify-center gap-2 rounded-[1.45rem] border border-[#d6b37a]/20 bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] xl:hidden"
+              >
+                <PlusSquare className="h-4 w-4" />
+                Create Job
+              </Link>
+            ) : null}
           </div>
         </div>
       </header>

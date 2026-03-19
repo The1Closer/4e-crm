@@ -59,16 +59,19 @@ export default function KPIBar({
    {cards.map((card) => (
     <div
      key={card.label}
-     className="overflow-hidden rounded-3xl border border-white/70 bg-white/95 p-5 shadow-[0_10px_40px_rgba(15,23,42,0.08)]"
+     className="relative overflow-hidden rounded-[1.9rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.28)] backdrop-blur-2xl"
     >
-     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-      {card.label}
-     </div>
-     <div className="mt-3 text-3xl font-bold tracking-tight text-gray-900">
-      {card.value}
-     </div>
-     <div className="mt-2 text-sm text-gray-500">
-      {card.sub}
+     <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,179,122,0.18),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.06),transparent_28%)]" />
+     <div className="relative">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#d6b37a]/88">
+       {card.label}
+      </div>
+      <div className="mt-3 text-3xl font-bold tracking-tight text-white">
+       {card.value}
+      </div>
+      <div className="mt-2 text-sm text-white/60">
+       {card.sub}
+      </div>
      </div>
     </div>
    ))}

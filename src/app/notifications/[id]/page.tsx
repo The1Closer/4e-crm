@@ -3,12 +3,7 @@
 import { useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import { supabase } from '@/lib/supabase'
-
-type NotificationRow = {
-  id: string
-  job_id: string | null
-}
+import { fetchNotification, markNotificationRead } from '@/lib/notifications-client'
 
 function OpenNotificationPageContent() {
   const params = useParams<{ id: string }>()
@@ -24,27 +19,27 @@ function OpenNotificationPageContent() {
         return
       }
 
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('id, job_id')
-        .eq('id', notificationId)
-        .single()
+      try {
+        const notification = await fetchNotification(notificationId)
 
-      if (!isActive) return
+        if (!isActive) return
 
-      if (error || !data) {
+        if (!notification) {
+          router.replace('/notifications')
+          return
+        }
+
+        await markNotificationRead(notificationId)
+
+        router.replace(
+          notification.link ||
+            (notification.job_id ? `/jobs/${notification.job_id}` : '/notifications')
+        )
+      } catch {
+        if (!isActive) return
+
         router.replace('/notifications')
-        return
       }
-
-      const notification = data as NotificationRow
-
-      await supabase
-        .from('notifications')
-        .update({ is_read: true, read_at: new Date().toISOString() })
-        .eq('id', notificationId)
-
-      router.replace(notification.job_id ? `/jobs/${notification.job_id}` : '/notifications')
     }
 
     const openTimer = window.setTimeout(() => {

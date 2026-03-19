@@ -58,22 +58,22 @@ export default function PhotosSection({
   }, [jobId])
 
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-semibold text-gray-900">Photos</h2>
-      <p className="mt-1 text-sm text-gray-600">
+    <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+      <h2 className="text-xl font-semibold text-white">Photos</h2>
+      <p className="mt-1 text-sm text-white/60">
         Photos uploaded through Quick Upload appear here automatically.
       </p>
 
       {message ? (
-        <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+        <div className="mt-4 rounded-[1.4rem] border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-100">
           {message}
         </div>
       ) : null}
 
       {loading ? (
-        <div className="mt-4 text-sm text-gray-600">Loading photos...</div>
+        <div className="mt-4 text-sm text-white/60">Loading photos...</div>
       ) : photos.length === 0 ? (
-        <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600">
+        <div className="mt-4 rounded-[1.4rem] border border-dashed border-white/15 p-4 text-sm text-white/60">
           No photos yet.
         </div>
       ) : (
@@ -87,14 +87,14 @@ export default function PhotosSection({
                 href={url}
                 target="_blank"
                 rel="noreferrer"
-                className="block overflow-hidden rounded-xl border border-gray-200 bg-gray-50"
+                className="block overflow-hidden rounded-[1.4rem] border border-white/10 bg-black/20 shadow-[0_16px_36px_rgba(0,0,0,0.18)]"
               >
                 <img
                   src={url}
                   alt={photo.file_name}
                   className="h-56 w-full object-cover"
                 />
-                <div className="p-3 text-sm font-medium text-gray-900">
+                <div className="p-3 text-sm font-medium text-white">
                   {photo.file_name}
                 </div>
               </a>

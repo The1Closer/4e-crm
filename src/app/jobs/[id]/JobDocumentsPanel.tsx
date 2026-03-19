@@ -217,9 +217,9 @@ export default function JobDocumentsPanel({
       id: doc.id,
       file_name: doc.file_name,
       open_url: doc.file_url,
-      signer_url: `/contracts/editor?jobId=${jobId}&documentId=${doc.id}&sourceUrl=${encodeURIComponent(
-        doc.file_url
-      )}&name=${encodeURIComponent(doc.file_name)}`,
+      signer_url: `/contracts/editor?jobId=${jobId}&documentId=${doc.id}&name=${encodeURIComponent(
+        doc.file_name
+      )}`,
       subtitle: `${doc.is_signed ? 'Signed' : 'Generated'} • ${
         doc.document_type || 'Document'
       }`,
@@ -235,9 +235,9 @@ export default function JobDocumentsPanel({
         id: doc.id,
         file_name: doc.file_name,
         open_url: url,
-        signer_url: `/contracts/editor?jobId=${jobId}&sourceUrl=${encodeURIComponent(
-          url
-        )}&name=${encodeURIComponent(doc.file_name)}`,
+        signer_url: `/contracts/editor?jobId=${jobId}&jobFileId=${doc.id}&name=${encodeURIComponent(
+          doc.file_name
+        )}`,
         subtitle: 'Uploaded document',
         deletable: permissions.canManageTemplates,
         onDelete: () => deleteUploadedDocument(doc),
@@ -248,16 +248,16 @@ export default function JobDocumentsPanel({
   return (
     <section className="space-y-6">
       {message ? (
-        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700 shadow-sm">
+        <div className="rounded-[1.4rem] border border-white/10 bg-[#0b0f16]/95 p-4 text-sm text-white/78 shadow-[0_18px_45px_rgba(0,0,0,0.18)]">
           {message}
         </div>
       ) : null}
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Templates</h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <h2 className="text-xl font-semibold text-white">Templates</h2>
+            <p className="mt-1 text-sm text-white/60">
               Open a master template in the signer/editor for this job.
             </p>
           </div>
@@ -265,7 +265,7 @@ export default function JobDocumentsPanel({
           {!permissionsLoading && permissions.canManageTemplates ? (
             <Link
               href="/templates"
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
+              className="rounded-2xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
             >
               Manage Templates
             </Link>
@@ -273,9 +273,9 @@ export default function JobDocumentsPanel({
         </div>
 
         {loading ? (
-          <div className="mt-4 text-sm text-gray-600">Loading templates...</div>
+          <div className="mt-4 text-sm text-white/60">Loading templates...</div>
         ) : templates.length === 0 ? (
-          <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600">
+          <div className="mt-4 rounded-[1.4rem] border border-dashed border-white/15 p-4 text-sm text-white/60">
             No templates available yet.
           </div>
         ) : (
@@ -283,21 +283,21 @@ export default function JobDocumentsPanel({
             {templates.map((template) => (
               <div
                 key={template.id}
-                className="rounded-xl border border-gray-200 p-4"
+                className="rounded-[1.4rem] border border-white/10 bg-black/20 p-4"
               >
-                <div className="text-sm font-semibold text-gray-900">
+                <div className="text-sm font-semibold text-white">
                   {template.name}
                 </div>
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="mt-1 text-xs text-white/45">
                   {template.category || 'Uncategorized'}
                 </div>
 
                 <div className="mt-4">
                   <Link
-                    href={`/contracts/editor?jobId=${jobId}&templateId=${template.id}&sourceUrl=${encodeURIComponent(
-                      template.file_url
-                    )}&name=${encodeURIComponent(template.name)}`}
-                    className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white transition hover:bg-gray-800"
+                    href={`/contracts/editor?jobId=${jobId}&templateId=${template.id}&name=${encodeURIComponent(
+                      template.name
+                    )}`}
+                    className="rounded-2xl bg-[#d6b37a] px-3 py-2 text-xs font-semibold text-black shadow-[0_10px_24px_rgba(214,179,122,0.24)] transition hover:bg-[#e2bf85]"
                   >
                     Open Template
                   </Link>
@@ -308,16 +308,16 @@ export default function JobDocumentsPanel({
         )}
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-semibold text-gray-900">Documents</h2>
-        <p className="mt-1 text-sm text-gray-600">
+      <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+        <h2 className="text-xl font-semibold text-white">Documents</h2>
+        <p className="mt-1 text-sm text-white/60">
           Uploaded documents and generated/signed documents all live here.
         </p>
 
         {loading ? (
-          <div className="mt-4 text-sm text-gray-600">Loading documents...</div>
+          <div className="mt-4 text-sm text-white/60">Loading documents...</div>
         ) : mergedDocuments.length === 0 ? (
-          <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600">
+          <div className="mt-4 rounded-[1.4rem] border border-dashed border-white/15 p-4 text-sm text-white/60">
             No documents yet.
           </div>
         ) : (
@@ -325,13 +325,13 @@ export default function JobDocumentsPanel({
             {mergedDocuments.map((doc) => (
               <div
                 key={`${doc.kind}-${doc.id}`}
-                className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 p-4"
+                className="flex flex-wrap items-center justify-between gap-4 rounded-[1.4rem] border border-white/10 bg-black/20 p-4"
               >
                 <div>
-                  <div className="text-sm font-semibold text-gray-900">
+                  <div className="text-sm font-semibold text-white">
                     {doc.file_name}
                   </div>
-                  <div className="mt-1 text-xs text-gray-500">
+                  <div className="mt-1 text-xs text-white/45">
                     {doc.subtitle}
                   </div>
                 </div>
@@ -341,14 +341,14 @@ export default function JobDocumentsPanel({
                     href={doc.open_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
+                    className="rounded-2xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
                   >
                     Open
                   </a>
 
                   <Link
                     href={doc.signer_url}
-                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
+                    className="rounded-2xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
                   >
                     Edit / Sign
                   </Link>
@@ -357,7 +357,7 @@ export default function JobDocumentsPanel({
                     <button
                       type="button"
                       onClick={doc.onDelete}
-                      className="rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50"
+                      className="rounded-2xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 transition hover:bg-red-500/18"
                     >
                       Delete
                     </button>

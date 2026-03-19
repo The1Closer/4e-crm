@@ -10,6 +10,8 @@ import {
   UserRound,
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import { authorizedFetch } from '@/lib/api-client'
+import { uploadAvatarViaApi } from '@/lib/avatar-client'
 import { getCurrentUserProfile, type UserProfile } from '@/lib/auth-helpers'
 import { supabase } from '@/lib/supabase'
 
@@ -32,55 +34,6 @@ function getInitials(name: string | null | undefined) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join('')
-}
-
-async function cropImageToSquareBlob(file: File, size = 512): Promise<Blob> {
-  const bitmap = await createImageBitmap(file)
-  const side = Math.min(bitmap.width, bitmap.height)
-  const sx = Math.floor((bitmap.width - side) / 2)
-  const sy = Math.floor((bitmap.height - side) / 2)
-
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-
-  const context = canvas.getContext('2d')
-  if (!context) {
-    throw new Error('Could not prepare avatar canvas.')
-  }
-
-  context.drawImage(bitmap, sx, sy, side, side, 0, 0, size, size)
-
-  return await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error('Could not create cropped avatar image.'))
-        return
-      }
-
-      resolve(blob)
-    }, 'image/jpeg', 0.92)
-  })
-}
-
-async function uploadAvatarFile(file: File, label: string) {
-  const blob = await cropImageToSquareBlob(file, 512)
-  const filePath = `profiles/${Date.now()}-${label
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '') || 'avatar'}.jpg`
-
-  const uploadResult = await supabase.storage.from('avatars').upload(filePath, blob, {
-    contentType: 'image/jpeg',
-    upsert: false,
-  })
-
-  if (uploadResult.error) {
-    throw new Error(uploadResult.error.message)
-  }
-
-  const { data } = supabase.storage.from('avatars').getPublicUrl(filePath)
-  return data.publicUrl
 }
 
 function ProfilePageContent() {
@@ -150,26 +103,36 @@ function ProfilePageContent() {
       let avatarUrl = form.avatar_url || null
 
       if (avatarFile) {
-        avatarUrl = await uploadAvatarFile(
-          avatarFile,
-          form.full_name || email || profile.id || 'avatar'
-        )
-      }
-
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: form.full_name || null,
-          phone: form.phone || null,
-          avatar_url: avatarUrl,
+        avatarUrl = await uploadAvatarViaApi({
+          file: avatarFile,
+          label: form.full_name || email || profile.id || 'avatar',
         })
-        .eq('id', profile.id)
-
-      if (error) {
-        throw new Error(error.message)
       }
 
-      const nextProfile = await getCurrentUserProfile()
+      const response = await authorizedFetch('/api/profile', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          full_name: form.full_name,
+          phone: form.phone,
+          avatar_url: avatarUrl,
+        }),
+      })
+
+      const result = (await response.json().catch(() => null)) as
+        | {
+            error?: string
+            profile?: UserProfile
+          }
+        | null
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Could not update profile.')
+      }
+
+      const nextProfile = result?.profile ?? (await getCurrentUserProfile())
       setProfile(nextProfile)
       setForm({
         full_name: nextProfile?.full_name ?? form.full_name,

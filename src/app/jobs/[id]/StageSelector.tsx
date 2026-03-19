@@ -7,6 +7,7 @@ import { createNotifications } from '../../../lib/notification-utils'
 import { getCurrentUserProfile, getPermissions } from '@/lib/auth-helpers'
 import {
   getVisibleStagesForUser,
+  isInstallScheduledStage,
   isManagementLockedStage,
 } from '@/lib/job-stage-access'
 
@@ -23,10 +24,12 @@ type JobAssignment = {
 export default function StageSelector({
   jobId,
   currentStageId,
+  installDate,
   stages,
 }: {
   jobId: string
   currentStageId: number | null
+  installDate?: string | null
   stages: Stage[]
 }) {
   const router = useRouter()
@@ -45,13 +48,45 @@ export default function StageSelector({
     void loadPermissions()
   }, [])
 
-  const visibleStages = useMemo(
-    () => getVisibleStagesForUser(stages, canManageLockedStages),
-    [canManageLockedStages, stages]
+  const currentStage = useMemo(
+    () => stages.find((stage) => String(stage.id) === String(currentStageId)) ?? null,
+    [currentStageId, stages]
+  )
+
+  const selectedValue = saving ? value : currentStageId ? String(currentStageId) : ''
+
+  const visibleStages = useMemo(() => {
+    const unlockedStages = getVisibleStagesForUser(stages, canManageLockedStages).filter(
+      (stage) => !isInstallScheduledStage(stage)
+    )
+
+    if (!currentStage || unlockedStages.some((stage) => stage.id === currentStage.id)) {
+      return unlockedStages
+    }
+
+    return [currentStage, ...unlockedStages]
+  }, [canManageLockedStages, currentStage, stages])
+
+  const stageLockedForUser = useMemo(() => {
+    return (
+      Boolean(currentStage) &&
+      isManagementLockedStage(currentStage, stages) &&
+      !canManageLockedStages
+    )
+  }, [canManageLockedStages, currentStage, stages])
+
+  const stageManagedByCalendar = useMemo(
+    () => Boolean(installDate && currentStage && isInstallScheduledStage(currentStage)),
+    [currentStage, installDate]
   )
 
   async function handleChange(nextValue: string) {
     const nextStage = stages.find((stage) => String(stage.id) === nextValue) ?? null
+
+    if (nextStage && isInstallScheduledStage(nextStage)) {
+      setMessage('Install Scheduled is managed from the install calendar.')
+      return
+    }
 
     if (nextStage && isManagementLockedStage(nextStage, stages) && !canManageLockedStages) {
       setMessage('Only management can move jobs into Contracted and later stages.')
@@ -116,9 +151,9 @@ export default function StageSelector({
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <select
-          value={value}
+          value={selectedValue}
           onChange={(e) => handleChange(e.target.value)}
-          disabled={saving}
+          disabled={saving || stageLockedForUser || stageManagedByCalendar}
           className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white shadow-sm outline-none transition focus:border-[#d6b37a]/40"
         >
           <option value="">No Stage</option>
@@ -135,6 +170,19 @@ export default function StageSelector({
 
         {saving ? <span className="text-xs text-white/45">Saving...</span> : null}
       </div>
+
+      {stageLockedForUser ? (
+        <div className="text-xs text-[#f8c38a]">
+          Only management can change the stage once a job reaches Contracted or later.
+        </div>
+      ) : null}
+
+      {stageManagedByCalendar ? (
+        <div className="text-xs text-[#f8c38a]">
+          Install Scheduled is controlled from the install calendar while an install date
+          is set.
+        </div>
+      ) : null}
 
       {message ? <div className="text-xs text-[#f8c38a]">{message}</div> : null}
     </div>

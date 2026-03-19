@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '../../../lib/supabase'
-import { createNotifications } from '../../../lib/notification-utils'
+import { Loader2, PencilLine, X } from 'lucide-react'
+import { authorizedFetch } from '@/lib/api-client'
 import { getCurrentUserProfile, getPermissions } from '@/lib/auth-helpers'
+import AddressAutocompleteInput from '@/components/forms/AddressAutocompleteInput'
 import {
   getVisibleStagesForUser,
+  isInstallScheduledStage,
   isManagementLockedStage,
 } from '@/lib/job-stage-access'
 
@@ -46,20 +48,66 @@ type FormData = {
   shingle_name: string
 }
 
+function SurfacePanel({
+  eyebrow,
+  title,
+  children,
+}: {
+  eyebrow: string
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <section className="rounded-[1.75rem] border border-white/10 bg-white/[0.04] p-5">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+        {eyebrow}
+      </div>
+      <h3 className="mt-2 text-xl font-bold tracking-tight text-white">{title}</h3>
+      <div className="mt-5">{children}</div>
+    </section>
+  )
+}
+
+function FormField({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <label className="block">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
+        {label}
+      </div>
+      {children}
+    </label>
+  )
+}
+
+const INPUT_CLASS_NAME =
+  'w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35'
+
+function formatScheduleDate(value: string) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-US')
+}
+
 export default function EditJobForm({
   jobId,
-  homeownerId,
   stages,
   reps,
   initialSelectedRepIds,
   initialData,
+  buttonLabel = 'Edit Job',
+  buttonClassName,
 }: {
   jobId: string
-  homeownerId: string
   stages: Stage[]
   reps: Rep[]
   initialSelectedRepIds: string[]
   initialData: FormData
+  buttonLabel?: string
+  buttonClassName?: string
 }) {
   const router = useRouter()
 
@@ -69,6 +117,7 @@ export default function EditJobForm({
   const [repToAdd, setRepToAdd] = useState('')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [messageTone, setMessageTone] = useState<'success' | 'error' | ''>('')
   const [canManageLockedStages, setCanManageLockedStages] = useState(false)
 
   useEffect(() => {
@@ -80,6 +129,14 @@ export default function EditJobForm({
 
     void loadPermissions()
   }, [])
+
+  useEffect(() => {
+    setForm(initialData)
+  }, [initialData])
+
+  useEffect(() => {
+    setSelectedRepIds(initialSelectedRepIds)
+  }, [initialSelectedRepIds])
 
   function updateField(field: keyof FormData, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -93,15 +150,22 @@ export default function EditJobForm({
     return reps.filter((rep) => !selectedRepIds.includes(rep.id))
   }, [reps, selectedRepIds])
 
-  const visibleStages = useMemo(
-    () => getVisibleStagesForUser(stages, canManageLockedStages),
-    [canManageLockedStages, stages]
-  )
-
   const currentStage = useMemo(
     () => stages.find((stage) => String(stage.id) === initialData.stage_id) ?? null,
     [initialData.stage_id, stages]
   )
+
+  const visibleStages = useMemo(() => {
+    const unlockedStages = getVisibleStagesForUser(stages, canManageLockedStages).filter(
+      (stage) => !isInstallScheduledStage(stage)
+    )
+
+    if (!currentStage || unlockedStages.some((stage) => stage.id === currentStage.id)) {
+      return unlockedStages
+    }
+
+    return [currentStage, ...unlockedStages]
+  }, [canManageLockedStages, currentStage, stages])
 
   const stageLockedForUser = useMemo(
     () =>
@@ -109,6 +173,11 @@ export default function EditJobForm({
       isManagementLockedStage(currentStage, stages) &&
       !canManageLockedStages,
     [canManageLockedStages, currentStage, stages]
+  )
+
+  const stageManagedByCalendar = useMemo(
+    () => Boolean(form.install_date && currentStage && isInstallScheduledStage(currentStage)),
+    [currentStage, form.install_date]
   )
 
   function removeRep(repId: string) {
@@ -123,406 +192,488 @@ export default function EditJobForm({
     setRepToAdd('')
   }
 
+  function handleOpenEdit() {
+    setMessage('')
+    setMessageTone('')
+    setIsEditing(true)
+  }
+
   function handleCancel() {
     setForm(initialData)
     setSelectedRepIds(initialSelectedRepIds)
     setRepToAdd('')
     setMessage('')
+    setMessageTone('')
     setIsEditing(false)
   }
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleSave(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
 
     const nextStage = stages.find((stage) => String(stage.id) === form.stage_id) ?? null
 
+    if (nextStage && isInstallScheduledStage(nextStage)) {
+      setMessageTone('error')
+      setMessage('Install Scheduled is managed from the install calendar.')
+      return
+    }
+
     if (nextStage && isManagementLockedStage(nextStage, stages) && !canManageLockedStages) {
+      setMessageTone('error')
       setMessage('Only management can move jobs into Contracted and later stages.')
       return
     }
 
     setSaving(true)
     setMessage('')
+    setMessageTone('')
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    const { error: homeownerError } = await supabase
-      .from('homeowners')
-      .update({
-        name: form.homeowner_name || null,
-        phone: form.phone || null,
-        address: form.address || null,
-        email: form.email || null,
+    try {
+      const response = await authorizedFetch(`/api/jobs/${jobId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...form,
+          rep_ids: selectedRepIds,
+        }),
       })
-      .eq('id', homeownerId)
 
-    if (homeownerError) {
-      setMessage(homeownerError.message)
-      setSaving(false)
-      return
-    }
+      const result = (await response.json().catch(() => null)) as
+        | {
+            error?: string
+          }
+        | null
 
-    const { error: jobError } = await supabase
-      .from('jobs')
-      .update({
-        stage_id: form.stage_id ? Number(form.stage_id) : null,
-        insurance_carrier: form.insurance_carrier || null,
-        deductible: form.deductible ? Number(form.deductible) : null,
-        claim_number: form.claim_number || null,
-        adjuster_name: form.adjuster_name || null,
-        adjuster_phone: form.adjuster_phone || null,
-        adjuster_email: form.adjuster_email || null,
-        date_of_loss: form.date_of_loss || null,
-        type_of_loss: form.type_of_loss || null,
-        install_date: form.install_date || null,
-        contract_signed_date: form.contract_signed_date || null,
-        contract_amount: form.contract_amount ? Number(form.contract_amount) : null,
-        deposit_collected: form.deposit_collected ? Number(form.deposit_collected) : 0,
-        remaining_balance: form.remaining_balance ? Number(form.remaining_balance) : 0,
-        supplemented_amount: form.supplemented_amount ? Number(form.supplemented_amount) : 0,
-        shingle_name: form.shingle_name || null,
-      })
-      .eq('id', jobId)
-
-    if (jobError) {
-      setMessage(jobError.message)
-      setSaving(false)
-      return
-    }
-
-    const { error: deleteRepError } = await supabase
-      .from('job_reps')
-      .delete()
-      .eq('job_id', jobId)
-
-    if (deleteRepError) {
-      setMessage(deleteRepError.message)
-      setSaving(false)
-      return
-    }
-
-    if (selectedRepIds.length > 0) {
-      const assignments = selectedRepIds.map((profileId) => ({
-        job_id: jobId,
-        profile_id: profileId,
-      }))
-
-      const { error: insertRepError } = await supabase
-        .from('job_reps')
-        .insert(assignments)
-
-      if (insertRepError) {
-        setMessage(insertRepError.message)
-        setSaving(false)
-        return
+      if (!response.ok) {
+        throw new Error(result?.error || 'Could not update the job.')
       }
+
+      setIsEditing(false)
+      setRepToAdd('')
+      window.dispatchEvent(
+        new CustomEvent('job-detail:refresh', {
+          detail: { jobId },
+        })
+      )
+      router.refresh()
+    } catch (error) {
+      setMessageTone('error')
+      setMessage(error instanceof Error ? error.message : 'Could not update the job.')
+    } finally {
+      setSaving(false)
     }
-
-    const newlyAddedRepIds = selectedRepIds.filter(
-      (id) => !initialSelectedRepIds.includes(id)
-    )
-
-    if (newlyAddedRepIds.length > 0) {
-      await createNotifications({
-        userIds: newlyAddedRepIds,
-        actorUserId: user?.id ?? null,
-        type: 'assignment',
-        title: 'You were assigned to a job',
-        message: 'You were assigned to a job in the CRM.',
-        link: `/jobs/${jobId}`,
-        jobId,
-      })
-    }
-
-    setSaving(false)
-    setIsEditing(false)
-    setMessage('Saved')
-    window.dispatchEvent(
-      new CustomEvent('job-detail:refresh', {
-        detail: { jobId },
-      })
-    )
-    router.refresh()
-  }
-
-  if (!isEditing) {
-    return (
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900">Edit Job</h2>
-            <p className="mt-1 text-sm text-gray-600">
-              Update homeowner, claim, adjuster, financial info, and assigned reps.
-            </p>
-
-            <div className="mt-3 text-sm text-gray-700">
-              <span className="font-medium">Assigned reps:</span>{' '}
-              {selectedReps.length > 0
-                ? selectedReps.map((rep) => rep.full_name).join(', ')
-                : 'No reps assigned'}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsEditing(true)}
-            disabled={stageLockedForUser}
-            className="rounded-xl bg-gray-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Edit
-          </button>
-        </div>
-
-        {message ? (
-          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-            {message}
-          </div>
-        ) : null}
-
-        {stageLockedForUser ? (
-          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            This job is in a management-only stage. Only management can edit it now.
-          </div>
-        ) : null}
-      </section>
-    )
   }
 
   return (
-    <form
-      onSubmit={handleSave}
-      className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm"
-    >
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900">Editing Job</h2>
-          <p className="mt-1 text-sm text-gray-600">
-            Make changes, then save or cancel.
-          </p>
-        </div>
+    <>
+      <button
+        type="button"
+        onClick={handleOpenEdit}
+        className={
+          buttonClassName ||
+          'rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-45'
+        }
+      >
+        <span className="inline-flex items-center gap-2">
+          <PencilLine className="h-4 w-4 text-[#d6b37a]" />
+          {buttonLabel}
+        </span>
+      </button>
 
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
+      {isEditing ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleSave}
+            className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-[2rem] border border-white/10 bg-[#0a0a0a] p-6 shadow-[0_40px_120px_rgba(0,0,0,0.55)]"
           >
-            Cancel
-          </button>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+                  Edit Job
+                </div>
+                <h2 className="mt-2 text-3xl font-bold tracking-tight text-white">
+                  {form.homeowner_name || 'Unnamed homeowner'}
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">
+                  Make the updates you need here, save them back to the CRM, and keep
+                  the job detail page in sync without leaving the file.
+                </p>
+              </div>
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-xl bg-gray-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60"
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-[1.2rem] border border-white/10 bg-white/[0.04] text-white/70 transition hover:border-white/15 hover:bg-white/[0.08] hover:text-white"
+                aria-label="Close job editor"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
 
-      {message ? (
-        <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-          {message}
+            {message ? (
+              <div
+                className={`mt-5 rounded-[1.4rem] border p-4 text-sm ${
+                  messageTone === 'success'
+                    ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100'
+                    : 'border-red-400/20 bg-red-500/10 text-red-200'
+                }`}
+              >
+                {message}
+              </div>
+            ) : null}
+
+            <div className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+              <div className="space-y-6">
+                <SurfacePanel eyebrow="Homeowner" title="Primary Contact">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField label="Homeowner Name">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Homeowner name"
+                        value={form.homeowner_name}
+                        onChange={(event) =>
+                          updateField('homeowner_name', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Phone">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Phone number"
+                        value={form.phone}
+                        onChange={(event) => updateField('phone', event.target.value)}
+                      />
+                    </FormField>
+
+                    <FormField label="Address">
+                      <AddressAutocompleteInput
+                        value={form.address}
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Street address"
+                        onChange={(value) => updateField('address', value)}
+                      />
+                    </FormField>
+
+                    <FormField label="Email">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Email address"
+                        value={form.email}
+                        onChange={(event) => updateField('email', event.target.value)}
+                      />
+                    </FormField>
+                  </div>
+                </SurfacePanel>
+
+                <SurfacePanel eyebrow="Claim" title="Insurance + Adjuster">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField label="Insurance Carrier">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Insurance carrier"
+                        value={form.insurance_carrier}
+                        onChange={(event) =>
+                          updateField('insurance_carrier', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Claim Number">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Claim number"
+                        value={form.claim_number}
+                        onChange={(event) =>
+                          updateField('claim_number', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Deductible">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Deductible"
+                        value={form.deductible}
+                        onChange={(event) =>
+                          updateField('deductible', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Type of Loss">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Type of loss"
+                        value={form.type_of_loss}
+                        onChange={(event) =>
+                          updateField('type_of_loss', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Adjuster Name">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Adjuster name"
+                        value={form.adjuster_name}
+                        onChange={(event) =>
+                          updateField('adjuster_name', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Adjuster Phone">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Adjuster phone"
+                        value={form.adjuster_phone}
+                        onChange={(event) =>
+                          updateField('adjuster_phone', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Adjuster Email">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Adjuster email"
+                        value={form.adjuster_email}
+                        onChange={(event) =>
+                          updateField('adjuster_email', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Date of Loss">
+                      <input
+                        type="date"
+                        className={INPUT_CLASS_NAME}
+                        value={form.date_of_loss}
+                        onChange={(event) =>
+                          updateField('date_of_loss', event.target.value)
+                        }
+                      />
+                    </FormField>
+                  </div>
+                </SurfacePanel>
+
+                <SurfacePanel eyebrow="Production" title="Schedule + Financials">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField label="Install Date">
+                      <div className="space-y-3">
+                        <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/72">
+                          {form.install_date
+                            ? formatScheduleDate(form.install_date)
+                            : 'Not scheduled yet'}
+                        </div>
+                        <div className="text-xs leading-5 text-white/45">
+                          Install dates are managed from the install calendar. Drag a job
+                          from the Ready Queue onto a day there, or update the date from the
+                          calendar board.
+                        </div>
+                      </div>
+                    </FormField>
+
+                    <FormField label="Contract Signed Date">
+                      <input
+                        type="date"
+                        className={INPUT_CLASS_NAME}
+                        value={form.contract_signed_date}
+                        onChange={(event) =>
+                          updateField('contract_signed_date', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Contract Amount">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Contract amount"
+                        value={form.contract_amount}
+                        onChange={(event) =>
+                          updateField('contract_amount', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Deposit Collected">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Deposit collected"
+                        value={form.deposit_collected}
+                        onChange={(event) =>
+                          updateField('deposit_collected', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Remaining Balance">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Remaining balance"
+                        value={form.remaining_balance}
+                        onChange={(event) =>
+                          updateField('remaining_balance', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Supplemented Amount">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Supplemented amount"
+                        value={form.supplemented_amount}
+                        onChange={(event) =>
+                          updateField('supplemented_amount', event.target.value)
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Shingle Name">
+                      <input
+                        className={INPUT_CLASS_NAME}
+                        placeholder="Shingle name"
+                        value={form.shingle_name}
+                        onChange={(event) =>
+                          updateField('shingle_name', event.target.value)
+                        }
+                      />
+                    </FormField>
+                  </div>
+                </SurfacePanel>
+              </div>
+
+              <div className="space-y-6">
+                <SurfacePanel eyebrow="Pipeline" title="Stage + Ownership">
+                  <div className="space-y-4">
+                    <FormField label="Current Stage">
+                      <select
+                        className={INPUT_CLASS_NAME}
+                        value={form.stage_id}
+                        disabled={stageLockedForUser || stageManagedByCalendar}
+                        onChange={(event) => updateField('stage_id', event.target.value)}
+                      >
+                        <option value="">Select stage</option>
+                        {visibleStages.map((stage) => (
+                          <option key={stage.id} value={String(stage.id ?? '')}>
+                            {stage.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+
+                    {stageLockedForUser ? (
+                      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
+                        This job is already in Contracted or a later stage. Management can
+                        change the stage, but you can still edit the rest of the file.
+                      </div>
+                    ) : null}
+
+                    {stageManagedByCalendar ? (
+                      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
+                        Install Scheduled is controlled from the install calendar while the
+                        job has an install date.
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/38">
+                        Assigned Reps
+                      </div>
+
+                      <div className="mt-3 space-y-3">
+                        {selectedReps.length > 0 ? (
+                          selectedReps.map((rep) => (
+                            <div
+                              key={rep.id}
+                              className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3"
+                            >
+                              <div className="text-sm font-medium text-white">
+                                {rep.full_name}
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => removeRep(rep.id)}
+                                className="rounded-full border border-red-400/20 bg-red-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-red-200 transition hover:bg-red-500/20"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-white/14 p-4 text-sm text-white/55">
+                            No reps assigned yet.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-4 flex flex-col gap-3">
+                        <select
+                          className={INPUT_CLASS_NAME}
+                          value={repToAdd}
+                          onChange={(event) => setRepToAdd(event.target.value)}
+                        >
+                          <option value="">Select rep to add</option>
+                          {availableReps.map((rep) => (
+                            <option key={rep.id} value={rep.id}>
+                              {rep.full_name}
+                            </option>
+                          ))}
+                        </select>
+
+                        <button
+                          type="button"
+                          onClick={addRep}
+                          disabled={!repToAdd}
+                          className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:opacity-50"
+                        >
+                          Add Rep
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </SurfacePanel>
+
+                <SurfacePanel eyebrow="Review" title="Before You Save">
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/68">
+                    <p>
+                      Stage changes, homeowner updates, and rep assignments all save in one
+                      pass.
+                    </p>
+                    <p>
+                      New rep assignments trigger notifications automatically through the job
+                      update route.
+                    </p>
+                  </div>
+                </SurfacePanel>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="rounded-2xl border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1]"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:opacity-60"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {saving ? 'Saving...' : 'Save Job Changes'}
+              </button>
+            </div>
+          </form>
         </div>
       ) : null}
-
-      <div className="space-y-8">
-        <section>
-          <h3 className="mb-4 text-lg font-semibold">Homeowner Info</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Homeowner name"
-              value={form.homeowner_name}
-              onChange={(e) => updateField('homeowner_name', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Phone"
-              value={form.phone}
-              onChange={(e) => updateField('phone', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Address"
-              value={form.address}
-              onChange={(e) => updateField('address', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Email"
-              value={form.email}
-              onChange={(e) => updateField('email', e.target.value)}
-            />
-          </div>
-        </section>
-
-        <section>
-          <h3 className="mb-4 text-lg font-semibold">Assigned Reps</h3>
-
-          <div className="space-y-3">
-            {selectedReps.length > 0 ? (
-              selectedReps.map((rep) => (
-                <div
-                  key={rep.id}
-                  className="flex items-center justify-between rounded-xl border border-gray-200 p-4"
-                >
-                  <div className="text-sm font-medium text-gray-900">
-                    {rep.full_name}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => removeRep(rep.id)}
-                    className="rounded-lg border border-red-300 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))
-            ) : (
-              <div className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600">
-                No reps assigned.
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 flex flex-col gap-3 md:flex-row">
-            <select
-              className="rounded-lg border px-4 py-3 md:min-w-[280px]"
-              value={repToAdd}
-              onChange={(e) => setRepToAdd(e.target.value)}
-            >
-              <option value="">Select rep to add</option>
-              {availableReps.map((rep) => (
-                <option key={rep.id} value={rep.id}>
-                  {rep.full_name}
-                </option>
-              ))}
-            </select>
-
-            <button
-              type="button"
-              onClick={addRep}
-              disabled={!repToAdd}
-              className="rounded-lg border bg-white px-4 py-3 text-sm font-medium text-gray-900 transition hover:bg-gray-100 disabled:opacity-50"
-            >
-              Add Rep
-            </button>
-          </div>
-        </section>
-
-        <section>
-          <h3 className="mb-4 text-lg font-semibold">Claim / Job Info</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            <select
-              className="rounded-lg border px-4 py-3"
-              value={form.stage_id}
-              onChange={(e) => updateField('stage_id', e.target.value)}
-            >
-              <option value="">Select stage</option>
-              {visibleStages.map((stage) => (
-                <option key={stage.id} value={String(stage.id ?? '')}>
-                  {stage.name}
-                </option>
-              ))}
-            </select>
-
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Insurance carrier"
-              value={form.insurance_carrier}
-              onChange={(e) => updateField('insurance_carrier', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Deductible"
-              value={form.deductible}
-              onChange={(e) => updateField('deductible', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Claim number"
-              value={form.claim_number}
-              onChange={(e) => updateField('claim_number', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Type of loss"
-              value={form.type_of_loss}
-              onChange={(e) => updateField('type_of_loss', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Adjuster name"
-              value={form.adjuster_name}
-              onChange={(e) => updateField('adjuster_name', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Adjuster phone"
-              value={form.adjuster_phone}
-              onChange={(e) => updateField('adjuster_phone', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Adjuster email"
-              value={form.adjuster_email}
-              onChange={(e) => updateField('adjuster_email', e.target.value)}
-            />
-            <input
-              type="date"
-              className="rounded-lg border px-4 py-3"
-              value={form.date_of_loss}
-              onChange={(e) => updateField('date_of_loss', e.target.value)}
-            />
-            <input
-              type="date"
-              className="rounded-lg border px-4 py-3"
-              value={form.install_date}
-              onChange={(e) => updateField('install_date', e.target.value)}
-            />
-            <input
-              type="date"
-              className="rounded-lg border px-4 py-3"
-              value={form.contract_signed_date}
-              onChange={(e) => updateField('contract_signed_date', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Contract amount"
-              value={form.contract_amount}
-              onChange={(e) => updateField('contract_amount', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Deposit collected"
-              value={form.deposit_collected}
-              onChange={(e) => updateField('deposit_collected', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Remaining balance"
-              value={form.remaining_balance}
-              onChange={(e) => updateField('remaining_balance', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3"
-              placeholder="Supplemented amount"
-              value={form.supplemented_amount}
-              onChange={(e) => updateField('supplemented_amount', e.target.value)}
-            />
-            <input
-              className="rounded-lg border px-4 py-3 md:col-span-2"
-              placeholder="Shingle name"
-              value={form.shingle_name}
-              onChange={(e) => updateField('shingle_name', e.target.value)}
-            />
-          </div>
-        </section>
-      </div>
-    </form>
+    </>
   )
 }

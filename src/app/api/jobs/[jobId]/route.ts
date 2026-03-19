@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isManagementLockedStage } from '@/lib/job-stage-access'
+import {
+  findInstallScheduledStage,
+  isInstallScheduledStage,
+  isManagementLockedStage,
+} from '@/lib/job-stage-access'
 import {
   getRouteRequester,
   isManagerRole,
@@ -21,11 +25,20 @@ type JobMutationBody = {
   email?: string
   stage_id?: string | number | null
   insurance_carrier?: string
+  deductible?: string | number | null
   claim_number?: string
+  adjuster_name?: string
+  adjuster_phone?: string
+  adjuster_email?: string
+  date_of_loss?: string | null
+  type_of_loss?: string
   install_date?: string | null
+  contract_signed_date?: string | null
   contract_amount?: string | number | null
   deposit_collected?: string | number | null
   remaining_balance?: string | number | null
+  supplemented_amount?: string | number | null
+  shingle_name?: string
   rep_ids?: string[]
 }
 
@@ -256,9 +269,12 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
   try {
     const body = (await req.json()) as JobMutationBody
     const stages = await loadStageRows()
-    const stageId = normalizeStageId(body.stage_id)
+    const requestedStageId = normalizeStageId(body.stage_id)
+    const installDate = normalizeDate(body.install_date)
     const repIds = normalizeRepIds(body.rep_ids)
 
+    const autoScheduledStage = installDate ? findInstallScheduledStage(stages) : null
+    const stageId = autoScheduledStage?.id ?? requestedStageId
     const targetStage = stageId === null ? null : stages.find((stage) => stage.id === stageId)
 
     if (stageId !== null && !targetStage) {
@@ -268,6 +284,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     if (
       targetStage &&
       isManagementLockedStage(targetStage, stages) &&
+      !(installDate && isInstallScheduledStage(targetStage)) &&
       !isManagerRole(authResult.requester.profile.role)
     ) {
       return NextResponse.json(
@@ -318,11 +335,20 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       .update({
         stage_id: stageId,
         insurance_carrier: normalizeText(body.insurance_carrier),
+        deductible: normalizeNumber(body.deductible),
         claim_number: normalizeText(body.claim_number),
-        install_date: normalizeDate(body.install_date),
+        adjuster_name: normalizeText(body.adjuster_name),
+        adjuster_phone: normalizeText(body.adjuster_phone),
+        adjuster_email: normalizeText(body.adjuster_email),
+        date_of_loss: normalizeDate(body.date_of_loss),
+        type_of_loss: normalizeText(body.type_of_loss),
+        install_date: installDate,
+        contract_signed_date: normalizeDate(body.contract_signed_date),
         contract_amount: normalizeNumber(body.contract_amount),
         deposit_collected: normalizeNumber(body.deposit_collected, true),
         remaining_balance: normalizeNumber(body.remaining_balance, true),
+        supplemented_amount: normalizeNumber(body.supplemented_amount, true),
+        shingle_name: normalizeText(body.shingle_name),
       })
       .eq('id', jobId)
 

@@ -1,124 +1,141 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { BellRing, CheckCheck, Home, MailOpen } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import {
+  fetchNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  NOTIFICATIONS_REFRESH_EVENT,
+  type NotificationItem,
+} from '@/lib/notifications-client'
 import { supabase } from '@/lib/supabase'
-
-type NotificationItem = {
-  id: string
-  user_id: string
-  job_id: string | null
-  note_id: string | null
-  title: string
-  message: string
-  link: string | null
-  type: string
-  is_read: boolean
-  created_at: string
-}
+import { useSupabaseAuthUserId } from '@/lib/use-supabase-auth-user-id'
 
 export default function NotificationsClient() {
   const router = useRouter()
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [loading, setLoading] = useState(true)
+  const userId = useSupabaseAuthUserId()
 
-  async function loadNotifications() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+  const loadNotifications = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!options?.silent) {
+        setLoading(true)
+      }
 
-    if (!user) {
+      try {
+        const rows = await fetchNotifications()
+        setNotifications(rows)
+      } catch {
+        if (!options?.silent) {
+          setNotifications([])
+        }
+      } finally {
+        if (!options?.silent) {
+          setLoading(false)
+        }
+      }
+    },
+    []
+  )
+
+  useEffect(() => {
+    if (!userId) {
       setNotifications([])
       setLoading(false)
       return
     }
 
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-
-    if (!error) {
-      setNotifications((data ?? []) as NotificationItem[])
-    }
-
-    setLoading(false)
-  }
-
-  useEffect(() => {
     const loadTimer = window.setTimeout(() => {
       void loadNotifications()
     }, 0)
 
     let channel: RealtimeChannel | null = null
 
-    async function subscribe() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+    channel = supabase
+      .channel(`notifications-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          void loadNotifications({ silent: true })
+        }
+      )
+      .subscribe()
 
-      if (!user) return
-
-      channel = supabase
-        .channel(`notifications-${user.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'notifications',
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => {
-            void loadNotifications()
-          }
-        )
-        .subscribe()
+    function handleRefresh() {
+      void loadNotifications({ silent: true })
     }
 
-    void subscribe()
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        void loadNotifications({ silent: true })
+      }
+    }
+
+    const pollInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void loadNotifications({ silent: true })
+      }
+    }, 30000)
+
+    window.addEventListener(NOTIFICATIONS_REFRESH_EVENT, handleRefresh)
+    window.addEventListener('focus', handleRefresh)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       window.clearTimeout(loadTimer)
+      window.clearInterval(pollInterval)
+      window.removeEventListener(NOTIFICATIONS_REFRESH_EVENT, handleRefresh)
+      window.removeEventListener('focus', handleRefresh)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (channel) {
         supabase.removeChannel(channel)
       }
     }
-  }, [])
+  }, [loadNotifications, userId])
 
   async function openNotification(notification: NotificationItem) {
-    await supabase
-      .from('notifications')
-      .update({
-        is_read: true,
-        read_at: new Date().toISOString(),
-      })
-      .eq('id', notification.id)
+    try {
+      await markNotificationRead(notification.id)
+      setNotifications((current) =>
+        current.map((item) =>
+          item.id === notification.id
+            ? {
+                ...item,
+                is_read: true,
+              }
+            : item
+        )
+      )
+    } catch {
+      void loadNotifications({ silent: true })
+    }
 
-    router.push(notification.link || '/notifications')
+    router.push(notification.link || (notification.job_id ? `/jobs/${notification.job_id}` : '/notifications'))
   }
 
   async function markAllRead() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) return
-
-    await supabase
-      .from('notifications')
-      .update({
-        is_read: true,
-        read_at: new Date().toISOString(),
-      })
-      .eq('user_id', user.id)
-      .eq('is_read', false)
-
-    void loadNotifications()
+    try {
+      await markAllNotificationsRead()
+      setNotifications((current) =>
+        current.map((notification) => ({
+          ...notification,
+          is_read: true,
+        }))
+      )
+    } catch {
+      void loadNotifications({ silent: true })
+    }
   }
 
   const unread = useMemo(
@@ -163,7 +180,8 @@ export default function NotificationsClient() {
             <button
               type="button"
               onClick={markAllRead}
-              className="inline-flex items-center gap-2 rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85]"
+              disabled={unread.length === 0}
+              className="inline-flex items-center gap-2 rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:cursor-not-allowed disabled:opacity-45"
             >
               <CheckCheck className="h-4 w-4" />
               Mark All Read

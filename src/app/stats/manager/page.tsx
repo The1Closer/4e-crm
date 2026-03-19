@@ -36,6 +36,31 @@ type EditableRow = {
   revenue_signed: string
 }
 
+type Totals = {
+  knocks: number
+  talks: number
+  walks: number
+  inspections: number
+  contingencies: number
+  contracts_with_deposit: number
+  revenue_signed: number
+}
+
+type MonthlySummary = Totals & {
+  rep_id: string
+  rep_name: string
+}
+
+const EMPTY_TOTALS: Totals = {
+  knocks: 0,
+  talks: 0,
+  walks: 0,
+  inspections: 0,
+  contingencies: 0,
+  contracts_with_deposit: 0,
+  revenue_signed: 0,
+}
+
 function getTodayLocalDate() {
   const now = new Date()
   const year = now.getFullYear()
@@ -44,12 +69,62 @@ function getTodayLocalDate() {
   return `${year}-${month}-${day}`
 }
 
-function getMonthRangeFromDate(dateString: string) {
+function getMonthStart(dateString: string) {
   const [year, month] = dateString.split('-').map(Number)
-  const start = `${year}-${String(month).padStart(2, '0')}-01`
-  const endDate = new Date(year, month, 0)
-  const end = `${year}-${String(month).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
-  return { start, end }
+  return `${year}-${String(month).padStart(2, '0')}-01`
+}
+
+function getWorkingDaysInMonth(year: number, monthIndex: number) {
+  let total = 0
+
+  const date = new Date(year, monthIndex, 1)
+  while (date.getMonth() === monthIndex) {
+    if (date.getDay() !== 0) {
+      total += 1
+    }
+
+    date.setDate(date.getDate() + 1)
+  }
+
+  return total
+}
+
+function getWorkingDaysElapsedInMonth(year: number, monthIndex: number, dayOfMonth: number) {
+  let total = 0
+
+  for (let day = 1; day <= dayOfMonth; day += 1) {
+    const date = new Date(year, monthIndex, day)
+
+    if (date.getDay() !== 0) {
+      total += 1
+    }
+  }
+
+  return total
+}
+
+function projectMonthValue(total: number, referenceDate: string) {
+  const date = new Date(`${referenceDate}T12:00:00`)
+  const year = date.getFullYear()
+  const monthIndex = date.getMonth()
+  const dayOfMonth = date.getDate()
+
+  const elapsedWorkingDays = getWorkingDaysElapsedInMonth(year, monthIndex, dayOfMonth)
+  const totalWorkingDays = getWorkingDaysInMonth(year, monthIndex)
+
+  if (elapsedWorkingDays <= 0) {
+    return 0
+  }
+
+  return Math.round((total / elapsedWorkingDays) * totalWorkingDays)
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value)
 }
 
 function emptyRow(rep: Profile): EditableRow {
@@ -66,16 +141,20 @@ function emptyRow(rep: Profile): EditableRow {
   }
 }
 
-type MonthlySummary = {
-  rep_id: string
-  rep_name: string
-  knocks: number
-  talks: number
-  walks: number
-  inspections: number
-  contingencies: number
-  contracts_with_deposit: number
-  revenue_signed: number
+function buildTotalsFromStats(rows: Array<StatRow | EditableRow>) {
+  return rows.reduce<Totals>(
+    (acc, row) => {
+      acc.knocks += Number(row.knocks || 0)
+      acc.talks += Number(row.talks || 0)
+      acc.walks += Number(row.walks || 0)
+      acc.inspections += Number(row.inspections || 0)
+      acc.contingencies += Number(row.contingencies || 0)
+      acc.contracts_with_deposit += Number(row.contracts_with_deposit || 0)
+      acc.revenue_signed += Number(row.revenue_signed || 0)
+      return acc
+    },
+    { ...EMPTY_TOTALS }
+  )
 }
 
 export default function ManagerNightlyEntryPage() {
@@ -92,12 +171,13 @@ function ManagerNightlyEntryContent() {
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('')
   const [reportDate, setReportDate] = useState(getTodayLocalDate())
-  const [teamReps, setTeamReps] = useState<Profile[]>([])
+  const [branchReps, setBranchReps] = useState<Profile[]>([])
   const [rows, setRows] = useState<EditableRow[]>([])
-  const [managerName, setManagerName] = useState('')
+  const [viewerName, setViewerName] = useState('')
+  const [dayStats, setDayStats] = useState<StatRow[]>([])
   const [monthStats, setMonthStats] = useState<StatRow[]>([])
 
-  async function loadTeamAndStats(date: string) {
+  async function loadBranchAndStats(date: string) {
     setLoading(true)
     setMessage('')
     setMessageType('')
@@ -105,19 +185,19 @@ function ManagerNightlyEntryContent() {
     const currentProfile = await getCurrentUserProfile()
 
     if (!currentProfile) {
-      setTeamReps([])
+      setBranchReps([])
       setRows([])
+      setDayStats([])
       setMonthStats([])
       setLoading(false)
       return
     }
 
-    setManagerName(currentProfile.full_name ?? 'Manager')
+    setViewerName(currentProfile.full_name ?? 'Manager')
 
     const { data: repsData, error: repsError } = await supabase
       .from('profiles')
       .select('id, full_name, role, manager_id')
-      .eq('manager_id', currentProfile.id)
       .eq('is_active', true)
       .eq('role', 'rep')
       .order('full_name', { ascending: true })
@@ -125,56 +205,91 @@ function ManagerNightlyEntryContent() {
     if (repsError) {
       setMessageType('error')
       setMessage(repsError.message)
-      setTeamReps([])
+      setBranchReps([])
       setRows([])
+      setDayStats([])
       setMonthStats([])
       setLoading(false)
       return
     }
 
     const reps = (repsData ?? []) as Profile[]
-    setTeamReps(reps)
+    setBranchReps(reps)
 
     if (reps.length === 0) {
       setRows([])
+      setDayStats([])
       setMonthStats([])
       setLoading(false)
       return
     }
 
     const repIds = reps.map((rep) => rep.id)
+    const monthStart = getMonthStart(date)
 
-    const { data: statData, error: statError } = await supabase
-      .from('rep_daily_stats')
-      .select(`
-        rep_id,
-        report_date,
-        knocks,
-        talks,
-        walks,
-        inspections,
-        contingencies,
-        contracts_with_deposit,
-        revenue_signed
-      `)
-      .eq('report_date', date)
-      .in('rep_id', repIds)
+    const [dayStatsResult, monthStatsResult] = await Promise.all([
+      supabase
+        .from('rep_daily_stats')
+        .select(`
+          rep_id,
+          report_date,
+          knocks,
+          talks,
+          walks,
+          inspections,
+          contingencies,
+          contracts_with_deposit,
+          revenue_signed
+        `)
+        .eq('report_date', date)
+        .in('rep_id', repIds),
+      supabase
+        .from('rep_daily_stats')
+        .select(`
+          rep_id,
+          report_date,
+          knocks,
+          talks,
+          walks,
+          inspections,
+          contingencies,
+          contracts_with_deposit,
+          revenue_signed
+        `)
+        .gte('report_date', monthStart)
+        .lte('report_date', date)
+        .in('rep_id', repIds),
+    ])
 
-    if (statError) {
+    if (dayStatsResult.error) {
       setMessageType('error')
-      setMessage(statError.message)
+      setMessage(dayStatsResult.error.message)
       setRows(reps.map(emptyRow))
+      setDayStats([])
       setMonthStats([])
       setLoading(false)
       return
     }
 
-    const stats = (statData ?? []) as StatRow[]
+    if (monthStatsResult.error) {
+      setMessageType('error')
+      setMessage(monthStatsResult.error.message)
+      setRows(reps.map(emptyRow))
+      setDayStats((dayStatsResult.data ?? []) as StatRow[])
+      setMonthStats([])
+      setLoading(false)
+      return
+    }
+
+    const nextDayStats = (dayStatsResult.data ?? []) as StatRow[]
+    const nextMonthStats = (monthStatsResult.data ?? []) as StatRow[]
 
     const mappedRows: EditableRow[] = reps.map((rep) => {
-      const existing = stats.find((s) => s.rep_id === rep.id)
+      const existing = nextDayStats.find((row) => row.rep_id === rep.id)
 
-      if (!existing) return emptyRow(rep)
+      if (!existing) {
+        return emptyRow(rep)
+      }
 
       return {
         rep_id: rep.id,
@@ -189,52 +304,21 @@ function ManagerNightlyEntryContent() {
       }
     })
 
-    const monthRange = getMonthRangeFromDate(date)
-
-    const { data: monthlyData, error: monthlyError } = await supabase
-      .from('rep_daily_stats')
-      .select(`
-        rep_id,
-        report_date,
-        knocks,
-        talks,
-        walks,
-        inspections,
-        contingencies,
-        contracts_with_deposit,
-        revenue_signed
-      `)
-      .gte('report_date', monthRange.start)
-      .lte('report_date', monthRange.end)
-      .in('rep_id', repIds)
-
-    if (monthlyError) {
-      setMessageType('error')
-      setMessage(monthlyError.message)
-      setRows(mappedRows)
-      setMonthStats([])
-      setLoading(false)
-      return
-    }
-
     setRows(mappedRows)
-    setMonthStats((monthlyData ?? []) as StatRow[])
+    setDayStats(nextDayStats)
+    setMonthStats(nextMonthStats)
     setLoading(false)
   }
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => {
-      void loadTeamAndStats(reportDate)
+      void loadBranchAndStats(reportDate)
     }, 0)
 
     return () => {
       window.clearTimeout(loadTimer)
     }
   }, [reportDate])
-
-  async function handleDateChange(nextDate: string) {
-    setReportDate(nextDate)
-  }
 
   function updateCell(
     repId: string,
@@ -285,9 +369,9 @@ function ManagerNightlyEntryContent() {
       }
 
       setMessageType('success')
-      setMessage('Team nightly numbers saved.')
+      setMessage('Branch nightly numbers saved.')
       setSaving(false)
-      await loadTeamAndStats(reportDate)
+      await loadBranchAndStats(reportDate)
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Something went wrong'
       setMessageType('error')
@@ -296,61 +380,42 @@ function ManagerNightlyEntryContent() {
     }
   }
 
-  const totals = useMemo(() => {
-    return rows.reduce(
-      (acc, row) => {
-        acc.knocks += Number(row.knocks || 0)
-        acc.talks += Number(row.talks || 0)
-        acc.walks += Number(row.walks || 0)
-        acc.inspections += Number(row.inspections || 0)
-        acc.contingencies += Number(row.contingencies || 0)
-        acc.contracts_with_deposit += Number(row.contracts_with_deposit || 0)
-        acc.revenue_signed += Number(row.revenue_signed || 0)
-        return acc
-      },
-      {
-        knocks: 0,
-        talks: 0,
-        walks: 0,
-        inspections: 0,
-        contingencies: 0,
-        contracts_with_deposit: 0,
-        revenue_signed: 0,
-      }
-    )
-  }, [rows])
+  const totals = useMemo(() => buildTotalsFromStats(rows), [rows])
 
-  const monthlySummaries = useMemo<MonthlySummary[]>(() => {
-    return teamReps
-      .map((rep) => {
-        const repRows = monthStats.filter((row) => row.rep_id === rep.id)
+  const branchMonthTotals = useMemo(() => buildTotalsFromStats(monthStats), [monthStats])
 
-        return repRows.reduce<MonthlySummary>(
-          (acc, row) => {
-            acc.knocks += row.knocks || 0
-            acc.talks += row.talks || 0
-            acc.walks += row.walks || 0
-            acc.inspections += row.inspections || 0
-            acc.contingencies += row.contingencies || 0
-            acc.contracts_with_deposit += row.contracts_with_deposit || 0
-            acc.revenue_signed += row.revenue_signed || 0
-            return acc
-          },
-          {
+  const projectedBranchTotals = useMemo<Totals>(
+    () => ({
+      knocks: projectMonthValue(branchMonthTotals.knocks, reportDate),
+      talks: projectMonthValue(branchMonthTotals.talks, reportDate),
+      walks: projectMonthValue(branchMonthTotals.walks, reportDate),
+      inspections: projectMonthValue(branchMonthTotals.inspections, reportDate),
+      contingencies: projectMonthValue(branchMonthTotals.contingencies, reportDate),
+      contracts_with_deposit: projectMonthValue(
+        branchMonthTotals.contracts_with_deposit,
+        reportDate
+      ),
+      revenue_signed: projectMonthValue(branchMonthTotals.revenue_signed, reportDate),
+    }),
+    [branchMonthTotals, reportDate]
+  )
+
+  const monthlySummaries = useMemo<MonthlySummary[]>(
+    () =>
+      branchReps
+        .map((rep) => {
+          const repRows = monthStats.filter((row) => row.rep_id === rep.id)
+          const summary = buildTotalsFromStats(repRows)
+
+          return {
             rep_id: rep.id,
             rep_name: rep.full_name,
-            knocks: 0,
-            talks: 0,
-            walks: 0,
-            inspections: 0,
-            contingencies: 0,
-            contracts_with_deposit: 0,
-            revenue_signed: 0,
+            ...summary,
           }
-        )
-      })
-      .sort((a, b) => b.revenue_signed - a.revenue_signed)
-  }, [teamReps, monthStats])
+        })
+        .sort((a, b) => b.revenue_signed - a.revenue_signed),
+    [branchReps, monthStats]
+  )
 
   const monthLabel = useMemo(() => {
     const date = new Date(`${reportDate}T12:00:00`)
@@ -359,6 +424,9 @@ function ManagerNightlyEntryContent() {
       year: 'numeric',
     })
   }, [reportDate])
+
+  const submittedCount = dayStats.length
+  const missingCount = Math.max(branchReps.length - submittedCount, 0)
 
   return (
     <main className="space-y-6">
@@ -369,15 +437,15 @@ function ManagerNightlyEntryContent() {
         <div className="relative flex flex-wrap items-end justify-between gap-6">
           <div>
             <div className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
-              Manager Entry
+              Branch Entry
             </div>
 
             <h1 className="mt-4 text-4xl font-bold tracking-tight text-white md:text-5xl">
-              Nightly Team Numbers
+              Branch Nightly Numbers
             </h1>
 
             <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
-              Enter the team sheet once, save it in one pass, and keep month-to-date rep production clean for coaching and accountability.
+              Enter the full branch sheet in one pass, keep every rep visible, and track month-to-date plus projected totals without bouncing to another page.
             </p>
           </div>
 
@@ -390,14 +458,14 @@ function ManagerNightlyEntryContent() {
                 type="date"
                 className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
                 value={reportDate}
-                onChange={(e) => handleDateChange(e.target.value)}
+                onChange={(event) => setReportDate(event.target.value)}
               />
             </label>
 
             <button
               type="button"
               onClick={handleSaveAll}
-              disabled={saving || loading || teamReps.length === 0}
+              disabled={saving || loading || branchReps.length === 0}
               className="rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:opacity-60"
             >
               {saving ? 'Saving...' : 'Save All'}
@@ -406,10 +474,12 @@ function ManagerNightlyEntryContent() {
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-3">
-        <ManagerMetric label="Team Reps" value={String(teamReps.length)} />
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <ManagerMetric label="Branch Reps" value={String(branchReps.length)} />
+        <ManagerMetric label="Submitted" value={String(submittedCount)} />
+        <ManagerMetric label="Missing" value={String(missingCount)} />
         <ManagerMetric label="Month" value={monthLabel} />
-        <ManagerMetric label="Manager" value={managerName || 'Manager'} />
+        <ManagerMetric label="Viewer" value={viewerName || 'Manager'} />
       </section>
 
       {message ? (
@@ -426,24 +496,38 @@ function ManagerNightlyEntryContent() {
 
       {loading ? (
         <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-sm text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          Loading manager entry form...
+          Loading branch entry form...
         </div>
-      ) : teamReps.length === 0 ? (
+      ) : branchReps.length === 0 ? (
         <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          <h2 className="text-xl font-semibold text-white">No reps assigned yet</h2>
+          <h2 className="text-xl font-semibold text-white">No reps found</h2>
           <p className="mt-2 text-sm leading-6 text-white/60">
-            {managerName || 'This manager'} does not currently have any active reps assigned, so there are no nightly numbers or monthly rep totals to track here yet.
+            There are no active reps in the system yet, so there is nothing to enter for nightly numbers.
           </p>
         </div>
       ) : (
         <>
+          <section className="grid gap-6 xl:grid-cols-2">
+            <TotalsPanel
+              title={`${monthLabel} Branch MTD`}
+              description={`Saved totals through ${new Date(`${reportDate}T12:00:00`).toLocaleDateString('en-US')}.`}
+              totals={branchMonthTotals}
+            />
+            <TotalsPanel
+              title="Projected Month-End"
+              description="Working-day pace projected from the selected report date."
+              totals={projectedBranchTotals}
+              projected
+            />
+          </section>
+
           <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
             <div className="mb-5">
               <h2 className="text-2xl font-bold tracking-tight text-white">
-                Team Nightly Numbers
+                Branch Nightly Numbers
               </h2>
               <p className="mt-2 text-sm leading-6 text-white/60">
-                Enter numbers for each rep, then save the entire sheet at once.
+                Enter numbers for every active rep, then save the full branch sheet at once.
               </p>
             </div>
 
@@ -535,7 +619,7 @@ function ManagerNightlyEntryContent() {
                     <td className="px-3 py-3">{totals.inspections}</td>
                     <td className="px-3 py-3">{totals.contingencies}</td>
                     <td className="px-3 py-3">{totals.contracts_with_deposit}</td>
-                    <td className="px-3 py-3">${totals.revenue_signed.toLocaleString()}</td>
+                    <td className="px-3 py-3">{formatCurrency(totals.revenue_signed)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -548,7 +632,7 @@ function ManagerNightlyEntryContent() {
                 {monthLabel} Rep Totals
               </h2>
               <p className="mt-2 text-sm leading-6 text-white/60">
-                Month-to-date totals for each rep based on saved daily numbers.
+                Month-to-date totals for every rep based on saved daily numbers through the selected date.
               </p>
             </div>
 
@@ -579,7 +663,9 @@ function ManagerNightlyEntryContent() {
                       <td className="px-3 py-3 text-white/75">{row.inspections}</td>
                       <td className="px-3 py-3 text-white/75">{row.contingencies}</td>
                       <td className="px-3 py-3 text-white/75">{row.contracts_with_deposit}</td>
-                      <td className="px-3 py-3 text-white">${row.revenue_signed.toLocaleString()}</td>
+                      <td className="px-3 py-3 text-white">
+                        {formatCurrency(row.revenue_signed)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -602,6 +688,78 @@ function ManagerMetric({
   return (
     <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
       <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/38">
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-bold tracking-tight text-white">{value}</div>
+    </div>
+  )
+}
+
+function TotalsPanel({
+  title,
+  description,
+  totals,
+  projected = false,
+}: {
+  title: string
+  description: string
+  totals: Totals
+  projected?: boolean
+}) {
+  return (
+    <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+      <div className="mb-5">
+        <h2 className="text-2xl font-bold tracking-tight text-white">{title}</h2>
+        <p className="mt-2 text-sm leading-6 text-white/60">{description}</p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <TotalsMetric label="Knocks" value={totals.knocks.toLocaleString()} projected={projected} />
+        <TotalsMetric label="Talks" value={totals.talks.toLocaleString()} projected={projected} />
+        <TotalsMetric label="Walks" value={totals.walks.toLocaleString()} projected={projected} />
+        <TotalsMetric
+          label="Inspections"
+          value={totals.inspections.toLocaleString()}
+          projected={projected}
+        />
+        <TotalsMetric
+          label="Contingencies"
+          value={totals.contingencies.toLocaleString()}
+          projected={projected}
+        />
+        <TotalsMetric
+          label="Contracts"
+          value={totals.contracts_with_deposit.toLocaleString()}
+          projected={projected}
+        />
+        <TotalsMetric
+          label="Revenue"
+          value={formatCurrency(totals.revenue_signed)}
+          projected={projected}
+        />
+      </div>
+    </section>
+  )
+}
+
+function TotalsMetric({
+  label,
+  value,
+  projected,
+}: {
+  label: string
+  value: string
+  projected: boolean
+}) {
+  return (
+    <div
+      className={`rounded-[1.4rem] border px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.18)] ${
+        projected
+          ? 'border-blue-400/20 bg-blue-500/10'
+          : 'border-white/10 bg-black/20'
+      }`}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/38">
         {label}
       </div>
       <div className="mt-2 text-2xl font-bold tracking-tight text-white">{value}</div>

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isManagementLockedStage } from '@/lib/job-stage-access'
+import {
+  findInstallScheduledStage,
+  isInstallScheduledStage,
+  isManagementLockedStage,
+} from '@/lib/job-stage-access'
 import { getRouteRequester, isManagerRole } from '@/lib/server-auth'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 
@@ -123,7 +127,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as JobCreateBody
     const stages = await loadStageRows()
-    const stageId = normalizeStageId(body.stage_id)
+    const requestedStageId = normalizeStageId(body.stage_id)
+    const installDate = normalizeDate(body.install_date)
     const repIds = normalizeRepIds(body.rep_ids)
     const homeownerName = normalizeText(body.homeowner_name)
 
@@ -134,6 +139,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    const autoScheduledStage = installDate ? findInstallScheduledStage(stages) : null
+    const stageId = autoScheduledStage?.id ?? requestedStageId
     const targetStage = stageId === null ? null : stages.find((stage) => stage.id === stageId)
 
     if (stageId !== null && !targetStage) {
@@ -143,6 +150,7 @@ export async function POST(req: NextRequest) {
     if (
       targetStage &&
       isManagementLockedStage(targetStage, stages) &&
+      !(installDate && isInstallScheduledStage(targetStage)) &&
       !isManagerRole(authResult.requester.profile.role)
     ) {
       return NextResponse.json(
@@ -173,7 +181,7 @@ export async function POST(req: NextRequest) {
         stage_id: stageId,
         insurance_carrier: normalizeText(body.insurance_carrier),
         claim_number: normalizeText(body.claim_number),
-        install_date: normalizeDate(body.install_date),
+        install_date: installDate,
         contract_amount: normalizeNumber(body.contract_amount),
         deposit_collected: normalizeNumber(body.deposit_collected, true),
         remaining_balance: normalizeNumber(body.remaining_balance, true),

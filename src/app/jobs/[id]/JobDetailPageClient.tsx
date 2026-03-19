@@ -1,12 +1,13 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import StageSelector from './StageSelector'
 import EditJobForm from './EditJobForm'
 import QuickUploadSection from './QuickUploadSection'
 import JobDetailTabs from './JobDetailTabs'
-import ManagementStageGate from './ManagementStageGate'
 import { authorizedFetch } from '@/lib/api-client'
+import { getStageColor } from '@/lib/job-stage-access'
 
 type JobResponse = {
   id: string
@@ -125,6 +126,9 @@ type FormData = {
   shingle_name: string
 }
 
+const ACTION_BUTTON_CLASS_NAME =
+  'rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.1]'
+
 function getHomeowner(homeowners: JobResponse['homeowners']) {
   if (!homeowners) return null
   return Array.isArray(homeowners) ? homeowners[0] ?? null : homeowners
@@ -203,6 +207,40 @@ function buildInitialData(
       : '',
     shingle_name: job.shingle_name ?? '',
   }
+}
+
+function OverviewItem({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}) {
+  return (
+    <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.04] p-4 shadow-[0_14px_36px_rgba(0,0,0,0.16)]">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]">
+        {label}
+      </div>
+      <div className="mt-2 text-sm font-medium leading-6 text-white/82">{value}</div>
+    </div>
+  )
+}
+
+function MetricTile({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}) {
+  return (
+    <div className="rounded-[1.3rem] border border-white/10 bg-black/20 p-4 shadow-[0_14px_32px_rgba(0,0,0,0.18)]">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+        {label}
+      </div>
+      <div className="mt-2 text-xl font-bold tracking-tight text-white">{value}</div>
+    </div>
+  )
 }
 
 export default function JobDetailPageClient({
@@ -284,9 +322,9 @@ export default function JobDetailPageClient({
 
   if (loading) {
     return (
-      <main className="p-8">
-        <div className="mx-auto max-w-7xl rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="text-sm text-gray-600">Loading job details...</div>
+      <main className="p-6 md:p-8">
+        <div className="mx-auto max-w-7xl rounded-[2rem] border border-white/10 bg-[#0b0f16] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+          <div className="text-sm text-white/65">Loading job details...</div>
         </div>
       </main>
     )
@@ -294,10 +332,10 @@ export default function JobDetailPageClient({
 
   if (message || !payload || !initialData) {
     return (
-      <main className="p-8">
-        <div className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-white p-6 shadow-sm">
-          <h1 className="text-2xl font-bold text-gray-900">Job detail error</h1>
-          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+      <main className="p-6 md:p-8">
+        <div className="mx-auto max-w-3xl rounded-[2rem] border border-red-400/20 bg-[#0b0f16] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+          <h1 className="text-2xl font-bold text-white">Job detail error</h1>
+          <div className="mt-4 rounded-[1.4rem] border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-100">
             {message || 'Job not found.'}
           </div>
         </div>
@@ -306,241 +344,196 @@ export default function JobDetailPageClient({
   }
 
   return (
-    <ManagementStageGate currentStage={currentStage} stages={payload.stages}>
-      <main className="p-8">
-        <div className="mx-auto max-w-7xl space-y-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                Job Details
-              </div>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight text-gray-900">
-                {homeowner?.name ?? 'Unnamed Homeowner'}
-              </h1>
-              <p className="mt-2 text-sm text-gray-600">
-                {homeowner?.address ?? '-'}
-              </p>
-            </div>
+    <main className="p-6 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+          <section className="relative overflow-hidden rounded-[2.25rem] border border-white/10 bg-[linear-gradient(145deg,#1a1a1a,#090909)] p-8 shadow-[0_24px_70px_rgba(0,0,0,0.32)]">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,179,122,0.22),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.06),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_40%)]" />
+            <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(214,179,122,0.7),transparent)]" />
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Current Stage
-              </div>
-              <div className="mt-1 text-sm font-medium text-gray-900">
-                {currentStage?.name ?? 'No Stage'}
-              </div>
-              <div className="mt-3">
-                <StageSelector
-                  jobId={payload.job.id}
-                  currentStageId={payload.job.stage_id}
-                  stages={payload.stages}
-                />
-              </div>
-            </div>
-          </div>
+            <div className="relative flex flex-wrap items-start justify-between gap-6">
+              <div className="max-w-4xl">
+                <div className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
+                  Job Details
+                </div>
+                <h1 className="mt-4 text-4xl font-bold tracking-tight text-white md:text-5xl">
+                  {homeowner?.name ?? 'Unnamed Homeowner'}
+                </h1>
+                <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
+                  {homeowner?.address ?? 'No address on file yet.'}
+                </p>
 
-          <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-gray-900">Overview</h2>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  {homeowner?.phone ? (
+                    <a
+                      href={`tel:${homeowner.phone}`}
+                      className={ACTION_BUTTON_CLASS_NAME}
+                    >
+                      Call Homeowner
+                    </a>
+                  ) : null}
 
-            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Homeowner Name
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {homeowner?.name ?? '-'}
-                </div>
-              </div>
+                  {homeowner?.email ? (
+                    <a
+                      href={`mailto:${homeowner.email}`}
+                      className={ACTION_BUTTON_CLASS_NAME}
+                    >
+                      Email Homeowner
+                    </a>
+                  ) : null}
 
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Homeowner Phone
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {homeowner?.phone ?? '-'}
-                </div>
-              </div>
+                  <QuickUploadSection
+                    jobId={payload.job.id}
+                    buttonClassName={ACTION_BUTTON_CLASS_NAME}
+                  />
 
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Homeowner Email
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {homeowner?.email ?? '-'}
+                  <EditJobForm
+                    jobId={payload.job.id}
+                    stages={payload.stages}
+                    reps={payload.reps}
+                    initialSelectedRepIds={payload.initialSelectedRepIds}
+                    initialData={initialData}
+                    buttonClassName={ACTION_BUTTON_CLASS_NAME}
+                  />
+
+                  <Link
+                    href="/map"
+                    className="rounded-2xl bg-[#d6b37a] px-4 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85]"
+                  >
+                    Open Lead Map
+                  </Link>
                 </div>
               </div>
 
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Homeowner Address
+              <div className="w-full max-w-sm rounded-[1.8rem] border border-white/10 bg-white/[0.05] p-5 shadow-[0_16px_40px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/42">
+                  Current Stage
                 </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {homeowner?.address ?? '-'}
+                <div
+                  className="mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]"
+                  style={{
+                    color: getStageColor(currentStage?.name),
+                    borderColor: `${getStageColor(currentStage?.name)}55`,
+                    backgroundColor: `${getStageColor(currentStage?.name)}18`,
+                  }}
+                >
+                  {currentStage?.name ?? 'No Stage'}
                 </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Assigned Reps
+                <div className="mt-4 text-sm text-white/60">
+                  Update the pipeline stage right here without opening the full editor.
                 </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {assignedReps.length > 0
-                    ? assignedReps.map((rep) => rep.full_name).join(', ')
-                    : 'No reps assigned'}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Insurance Carrier
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {payload.job.insurance_carrier ?? '-'}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Deductible
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {formatMoney(payload.job.deductible)}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Claim Number
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {payload.job.claim_number ?? '-'}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Adjuster Name
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {payload.job.adjuster_name ?? '-'}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Adjuster Phone
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {payload.job.adjuster_phone ?? '-'}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Adjuster Email
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {payload.job.adjuster_email ?? '-'}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Date of Loss
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {formatDate(payload.job.date_of_loss)}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Type of Loss
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {payload.job.type_of_loss ?? '-'}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Install Date
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {formatDate(payload.job.install_date)}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Contract Signed Date
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {formatDate(payload.job.contract_signed_date)}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Contract Amount
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {formatMoney(payload.job.contract_amount)}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Deposit Collected
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {formatMoney(payload.job.deposit_collected)}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Remaining Balance
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {formatMoney(payload.job.remaining_balance)}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Supplemented Amount
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {formatMoney(payload.job.supplemented_amount)}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Shingle Name
-                </div>
-                <div className="mt-1 text-sm font-medium text-gray-900">
-                  {payload.job.shingle_name ?? '-'}
+                <div className="mt-4">
+                  <StageSelector
+                    jobId={payload.job.id}
+                    currentStageId={payload.job.stage_id}
+                    installDate={payload.job.install_date}
+                    stages={payload.stages}
+                  />
                 </div>
               </div>
             </div>
           </section>
 
-          <EditJobForm
-            jobId={payload.job.id}
-            homeownerId={payload.job.homeowner_id}
-            stages={payload.stages}
-            reps={payload.reps}
-            initialSelectedRepIds={payload.initialSelectedRepIds}
-            initialData={initialData}
-          />
+          <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+                  Overview
+                </div>
+                <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
+                  Homeowner, claim, and production snapshot
+                </h2>
+              </div>
+            </div>
 
-          <QuickUploadSection jobId={payload.job.id} />
+            <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="grid gap-4 md:grid-cols-2">
+                <OverviewItem label="Homeowner" value={homeowner?.name ?? '-'} />
+                <OverviewItem label="Phone" value={homeowner?.phone ?? '-'} />
+                <OverviewItem label="Email" value={homeowner?.email ?? '-'} />
+                <OverviewItem label="Address" value={homeowner?.address ?? '-'} />
+                <OverviewItem
+                  label="Assigned Reps"
+                  value={
+                    assignedReps.length > 0
+                      ? assignedReps.map((rep) => rep.full_name).join(', ')
+                      : 'No reps assigned'
+                  }
+                />
+                <OverviewItem
+                  label="Insurance Carrier"
+                  value={payload.job.insurance_carrier ?? '-'}
+                />
+                <OverviewItem label="Claim Number" value={payload.job.claim_number ?? '-'} />
+                <OverviewItem label="Deductible" value={formatMoney(payload.job.deductible)} />
+                <OverviewItem
+                  label="Adjuster Name"
+                  value={payload.job.adjuster_name ?? '-'}
+                />
+                <OverviewItem
+                  label="Adjuster Phone"
+                  value={payload.job.adjuster_phone ?? '-'}
+                />
+                <OverviewItem
+                  label="Adjuster Email"
+                  value={payload.job.adjuster_email ?? '-'}
+                />
+                <OverviewItem label="Type of Loss" value={payload.job.type_of_loss ?? '-'} />
+              </div>
 
-          <JobDetailTabs jobId={payload.job.id} initialNotes={payload.initialNotes} />
-        </div>
-      </main>
-    </ManagementStageGate>
+              <div className="space-y-4">
+                <div className="rounded-[1.6rem] border border-white/10 bg-white/[0.04] p-5">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                    Financial Snapshot
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <MetricTile
+                      label="Contract Amount"
+                      value={formatMoney(payload.job.contract_amount)}
+                    />
+                    <MetricTile
+                      label="Deposit Collected"
+                      value={formatMoney(payload.job.deposit_collected)}
+                    />
+                    <MetricTile
+                      label="Remaining Balance"
+                      value={formatMoney(payload.job.remaining_balance)}
+                    />
+                    <MetricTile
+                      label="Supplemented Amount"
+                      value={formatMoney(payload.job.supplemented_amount)}
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-[1.6rem] border border-white/10 bg-white/[0.04] p-5">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                    Timeline
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <OverviewItem
+                      label="Date of Loss"
+                      value={formatDate(payload.job.date_of_loss)}
+                    />
+                    <OverviewItem
+                      label="Install Date"
+                      value={formatDate(payload.job.install_date)}
+                    />
+                    <OverviewItem
+                      label="Contract Signed"
+                      value={formatDate(payload.job.contract_signed_date)}
+                    />
+                    <OverviewItem
+                      label="Shingle Name"
+                      value={payload.job.shingle_name ?? '-'}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        <JobDetailTabs jobId={payload.job.id} initialNotes={payload.initialNotes} />
+      </div>
+    </main>
   )
 }

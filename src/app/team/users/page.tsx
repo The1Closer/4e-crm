@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import ManagerOnlyRoute from '@/components/ManagerOnlyRoute'
+import { authorizedFetch } from '@/lib/api-client'
+import { uploadAvatarViaApi } from '@/lib/avatar-client'
 import { supabase } from '@/lib/supabase'
 
 type ProfileRow = {
@@ -46,56 +48,44 @@ function getTempPasswordFromPhone(phone: string) {
   return digits.length >= 8 ? digits.slice(0, 8) : ''
 }
 
-function slugify(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+function formatRoleLabel(value: string | null | undefined) {
+  return value?.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase()) || 'Unknown Role'
 }
 
-async function cropImageToSquareBlob(file: File, size = 512): Promise<Blob> {
-  const bitmap = await createImageBitmap(file)
-  const side = Math.min(bitmap.width, bitmap.height)
-  const sx = Math.floor((bitmap.width - side) / 2)
-  const sy = Math.floor((bitmap.height - side) / 2)
+function getInitials(value: string | null | undefined) {
+  if (!value?.trim()) return '?'
 
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-
-  const ctx = canvas.getContext('2d')
-  if (!ctx) {
-    throw new Error('Could not prepare avatar canvas.')
-  }
-
-  ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, size, size)
-
-  return await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error('Could not create cropped avatar image.'))
-        return
-      }
-      resolve(blob)
-    }, 'image/jpeg', 0.92)
-  })
+  return value
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
 }
 
-async function uploadAvatarFile(file: File, label: string) {
-  const blob = await cropImageToSquareBlob(file, 512)
-  const filePath = `profiles/${Date.now()}-${slugify(label || 'avatar')}.jpg`
+const PANEL_CLASS_NAME =
+  'rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]'
 
-  const uploadRes = await supabase.storage
-    .from('avatars')
-    .upload(filePath, blob, {
-      contentType: 'image/jpeg',
-      upsert: false,
-    })
+const SUBPANEL_CLASS_NAME =
+  'rounded-[1.6rem] border border-white/10 bg-white/[0.04] p-4'
 
-  if (uploadRes.error) {
-    throw new Error(uploadRes.error.message)
-  }
+const INPUT_CLASS_NAME =
+  'w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35'
 
-  const { data } = supabase.storage.from('avatars').getPublicUrl(filePath)
-  return data.publicUrl
-}
+const READONLY_INPUT_CLASS_NAME =
+  'w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-white/60 outline-none'
+
+const LABEL_CLASS_NAME =
+  'text-xs font-semibold uppercase tracking-[0.18em] text-white/45'
+
+const PRIMARY_BUTTON_CLASS_NAME =
+  'rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:cursor-not-allowed disabled:opacity-45'
+
+const SECONDARY_BUTTON_CLASS_NAME =
+  'rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-45'
+
+const DANGER_BUTTON_CLASS_NAME =
+  'rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100 transition hover:bg-red-500/18 disabled:cursor-not-allowed disabled:opacity-45'
 
 export default function TeamUsersPage() {
   const [fullName, setFullName] = useState('')
@@ -115,6 +105,8 @@ export default function TeamUsersPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, DraftRow>>({})
+  const [draftAvatarFiles, setDraftAvatarFiles] = useState<Record<string, File | null>>({})
+  const [draftAvatarPreviews, setDraftAvatarPreviews] = useState<Record<string, string>>({})
   const [savingEditId, setSavingEditId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -198,6 +190,8 @@ export default function TeamUsersPage() {
     }
 
     setDrafts(nextDrafts)
+    setDraftAvatarFiles({})
+    setDraftAvatarPreviews({})
     setLoading(false)
   }
 
@@ -239,7 +233,10 @@ export default function TeamUsersPage() {
 
     try {
       if (avatarFile) {
-        avatarUrl = await uploadAvatarFile(avatarFile, fullName || email || 'avatar')
+        avatarUrl = await uploadAvatarViaApi({
+          file: avatarFile,
+          label: fullName || email || 'avatar',
+        })
       }
 
       const response = await fetch('/api/admin/create-user', {
@@ -310,22 +307,41 @@ export default function TeamUsersPage() {
     setMessageType('')
 
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: draft.full_name || null,
-          role: draft.role || null,
-          phone: draft.phone || null,
-          manager_id: draft.manager_id || null,
+      let avatarUrl = draft.avatar_url || null
+
+      if (draftAvatarFiles[id]) {
+        avatarUrl = await uploadAvatarViaApi({
+          file: draftAvatarFiles[id] as File,
+          label: draft.full_name || 'avatar',
+          targetProfileId: id,
+        })
+      }
+
+      const response = await authorizedFetch(`/api/admin/users/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          full_name: draft.full_name,
+          role: draft.role,
+          phone: draft.phone,
+          manager_id: draft.manager_id,
           rep_type_id: draft.rep_type_id ? Number(draft.rep_type_id) : null,
           is_active: draft.is_active,
-          avatar_url: draft.avatar_url || null,
-        })
-        .eq('id', id)
+          avatar_url: avatarUrl,
+        }),
+      })
 
-      if (error) {
+      const result = (await response.json().catch(() => null)) as
+        | {
+            error?: string
+          }
+        | null
+
+      if (!response.ok) {
         setMessageType('error')
-        setMessage(error.message)
+        setMessage(result?.error || 'Failed to update user.')
         setSavingEditId(null)
         return
       }
@@ -334,6 +350,15 @@ export default function TeamUsersPage() {
       setMessage('User updated.')
       setEditingId(null)
       setSavingEditId(null)
+      setDraftAvatarFiles((prev) => ({
+        ...prev,
+        [id]: null,
+      }))
+      setDraftAvatarPreviews((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
       await loadData()
     } catch (error) {
       setMessageType('error')
@@ -346,16 +371,31 @@ export default function TeamUsersPage() {
     setMessage('')
     setMessageType('')
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({
+    const response = await authorizedFetch(`/api/admin/users/${profile.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        full_name: profile.full_name,
+        role: profile.role,
+        phone: profile.phone,
+        manager_id: profile.manager_id,
+        rep_type_id: profile.rep_type_id,
         is_active: !profile.is_active,
-      })
-      .eq('id', profile.id)
+        avatar_url: profile.avatar_url,
+      }),
+    })
 
-    if (error) {
+    const result = (await response.json().catch(() => null)) as
+      | {
+          error?: string
+        }
+      | null
+
+    if (!response.ok) {
       setMessageType('error')
-      setMessage(error.message)
+      setMessage(result?.error || 'Could not update the user.')
       return
     }
 
@@ -452,24 +492,70 @@ export default function TeamUsersPage() {
       })
   }, [profiles, search, statusFilter, roleFilter, managerNameById, repTypeNameById])
 
+  const activeCount = useMemo(
+    () => profiles.filter((profile) => profile.is_active).length,
+    [profiles]
+  )
+  const inactiveCount = profiles.length - activeCount
+
   return (
     <ManagerOnlyRoute>
-      <main className="min-h-screen bg-gray-50 p-6 md:p-8">
+      <main className="min-h-screen p-6 md:p-8">
         <div className="mx-auto max-w-7xl space-y-6">
-          <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-              Users
-            </h1>
-            <p className="mt-2 text-sm text-gray-600">
-              Create CRM users, assign managers, assign rep commission tiers, upload avatars, and manage the entire roster.
-            </p>
+          <section className="relative overflow-hidden rounded-[2.25rem] border border-white/10 bg-[linear-gradient(135deg,#0f172a,#111827)] p-8 shadow-[0_24px_70px_rgba(15,23,42,0.26)]">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,179,122,0.25),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_26%)]" />
+            <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(214,179,122,0.7),transparent)]" />
+
+            <div className="relative flex flex-wrap items-end justify-between gap-6">
+              <div className="max-w-4xl">
+                <div className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
+                  Team Management
+                </div>
+                <h1 className="mt-4 text-4xl font-bold tracking-tight text-white md:text-5xl">
+                  Users
+                </h1>
+                <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
+                  Create CRM users, assign managers, control commission tiers, and
+                  keep profile photos and roster access current from one place.
+                </p>
+              </div>
+
+              <div className="grid w-full gap-3 sm:grid-cols-3 xl:w-auto xl:min-w-[460px]">
+                <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.05] p-4 backdrop-blur-xl">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                    Total Users
+                  </div>
+                  <div className="mt-2 text-3xl font-bold tracking-tight text-white">
+                    {profiles.length}
+                  </div>
+                </div>
+
+                <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.05] p-4 backdrop-blur-xl">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                    Active
+                  </div>
+                  <div className="mt-2 text-3xl font-bold tracking-tight text-white">
+                    {activeCount}
+                  </div>
+                </div>
+
+                <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.05] p-4 backdrop-blur-xl">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                    Showing
+                  </div>
+                  <div className="mt-2 text-3xl font-bold tracking-tight text-white">
+                    {filteredProfiles.length}
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {message ? (
               <div
-                className={`mt-4 rounded-xl p-3 text-sm ${
+                className={`relative mt-6 rounded-[1.4rem] border p-4 text-sm ${
                   messageType === 'error'
-                    ? 'border border-red-200 bg-red-50 text-red-700'
-                    : 'border border-green-200 bg-green-50 text-green-700'
+                    ? 'border-red-400/20 bg-red-500/10 text-red-100'
+                    : 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100'
                 }`}
               >
                 {message}
@@ -477,160 +563,234 @@ export default function TeamUsersPage() {
             ) : null}
           </section>
 
-          <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Create User</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Temporary password is always generated automatically from the first 8 digits of the phone number.
-              </p>
+          <section className={PANEL_CLASS_NAME}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+                  Create User
+                </div>
+                <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
+                  Add a new teammate to the CRM
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">
+                  Temporary passwords are generated automatically from the first 8
+                  digits of the phone number, so new accounts can be created quickly
+                  without leaving this page.
+                </p>
+              </div>
+
+              <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/68">
+                Active roster: <span className="font-semibold text-white">{activeCount}</span>
+                {' '}of <span className="font-semibold text-white">{profiles.length}</span>
+              </div>
             </div>
 
-            <form onSubmit={handleCreateUser} className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Full name</label>
-                <input
-                  className="w-full rounded-xl border px-4 py-3 text-sm"
-                  placeholder="Full name"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                />
-              </div>
+            <form
+              onSubmit={handleCreateUser}
+              className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]"
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className={LABEL_CLASS_NAME}>Full Name</label>
+                  <input
+                    className={INPUT_CLASS_NAME}
+                    placeholder="Full name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Email</label>
-                <input
-                  className="w-full rounded-xl border px-4 py-3 text-sm"
-                  placeholder="Email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
+                <div className="space-y-2">
+                  <label className={LABEL_CLASS_NAME}>Email</label>
+                  <input
+                    className={INPUT_CLASS_NAME}
+                    placeholder="Email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Phone number</label>
-                <input
-                  className="w-full rounded-xl border px-4 py-3 text-sm"
-                  placeholder="Phone number"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
-              </div>
+                <div className="space-y-2">
+                  <label className={LABEL_CLASS_NAME}>Phone Number</label>
+                  <input
+                    className={INPUT_CLASS_NAME}
+                    placeholder="Phone number"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Temporary password</label>
-                <input
-                  className="w-full rounded-xl border bg-gray-50 px-4 py-3 text-sm text-gray-700"
-                  value={generatedPassword}
-                  readOnly
-                  placeholder="Generated from phone"
-                />
-              </div>
+                <div className="space-y-2">
+                  <label className={LABEL_CLASS_NAME}>Temporary Password</label>
+                  <input
+                    className={READONLY_INPUT_CLASS_NAME}
+                    value={generatedPassword}
+                    readOnly
+                    placeholder="Generated from phone"
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Role</label>
-                <select
-                  className="w-full rounded-xl border px-4 py-3 text-sm"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                >
-                  <option value="rep">Rep</option>
-                  <option value="manager">Manager</option>
-                  <option value="sales_manager">Sales Manager</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
+                <div className="space-y-2">
+                  <label className={LABEL_CLASS_NAME}>Role</label>
+                  <select
+                    className={INPUT_CLASS_NAME}
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                  >
+                    <option value="rep">Rep</option>
+                    <option value="manager">Manager</option>
+                    <option value="sales_manager">Sales Manager</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Manager</label>
-                <select
-                  className="w-full rounded-xl border px-4 py-3 text-sm"
-                  value={managerId}
-                  onChange={(e) => setManagerId(e.target.value)}
-                >
-                  <option value="">No manager</option>
-                  {managers.map((manager) => (
-                    <option key={manager.id} value={manager.id}>
-                      {manager.full_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div className="space-y-2">
+                  <label className={LABEL_CLASS_NAME}>Manager</label>
+                  <select
+                    className={INPUT_CLASS_NAME}
+                    value={managerId}
+                    onChange={(e) => setManagerId(e.target.value)}
+                  >
+                    <option value="">No manager</option>
+                    {managers.map((manager) => (
+                      <option key={manager.id} value={manager.id}>
+                        {manager.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Rep type / commission tier</label>
-                <select
-                  className="w-full rounded-xl border px-4 py-3 text-sm"
-                  value={repTypeId}
-                  onChange={(e) => setRepTypeId(e.target.value)}
-                >
-                  <option value="">No rep type</option>
-                  {repTypes.map((repType) => (
-                    <option key={repType.id} value={repType.id}>
-                      {repType.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div className="space-y-2">
+                  <label className={LABEL_CLASS_NAME}>Rep Type / Commission Tier</label>
+                  <select
+                    className={INPUT_CLASS_NAME}
+                    value={repTypeId}
+                    onChange={(e) => setRepTypeId(e.target.value)}
+                  >
+                    <option value="">No rep type</option>
+                    {repTypes.map((repType) => (
+                      <option key={repType.id} value={repType.id}>
+                        {repType.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Avatar</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="w-full rounded-xl border px-4 py-3 text-sm"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null
-                    setAvatarFile(file)
-                    setAvatarPreview(file ? URL.createObjectURL(file) : '')
-                  }}
-                />
-              </div>
+                <div className="space-y-2">
+                  <label className={LABEL_CLASS_NAME}>Avatar</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className={INPUT_CLASS_NAME}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null
+                      setAvatarFile(file)
+                      setAvatarPreview(file ? URL.createObjectURL(file) : '')
+                    }}
+                  />
+                </div>
 
-              {avatarPreview ? (
                 <div className="md:col-span-2">
-                  <div className="flex items-center gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                    <img
-                      src={avatarPreview}
-                      alt="Avatar preview"
-                      className="h-20 w-20 rounded-full object-cover"
+                  <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/78">
+                    <input
+                      type="checkbox"
+                      checked={isActive}
+                      onChange={(e) => setIsActive(e.target.checked)}
+                      className="accent-[#d6b37a]"
                     />
-                    <div className="text-sm text-gray-600">
-                      Avatar will be center-cropped into a square profile image when uploaded.
+                    Active user
+                  </label>
+                </div>
+
+                <div className="md:col-span-2">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className={PRIMARY_BUTTON_CLASS_NAME}
+                  >
+                    {saving ? 'Creating...' : 'Create User'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className={SUBPANEL_CLASS_NAME}>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+                    Preview
+                  </div>
+                  <div className="mt-4 flex items-center gap-4">
+                    {avatarPreview ? (
+                      <img
+                        src={avatarPreview}
+                        alt="Avatar preview"
+                        className="h-20 w-20 rounded-full object-cover ring-2 ring-white/10"
+                      />
+                    ) : (
+                      <div className="flex h-20 w-20 items-center justify-center rounded-full border border-white/10 bg-black/20 text-xl font-semibold text-white/72">
+                        {getInitials(fullName || email)}
+                      </div>
+                    )}
+
+                    <div className="min-w-0">
+                      <div className="text-lg font-semibold text-white">
+                        {fullName || 'New team member'}
+                      </div>
+                      <div className="mt-1 text-sm text-white/55">
+                        {email || 'No email entered yet'}
+                      </div>
+                      <div className="mt-3 inline-flex rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-white/70">
+                        {formatRoleLabel(role)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 text-sm leading-6 text-white/55">
+                    Avatar uploads are center-cropped into square profile photos before
+                    they are saved.
+                  </div>
+                </div>
+
+                <div className={SUBPANEL_CLASS_NAME}>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+                    Access Setup
+                  </div>
+                  <div className="mt-3 text-sm leading-6 text-white/60">
+                    New users start with a temporary password based on the first 8
+                    digits in their phone number. Managers and admins can edit profile
+                    photos, roles, active state, and commission tiers after creation.
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                        Temp Password
+                      </div>
+                      <div className="mt-2 text-xl font-bold tracking-tight text-white">
+                        {generatedPassword || 'Awaiting phone'}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                        Account State
+                      </div>
+                      <div className="mt-2 text-xl font-bold tracking-tight text-white">
+                        {isActive ? 'Active' : 'Inactive'}
+                      </div>
                     </div>
                   </div>
                 </div>
-              ) : null}
-
-              <div className="md:col-span-2">
-                <label className="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={isActive}
-                    onChange={(e) => setIsActive(e.target.checked)}
-                  />
-                  Active user
-                </label>
-              </div>
-
-              <div className="md:col-span-2">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-xl bg-gray-900 px-5 py-3 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60"
-                >
-                  {saving ? 'Creating...' : 'Create User'}
-                </button>
               </div>
             </form>
           </section>
 
-          <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+          <section className={PANEL_CLASS_NAME}>
             <div className="mb-6 flex flex-wrap items-end gap-4">
               <div className="min-w-[220px] flex-1">
-                <label className="mb-2 block text-sm font-medium text-gray-700">Search users</label>
+                <label className={`mb-2 block ${LABEL_CLASS_NAME}`}>Search Users</label>
                 <input
-                  className="w-full rounded-xl border px-4 py-3 text-sm"
+                  className={INPUT_CLASS_NAME}
                   placeholder="Search by name, phone, role, manager, or rep type"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -638,9 +798,9 @@ export default function TeamUsersPage() {
               </div>
 
               <div className="min-w-[180px]">
-                <label className="mb-2 block text-sm font-medium text-gray-700">Status</label>
+                <label className={`mb-2 block ${LABEL_CLASS_NAME}`}>Status</label>
                 <select
-                  className="w-full rounded-xl border px-4 py-3 text-sm"
+                  className={INPUT_CLASS_NAME}
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
                 >
@@ -651,9 +811,9 @@ export default function TeamUsersPage() {
               </div>
 
               <div className="min-w-[180px]">
-                <label className="mb-2 block text-sm font-medium text-gray-700">Role</label>
+                <label className={`mb-2 block ${LABEL_CLASS_NAME}`}>Role</label>
                 <select
-                  className="w-full rounded-xl border px-4 py-3 text-sm"
+                  className={INPUT_CLASS_NAME}
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value as typeof roleFilter)}
                 >
@@ -666,21 +826,38 @@ export default function TeamUsersPage() {
               </div>
             </div>
 
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Existing Users</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Search, edit, activate, deactivate, and delete CRM users.
-              </p>
+            <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+                  Roster
+                </div>
+                <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
+                  Existing Users
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-white/60">
+                  Search, edit, activate, deactivate, and delete CRM users without
+                  leaving the roster view.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <div className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white/65">
+                  {filteredProfiles.length} showing
+                </div>
+                <div className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white/65">
+                  {inactiveCount} inactive
+                </div>
+              </div>
             </div>
 
             {loading ? (
-              <div className="mt-4 text-sm text-gray-600">Loading users...</div>
+              <div className="mt-4 text-sm text-white/60">Loading users...</div>
             ) : filteredProfiles.length === 0 ? (
-              <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-600">
+              <div className="mt-4 rounded-[1.4rem] border border-dashed border-white/15 p-4 text-sm text-white/60">
                 No users matched your filters.
               </div>
             ) : (
-              <div className="grid gap-3">
+              <div className="grid gap-4">
                 {filteredProfiles.map((profile) => {
                   const managerName = profile.manager_id
                     ? managerNameById.get(profile.manager_id) ?? 'Unknown manager'
@@ -692,49 +869,79 @@ export default function TeamUsersPage() {
                       : '—'
 
                   const draft = drafts[profile.id]
+                  const activeDraftAvatarPreview =
+                    draftAvatarPreviews[profile.id] || draft?.avatar_url || ''
                   const isEditing = editingId === profile.id
 
                   return (
                     <div
                       key={profile.id}
-                      className="rounded-xl border border-gray-200 p-4"
+                      className="rounded-[1.6rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.16)]"
                     >
                       {!isEditing || !draft ? (
-                        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-3">
+                        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                          <div className="min-w-0 flex items-start gap-4">
+                            <div className="shrink-0">
                               {profile.avatar_url ? (
                                 <img
                                   src={profile.avatar_url}
                                   alt={profile.full_name}
-                                  className="h-12 w-12 rounded-full object-cover"
+                                  className="h-14 w-14 rounded-full object-cover ring-2 ring-white/10"
                                 />
                               ) : (
-                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-600">
-                                  {profile.full_name?.slice(0, 1) || '?'}
+                                <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-black/20 text-sm font-semibold text-white/72">
+                                  {getInitials(profile.full_name)}
                                 </div>
                               )}
+                            </div>
 
-                              <div>
-                                <div className="text-sm font-semibold text-gray-900">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="text-lg font-semibold text-white">
                                   {profile.full_name}
                                 </div>
-                                <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-500">
-                                  <span>Role: {profile.role}</span>
-                                  <span>•</span>
-                                  <span>Active: {profile.is_active ? 'Yes' : 'No'}</span>
+                                <div className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/72">
+                                  {formatRoleLabel(profile.role)}
+                                </div>
+                                <div
+                                  className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                                    profile.is_active
+                                      ? 'border-emerald-400/20 bg-emerald-500/12 text-emerald-100'
+                                      : 'border-white/10 bg-white/[0.04] text-white/55'
+                                  }`}
+                                >
+                                  {profile.is_active ? 'Active' : 'Inactive'}
                                 </div>
                               </div>
-                            </div>
 
-                            <div className="mt-3 text-xs text-gray-500">
-                              Phone: {profile.phone || '—'}
-                            </div>
-                            <div className="mt-1 text-xs text-gray-500">
-                              Manager: {managerName}
-                            </div>
-                            <div className="mt-1 text-xs text-gray-500">
-                              Rep Type: {repTypeName}
+                              <div className="mt-4 grid gap-3 text-sm text-white/62 md:grid-cols-3">
+                                <div className="rounded-[1.2rem] border border-white/10 bg-black/20 px-4 py-3">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
+                                    Phone
+                                  </div>
+                                  <div className="mt-2 text-sm text-white/78">
+                                    {profile.phone || '—'}
+                                  </div>
+                                </div>
+
+                                <div className="rounded-[1.2rem] border border-white/10 bg-black/20 px-4 py-3">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
+                                    Manager
+                                  </div>
+                                  <div className="mt-2 text-sm text-white/78">
+                                    {managerName}
+                                  </div>
+                                </div>
+
+                                <div className="rounded-[1.2rem] border border-white/10 bg-black/20 px-4 py-3">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
+                                    Rep Type
+                                  </div>
+                                  <div className="mt-2 text-sm text-white/78">
+                                    {repTypeName}
+                                  </div>
+                                </div>
+                              </div>
                             </div>
                           </div>
 
@@ -742,7 +949,7 @@ export default function TeamUsersPage() {
                             <button
                               type="button"
                               onClick={() => handleToggleActive(profile)}
-                              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
+                              className={SECONDARY_BUTTON_CLASS_NAME}
                             >
                               {profile.is_active ? 'Make Inactive' : 'Make Active'}
                             </button>
@@ -750,7 +957,7 @@ export default function TeamUsersPage() {
                             <button
                               type="button"
                               onClick={() => setEditingId(profile.id)}
-                              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
+                              className={SECONDARY_BUTTON_CLASS_NAME}
                             >
                               Edit
                             </button>
@@ -759,93 +966,174 @@ export default function TeamUsersPage() {
                               type="button"
                               onClick={() => handleDeleteUser(profile)}
                               disabled={deletingId === profile.id}
-                              className="rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-60"
+                              className={DANGER_BUTTON_CLASS_NAME}
                             >
                               {deletingId === profile.id ? 'Deleting...' : 'Delete'}
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <div className="space-y-4">
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <input
-                              className="rounded-xl border px-4 py-3 text-sm"
-                              value={draft.full_name}
-                              onChange={(e) =>
-                                updateDraft(profile.id, { full_name: e.target.value })
-                              }
-                              placeholder="Full name"
-                            />
-
-                            <input
-                              className="rounded-xl border px-4 py-3 text-sm"
-                              value={draft.phone}
-                              onChange={(e) =>
-                                updateDraft(profile.id, { phone: e.target.value })
-                              }
-                              placeholder="Phone"
-                            />
-
-                            <select
-                              className="rounded-xl border px-4 py-3 text-sm"
-                              value={draft.role}
-                              onChange={(e) =>
-                                updateDraft(profile.id, { role: e.target.value })
-                              }
-                            >
-                              <option value="rep">Rep</option>
-                              <option value="manager">Manager</option>
-                              <option value="sales_manager">Sales Manager</option>
-                              <option value="admin">Admin</option>
-                            </select>
-
-                            <select
-                              className="rounded-xl border px-4 py-3 text-sm"
-                              value={draft.manager_id}
-                              onChange={(e) =>
-                                updateDraft(profile.id, { manager_id: e.target.value })
-                              }
-                            >
-                              <option value="">No manager</option>
-                              {managers.map((manager) => (
-                                <option key={manager.id} value={manager.id}>
-                                  {manager.full_name}
-                                </option>
-                              ))}
-                            </select>
-
-                            <select
-                              className="rounded-xl border px-4 py-3 text-sm"
-                              value={draft.rep_type_id}
-                              onChange={(e) =>
-                                updateDraft(profile.id, { rep_type_id: e.target.value })
-                              }
-                            >
-                              <option value="">No rep type</option>
-                              {repTypes.map((repType) => (
-                                <option key={repType.id} value={repType.id}>
-                                  {repType.name}
-                                </option>
-                              ))}
-                            </select>
-
-                            <input
-                              className="rounded-xl border px-4 py-3 text-sm"
-                              value={draft.avatar_url}
-                              onChange={(e) =>
-                                updateDraft(profile.id, { avatar_url: e.target.value })
-                              }
-                              placeholder="Avatar URL"
-                            />
+                        <div className="space-y-5">
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+                              Editing User
+                            </div>
+                            <h3 className="mt-2 text-xl font-bold tracking-tight text-white">
+                              {profile.full_name}
+                            </h3>
                           </div>
 
-                          <label className="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm text-gray-700">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <label className={LABEL_CLASS_NAME}>Full Name</label>
+                              <input
+                                className={INPUT_CLASS_NAME}
+                                value={draft.full_name}
+                                onChange={(e) =>
+                                  updateDraft(profile.id, { full_name: e.target.value })
+                                }
+                                placeholder="Full name"
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className={LABEL_CLASS_NAME}>Phone</label>
+                              <input
+                                className={INPUT_CLASS_NAME}
+                                value={draft.phone}
+                                onChange={(e) =>
+                                  updateDraft(profile.id, { phone: e.target.value })
+                                }
+                                placeholder="Phone"
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className={LABEL_CLASS_NAME}>Role</label>
+                              <select
+                                className={INPUT_CLASS_NAME}
+                                value={draft.role}
+                                onChange={(e) =>
+                                  updateDraft(profile.id, { role: e.target.value })
+                                }
+                              >
+                                <option value="rep">Rep</option>
+                                <option value="manager">Manager</option>
+                                <option value="sales_manager">Sales Manager</option>
+                                <option value="admin">Admin</option>
+                              </select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className={LABEL_CLASS_NAME}>Manager</label>
+                              <select
+                                className={INPUT_CLASS_NAME}
+                                value={draft.manager_id}
+                                onChange={(e) =>
+                                  updateDraft(profile.id, { manager_id: e.target.value })
+                                }
+                              >
+                                <option value="">No manager</option>
+                                {managers.map((manager) => (
+                                  <option key={manager.id} value={manager.id}>
+                                    {manager.full_name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className={LABEL_CLASS_NAME}>Rep Type</label>
+                              <select
+                                className={INPUT_CLASS_NAME}
+                                value={draft.rep_type_id}
+                                onChange={(e) =>
+                                  updateDraft(profile.id, { rep_type_id: e.target.value })
+                                }
+                              >
+                                <option value="">No rep type</option>
+                                {repTypes.map((repType) => (
+                                  <option key={repType.id} value={repType.id}>
+                                    {repType.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="md:col-span-2 rounded-[1.6rem] border border-white/10 bg-black/20 p-4">
+                              <div className="flex flex-wrap items-center gap-4">
+                                {activeDraftAvatarPreview ? (
+                                  <img
+                                    src={activeDraftAvatarPreview}
+                                    alt={draft.full_name || profile.full_name}
+                                    className="h-16 w-16 rounded-full object-cover ring-2 ring-white/10"
+                                  />
+                                ) : (
+                                  <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-sm font-semibold text-white/72">
+                                    {getInitials(draft.full_name || profile.full_name || '?')}
+                                  </div>
+                                )}
+
+                                <div className="flex flex-wrap gap-3">
+                                  <label className={`${SECONDARY_BUTTON_CLASS_NAME} cursor-pointer`}>
+                                    Upload Avatar
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0] ?? null
+                                        setDraftAvatarFiles((prev) => ({
+                                          ...prev,
+                                          [profile.id]: file,
+                                        }))
+                                        setDraftAvatarPreviews((prev) => ({
+                                          ...prev,
+                                          [profile.id]: file
+                                            ? URL.createObjectURL(file)
+                                            : '',
+                                        }))
+                                      }}
+                                    />
+                                  </label>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      updateDraft(profile.id, { avatar_url: '' })
+                                      setDraftAvatarFiles((prev) => ({
+                                        ...prev,
+                                        [profile.id]: null,
+                                      }))
+                                      setDraftAvatarPreviews((prev) => {
+                                        const next = { ...prev }
+                                        delete next[profile.id]
+                                        return next
+                                      })
+                                    }}
+                                    className={SECONDARY_BUTTON_CLASS_NAME}
+                                  >
+                                    Clear Avatar
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="mt-3 text-xs text-white/50">
+                                Avatar uploads are center-cropped and saved through the
+                                server so managers can update user photos without storage
+                                permission issues.
+                              </div>
+                            </div>
+                          </div>
+
+                          <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/78">
                             <input
                               type="checkbox"
                               checked={draft.is_active}
                               onChange={(e) =>
                                 updateDraft(profile.id, { is_active: e.target.checked })
                               }
+                              className="accent-[#d6b37a]"
                             />
                             Active user
                           </label>
@@ -855,7 +1143,7 @@ export default function TeamUsersPage() {
                               type="button"
                               onClick={() => handleSaveExistingUser(profile.id)}
                               disabled={savingEditId === profile.id}
-                              className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white transition hover:bg-gray-800 disabled:opacity-60"
+                              className={PRIMARY_BUTTON_CLASS_NAME}
                             >
                               {savingEditId === profile.id ? 'Saving...' : 'Save'}
                             </button>
@@ -879,8 +1167,17 @@ export default function TeamUsersPage() {
                                     avatar_url: profile.avatar_url ?? '',
                                   },
                                 }))
+                                setDraftAvatarFiles((prev) => ({
+                                  ...prev,
+                                  [profile.id]: null,
+                                }))
+                                setDraftAvatarPreviews((prev) => {
+                                  const next = { ...prev }
+                                  delete next[profile.id]
+                                  return next
+                                })
                               }}
-                              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-900 transition hover:bg-gray-100"
+                              className={SECONDARY_BUTTON_CLASS_NAME}
                             >
                               Cancel
                             </button>
