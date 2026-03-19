@@ -153,6 +153,7 @@ function JobsPageContent() {
   const [errorMessage, setErrorMessage] = useState('')
   const [pageMessage, setPageMessage] = useState('')
   const [role, setRole] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = useState('')
 
   const [stageOptions, setStageOptions] = useState<JobStageOption[]>([])
   const [profileOptions, setProfileOptions] = useState<ProfileOption[]>([])
@@ -175,12 +176,14 @@ function JobsPageContent() {
 
     if (!currentProfile) {
       setRole(null)
+      setCurrentUserId('')
       setJobs([])
       setLoading(false)
       return
     }
 
     setRole(currentProfile.role)
+    setCurrentUserId(currentProfile.id)
 
     const [stagesRes, profilesRes] = await Promise.all([
       supabase
@@ -352,6 +355,12 @@ function JobsPageContent() {
       next = next.filter((job) => (job.job_reps ?? []).length === 0)
     }
 
+    if (quickFilter === 'mine' && currentUserId) {
+      next = next.filter((job) =>
+        (job.job_reps ?? []).some((rep) => rep.profile_id === currentUserId)
+      )
+    }
+
     if (quickFilter === 'has_install') {
       next = next.filter((job) => Boolean(job.install_date))
     }
@@ -372,6 +381,7 @@ function JobsPageContent() {
     managerFilter,
     profileOptions,
     quickFilter,
+    currentUserId,
   ])
 
   const filteredJobs = useMemo(() => {

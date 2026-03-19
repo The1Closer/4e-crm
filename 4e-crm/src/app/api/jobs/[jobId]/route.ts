@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isManagementLockedStage } from '@/lib/job-stage-access'
+import {
+  findInstallScheduledStage,
+  isInstallScheduledStage,
+  isManagementLockedStage,
+} from '@/lib/job-stage-access'
 import {
   getRouteRequester,
   isManagerRole,
@@ -265,9 +269,12 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
   try {
     const body = (await req.json()) as JobMutationBody
     const stages = await loadStageRows()
-    const stageId = normalizeStageId(body.stage_id)
+    const requestedStageId = normalizeStageId(body.stage_id)
+    const installDate = normalizeDate(body.install_date)
     const repIds = normalizeRepIds(body.rep_ids)
 
+    const autoScheduledStage = installDate ? findInstallScheduledStage(stages) : null
+    const stageId = autoScheduledStage?.id ?? requestedStageId
     const targetStage = stageId === null ? null : stages.find((stage) => stage.id === stageId)
 
     if (stageId !== null && !targetStage) {
@@ -277,6 +284,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     if (
       targetStage &&
       isManagementLockedStage(targetStage, stages) &&
+      !(installDate && isInstallScheduledStage(targetStage)) &&
       !isManagerRole(authResult.requester.profile.role)
     ) {
       return NextResponse.json(
@@ -334,7 +342,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
         adjuster_email: normalizeText(body.adjuster_email),
         date_of_loss: normalizeDate(body.date_of_loss),
         type_of_loss: normalizeText(body.type_of_loss),
-        install_date: normalizeDate(body.install_date),
+        install_date: installDate,
         contract_signed_date: normalizeDate(body.contract_signed_date),
         contract_amount: normalizeNumber(body.contract_amount),
         deposit_collected: normalizeNumber(body.deposit_collected, true),

@@ -217,9 +217,9 @@ export default function JobDocumentsPanel({
       id: doc.id,
       file_name: doc.file_name,
       open_url: doc.file_url,
-      signer_url: `/contracts/editor?jobId=${jobId}&documentId=${doc.id}&sourceUrl=${encodeURIComponent(
-        doc.file_url
-      )}&name=${encodeURIComponent(doc.file_name)}`,
+      signer_url: `/contracts/editor?jobId=${jobId}&documentId=${doc.id}&name=${encodeURIComponent(
+        doc.file_name
+      )}`,
       subtitle: `${doc.is_signed ? 'Signed' : 'Generated'} • ${
         doc.document_type || 'Document'
       }`,
@@ -235,9 +235,9 @@ export default function JobDocumentsPanel({
         id: doc.id,
         file_name: doc.file_name,
         open_url: url,
-        signer_url: `/contracts/editor?jobId=${jobId}&sourceUrl=${encodeURIComponent(
-          url
-        )}&name=${encodeURIComponent(doc.file_name)}`,
+        signer_url: `/contracts/editor?jobId=${jobId}&jobFileId=${doc.id}&name=${encodeURIComponent(
+          doc.file_name
+        )}`,
         subtitle: 'Uploaded document',
         deletable: permissions.canManageTemplates,
         onDelete: () => deleteUploadedDocument(doc),
@@ -294,9 +294,9 @@ export default function JobDocumentsPanel({
 
                 <div className="mt-4">
                   <Link
-                    href={`/contracts/editor?jobId=${jobId}&templateId=${template.id}&sourceUrl=${encodeURIComponent(
-                      template.file_url
-                    )}&name=${encodeURIComponent(template.name)}`}
+                    href={`/contracts/editor?jobId=${jobId}&templateId=${template.id}&name=${encodeURIComponent(
+                      template.name
+                    )}`}
                     className="rounded-2xl bg-[#d6b37a] px-3 py-2 text-xs font-semibold text-black shadow-[0_10px_24px_rgba(214,179,122,0.24)] transition hover:bg-[#e2bf85]"
                   >
                     Open Template

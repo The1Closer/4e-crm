@@ -8,6 +8,7 @@ import { getCurrentUserProfile, getPermissions } from '@/lib/auth-helpers'
 import AddressAutocompleteInput from '@/components/forms/AddressAutocompleteInput'
 import {
   getVisibleStagesForUser,
+  isInstallScheduledStage,
   isManagementLockedStage,
 } from '@/lib/job-stage-access'
 
@@ -87,6 +88,10 @@ function FormField({
 const INPUT_CLASS_NAME =
   'w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35'
 
+function formatScheduleDate(value: string) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-US')
+}
+
 export default function EditJobForm({
   jobId,
   stages,
@@ -151,13 +156,11 @@ export default function EditJobForm({
   )
 
   const visibleStages = useMemo(() => {
-    const unlockedStages = getVisibleStagesForUser(stages, canManageLockedStages)
+    const unlockedStages = getVisibleStagesForUser(stages, canManageLockedStages).filter(
+      (stage) => !isInstallScheduledStage(stage)
+    )
 
-    if (
-      !currentStage ||
-      canManageLockedStages ||
-      unlockedStages.some((stage) => stage.id === currentStage.id)
-    ) {
+    if (!currentStage || unlockedStages.some((stage) => stage.id === currentStage.id)) {
       return unlockedStages
     }
 
@@ -170,6 +173,11 @@ export default function EditJobForm({
       isManagementLockedStage(currentStage, stages) &&
       !canManageLockedStages,
     [canManageLockedStages, currentStage, stages]
+  )
+
+  const stageManagedByCalendar = useMemo(
+    () => Boolean(form.install_date && currentStage && isInstallScheduledStage(currentStage)),
+    [currentStage, form.install_date]
   )
 
   function removeRep(repId: string) {
@@ -203,6 +211,12 @@ export default function EditJobForm({
     event.preventDefault()
 
     const nextStage = stages.find((stage) => String(stage.id) === form.stage_id) ?? null
+
+    if (nextStage && isInstallScheduledStage(nextStage)) {
+      setMessageTone('error')
+      setMessage('Install Scheduled is managed from the install calendar.')
+      return
+    }
 
     if (nextStage && isManagementLockedStage(nextStage, stages) && !canManageLockedStages) {
       setMessageTone('error')
@@ -449,14 +463,18 @@ export default function EditJobForm({
                 <SurfacePanel eyebrow="Production" title="Schedule + Financials">
                   <div className="grid gap-4 md:grid-cols-2">
                     <FormField label="Install Date">
-                      <input
-                        type="date"
-                        className={INPUT_CLASS_NAME}
-                        value={form.install_date}
-                        onChange={(event) =>
-                          updateField('install_date', event.target.value)
-                        }
-                      />
+                      <div className="space-y-3">
+                        <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/72">
+                          {form.install_date
+                            ? formatScheduleDate(form.install_date)
+                            : 'Not scheduled yet'}
+                        </div>
+                        <div className="text-xs leading-5 text-white/45">
+                          Install dates are managed from the install calendar. Drag a job
+                          from the Ready Queue onto a day there, or update the date from the
+                          calendar board.
+                        </div>
+                      </div>
                     </FormField>
 
                     <FormField label="Contract Signed Date">
@@ -535,7 +553,7 @@ export default function EditJobForm({
                       <select
                         className={INPUT_CLASS_NAME}
                         value={form.stage_id}
-                        disabled={stageLockedForUser}
+                        disabled={stageLockedForUser || stageManagedByCalendar}
                         onChange={(event) => updateField('stage_id', event.target.value)}
                       >
                         <option value="">Select stage</option>
@@ -551,6 +569,13 @@ export default function EditJobForm({
                       <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
                         This job is already in Contracted or a later stage. Management can
                         change the stage, but you can still edit the rest of the file.
+                      </div>
+                    ) : null}
+
+                    {stageManagedByCalendar ? (
+                      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
+                        Install Scheduled is controlled from the install calendar while the
+                        job has an install date.
                       </div>
                     ) : null}
 

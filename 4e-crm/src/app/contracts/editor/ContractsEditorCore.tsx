@@ -81,6 +81,10 @@ function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
+function isPdfLikeFile(file: File) {
+  return file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+}
+
 function dataURLToUint8Array(dataURL: string) {
   const base64 = dataURL.split(',')[1]
   const binary = atob(base64)
@@ -97,12 +101,19 @@ function buildDraftKey(params: {
   jobId: string | null
   templateId: string | null
   documentId: string | null
-  sourceUrl: string
+  jobFileId: string | null
+  sourceIdentifier: string
   localFileName: string
   initialName: string
 }) {
   const sourceToken = slugifyFileName(
-    params.sourceUrl || params.localFileName || params.initialName || 'document'
+    params.templateId
+      ? `template-${params.templateId}`
+      : params.documentId
+        ? `job-document-${params.documentId}`
+        : params.jobFileId
+          ? `job-file-${params.jobFileId}`
+          : params.localFileName || params.sourceIdentifier || params.initialName || 'document'
   ).slice(0, 120)
 
   return [
@@ -110,6 +121,7 @@ function buildDraftKey(params: {
     params.jobId ?? 'no-job',
     params.templateId ?? 'no-template',
     params.documentId ?? 'no-document',
+    params.jobFileId ?? 'no-job-file',
     sourceToken,
   ].join('::')
 }
@@ -173,6 +185,7 @@ function sourceLabel(params: {
   localFileName: string
   templateId: string | null
   documentId: string | null
+  jobFileId: string | null
 }) {
   if (params.localFileName) {
     return `Local upload · ${params.localFileName}`
@@ -184,6 +197,10 @@ function sourceLabel(params: {
 
   if (params.documentId) {
     return 'Existing job document'
+  }
+
+  if (params.jobFileId) {
+    return 'Uploaded job document'
   }
 
   if (params.sourceUrl) {
@@ -243,6 +260,7 @@ export default function ContractsEditorCore() {
   const jobId = searchParams.get('jobId')
   const templateId = searchParams.get('templateId')
   const documentId = searchParams.get('documentId')
+  const jobFileId = searchParams.get('jobFileId')
   const initialName = searchParams.get('name') ?? 'document'
 
   const [loadedPdfUrl, setLoadedPdfUrl] = useState(sourceUrl)
@@ -252,6 +270,7 @@ export default function ContractsEditorCore() {
   const [templatePickerId, setTemplatePickerId] = useState(templateId ?? '')
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(templateId)
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(documentId)
+  const [activeJobFileId, setActiveJobFileId] = useState<string | null>(jobFileId)
   const [numPages, setNumPages] = useState(0)
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -263,7 +282,9 @@ export default function ContractsEditorCore() {
   const [documentLoadError, setDocumentLoadError] = useState(false)
   const [localFileName, setLocalFileName] = useState('')
   const [localObjectUrl, setLocalObjectUrl] = useState<string | null>(null)
+  const [remoteObjectUrl, setRemoteObjectUrl] = useState<string | null>(null)
   const [isOnline, setIsOnline] = useState(true)
+  const [sourceLoading, setSourceLoading] = useState(false)
 
   const signaturePadRef = useRef<SignatureCanvas | null>(null)
 
@@ -273,16 +294,17 @@ export default function ContractsEditorCore() {
         jobId,
         templateId: activeTemplateId,
         documentId: activeDocumentId,
-        sourceUrl: localFileName ? '' : loadedPdfUrl || sourceUrl,
+        jobFileId: activeJobFileId,
+        sourceIdentifier: sourceUrl,
         localFileName,
         initialName,
       }),
     [
       activeDocumentId,
+      activeJobFileId,
       activeTemplateId,
       initialName,
       jobId,
-      loadedPdfUrl,
       localFileName,
       sourceUrl,
     ]
@@ -313,39 +335,127 @@ export default function ContractsEditorCore() {
   const sourceSummary = useMemo(
     () =>
       sourceLabel({
-        sourceUrl: loadedPdfUrl || sourceUrl,
+        sourceUrl,
         localFileName,
         templateId: activeTemplateId,
         documentId: activeDocumentId,
+        jobFileId: activeJobFileId,
       }),
-    [activeDocumentId, activeTemplateId, loadedPdfUrl, localFileName, sourceUrl]
+    [activeDocumentId, activeJobFileId, activeTemplateId, localFileName, sourceUrl]
   )
 
   const hasSource = Boolean(loadedPdfUrl)
 
   useEffect(() => {
-    if (sourceUrl) {
+    let isActive = true
+
+    async function resolveInitialSource() {
       setActiveTemplateId(templateId)
       setActiveDocumentId(documentId)
+      setActiveJobFileId(jobFileId)
       setTemplatePickerId(templateId ?? '')
       setLocalFileName('')
-      setLoadedPdfUrl(sourceUrl)
+      setLocalObjectUrl(null)
+
+      if (!templateId && !documentId && !jobFileId && !sourceUrl) {
+        setSourceLoading(false)
+        setRemoteObjectUrl(null)
+        setLoadedPdfUrl('')
+        setDocumentName(initialName)
+        setAnnotations([])
+        setSelectedId(null)
+        setNumPages(0)
+        setDocumentLoadError(false)
+        setMessage(
+          'Open this editor from Templates, from a job document, or upload a one-time PDF from your device.'
+        )
+        return
+      }
+
+      const endpoint = documentId
+        ? `/api/job-documents/${documentId}`
+        : jobFileId
+          ? `/api/job-files/${jobFileId}`
+          : templateId
+            ? `/api/templates/${templateId}`
+            : ''
+
+      if (!endpoint) {
+        setSourceLoading(false)
+        setRemoteObjectUrl(null)
+        setLoadedPdfUrl(sourceUrl)
+        setDocumentName(initialName)
+        setAnnotations([])
+        setSelectedId(null)
+        setNumPages(0)
+        setDocumentLoadError(false)
+        setMessage('')
+        return
+      }
+
+      setSourceLoading(true)
+      setLoadedPdfUrl('')
       setDocumentName(initialName)
       setAnnotations([])
       setSelectedId(null)
+      setNumPages(0)
       setDocumentLoadError(false)
       setMessage('')
-      return
+
+      try {
+        const response = await authorizedFetch(endpoint)
+        const result = (await response.clone().json().catch(() => null)) as
+          | {
+              error?: string
+            }
+          | null
+
+        if (!response.ok) {
+          throw new Error(result?.error || 'Could not load this PDF source.')
+        }
+
+        const blob = await response.blob()
+
+        if (!isActive) {
+          return
+        }
+
+        const objectUrl = URL.createObjectURL(blob)
+        setRemoteObjectUrl(objectUrl)
+        setLoadedPdfUrl(objectUrl)
+      } catch (error) {
+        console.error(error)
+
+        if (!isActive) {
+          return
+        }
+
+        if (sourceUrl) {
+          setRemoteObjectUrl(null)
+          setLoadedPdfUrl(sourceUrl)
+          setMessage('Loaded the fallback PDF source after the secured source failed.')
+          return
+        }
+
+        setRemoteObjectUrl(null)
+        setLoadedPdfUrl('')
+        setDocumentLoadError(true)
+        setMessage(
+          error instanceof Error ? error.message : 'Could not load this PDF source.'
+        )
+      } finally {
+        if (isActive) {
+          setSourceLoading(false)
+        }
+      }
     }
 
-    setActiveTemplateId(templateId)
-    setActiveDocumentId(documentId)
-    setTemplatePickerId(templateId ?? '')
-    setLoadedPdfUrl('')
-    setMessage(
-      'Open this editor from Templates, from a job document, or upload a one-time PDF from your device.'
-    )
-  }, [documentId, initialName, sourceUrl, templateId])
+    void resolveInitialSource()
+
+    return () => {
+      isActive = false
+    }
+  }, [documentId, initialName, jobFileId, sourceUrl, templateId])
 
   useEffect(() => {
     let isActive = true
@@ -387,6 +497,14 @@ export default function ContractsEditorCore() {
       }
     }
   }, [localObjectUrl])
+
+  useEffect(() => {
+    return () => {
+      if (remoteObjectUrl) {
+        URL.revokeObjectURL(remoteObjectUrl)
+      }
+    }
+  }, [remoteObjectUrl])
 
   useEffect(() => {
     function syncNetworkStatus() {
@@ -482,7 +600,7 @@ export default function ContractsEditorCore() {
   function handleLocalFileChange(file: File | null) {
     if (!file) return
 
-    if (file.type !== 'application/pdf') {
+    if (!isPdfLikeFile(file)) {
       setMessage('Please choose a PDF file.')
       return
     }
@@ -496,11 +614,13 @@ export default function ContractsEditorCore() {
     setLocalFileName(file.name)
     setActiveTemplateId(null)
     setActiveDocumentId(null)
+    setActiveJobFileId(null)
     setTemplatePickerId('')
+    setRemoteObjectUrl(null)
     resetEditorForDocument(nextObjectUrl, file.name.replace(/\.pdf$/i, ''))
   }
 
-  function loadTemplateFromPicker() {
+  async function loadTemplateFromPicker() {
     const selectedTemplate = templates.find((template) => template.id === templatePickerId)
 
     if (!selectedTemplate) {
@@ -516,7 +636,39 @@ export default function ContractsEditorCore() {
     setLocalFileName('')
     setActiveTemplateId(selectedTemplate.id)
     setActiveDocumentId(null)
-    resetEditorForDocument(selectedTemplate.file_url, selectedTemplate.name)
+    setActiveJobFileId(null)
+    setRemoteObjectUrl(null)
+    setSourceLoading(true)
+    resetEditorForDocument('', selectedTemplate.name)
+
+    try {
+      const response = await authorizedFetch(`/api/templates/${selectedTemplate.id}`)
+      const result = (await response.clone().json().catch(() => null)) as
+        | {
+            error?: string
+          }
+        | null
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Could not load the selected template.')
+      }
+
+      const blob = await response.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      setRemoteObjectUrl(objectUrl)
+      setLoadedPdfUrl(objectUrl)
+      setMessage('')
+    } catch (error) {
+      console.error(error)
+      resetEditorForDocument(selectedTemplate.file_url, selectedTemplate.name)
+      setMessage(
+        error instanceof Error
+          ? `${error.message} Loaded the public template source instead.`
+          : 'Loaded the public template source instead.'
+      )
+    } finally {
+      setSourceLoading(false)
+    }
   }
 
   function onLoadSuccess({ numPages: totalPages }: { numPages: number }) {
@@ -856,7 +1008,9 @@ export default function ContractsEditorCore() {
         formData.set('documentName', documentName || 'signed-document')
         formData.set(
           'documentType',
-          activeDocumentId || localFileName ? 'Edited Document' : 'Signed Document'
+          activeDocumentId || activeJobFileId || localFileName
+            ? 'Edited Document'
+            : 'Signed Document'
         )
         formData.set('file', blob, `${slugifyFileName(documentName || 'signed-document')}.pdf`)
 
@@ -963,7 +1117,7 @@ export default function ContractsEditorCore() {
               <button
                 type="button"
                 onClick={loadTemplateFromPicker}
-                disabled={!templatePickerId}
+                disabled={!templatePickerId || sourceLoading}
                 className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:opacity-50"
               >
                 Load
@@ -983,7 +1137,7 @@ export default function ContractsEditorCore() {
             <button
               type="button"
               onClick={saveAnnotatedPdf}
-              disabled={saving || !hasSource}
+              disabled={saving || sourceLoading || !hasSource}
               className="rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? 'Saving...' : jobId ? 'Save Back to Job' : 'Download Signed PDF'}
@@ -1185,7 +1339,11 @@ export default function ContractsEditorCore() {
         </aside>
 
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          {!hasSource ? (
+          {sourceLoading ? (
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-10 text-center text-sm text-white/60">
+              Loading PDF source...
+            </div>
+          ) : !hasSource ? (
             <div className="rounded-2xl border border-dashed border-white/14 p-10 text-center text-sm text-white/55">
               Open this editor from a template or a job document, or upload a local PDF to begin.
             </div>
@@ -1196,6 +1354,7 @@ export default function ContractsEditorCore() {
           ) : (
             <div className="overflow-x-auto">
               <Document
+                key={`${activeTemplateId ?? 'template-none'}:${activeDocumentId ?? 'document-none'}:${activeJobFileId ?? 'job-file-none'}:${localFileName || 'local-none'}:${loadedPdfUrl || sourceUrl || 'no-source'}`}
                 file={loadedPdfUrl}
                 onLoadSuccess={onLoadSuccess}
                 onLoadError={onLoadError}

@@ -279,6 +279,15 @@ function TemplatesPageContent() {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={`/contracts/editor?templateId=${template.id}&name=${encodeURIComponent(
+                        template.name
+                      )}`}
+                      className="rounded-xl bg-[#d6b37a] px-3 py-2 text-xs font-semibold text-black shadow-[0_10px_24px_rgba(214,179,122,0.24)] transition hover:bg-[#e2bf85]"
+                    >
+                      Open In Signer
+                    </Link>
+
                     <a
                       href={template.file_url}
                       target="_blank"

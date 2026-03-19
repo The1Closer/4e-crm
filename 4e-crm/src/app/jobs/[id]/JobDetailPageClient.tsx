@@ -425,6 +425,7 @@ export default function JobDetailPageClient({
                   <StageSelector
                     jobId={payload.job.id}
                     currentStageId={payload.job.stage_id}
+                    installDate={payload.job.install_date}
                     stages={payload.stages}
                   />
                 </div>
