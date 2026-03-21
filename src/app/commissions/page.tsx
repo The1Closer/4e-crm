@@ -3,12 +3,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Search } from 'lucide-react'
-import ManagerOnlyRoute from '../../components/ManagerOnlyRoute'
+import ProtectedRoute from '../../components/ProtectedRoute'
 import {
   ARCHIVE_INACTIVITY_DAYS,
   isArchivedByInactivity,
-  isPaidInFull,
 } from '@/lib/job-lifecycle'
+import {
+  getCurrentUserProfile,
+  getPermissions,
+  type UserProfile,
+} from '@/lib/auth-helpers'
+import {
+  getManagementStageThreshold,
+  normalizeStageName,
+  type PipelineStageRecord,
+} from '@/lib/job-stage-access'
 import { supabase } from '../../lib/supabase'
 
 type JobRow = {
@@ -29,10 +38,14 @@ type JobRow = {
     | null
   pipeline_stages:
     | {
+        id: number | null
         name: string | null
+        sort_order: number | null
       }
     | {
+        id: number | null
         name: string | null
+        sort_order: number | null
       }[]
     | null
   job_reps:
@@ -116,6 +129,44 @@ const PRIMARY_BUTTON_CLASS =
 
 const MUTED_TEXT_CLASS = 'text-white/60'
 
+const MANAGEMENT_PAYOUT_RULES = [
+  {
+    key: 'grsm',
+    label: 'GRSM',
+    description: '2% of effective contract total',
+  },
+  {
+    key: 'sales_manager',
+    label: 'Sales Manager',
+    description: '12.5% of gross profit',
+  },
+  {
+    key: 'production_manager',
+    label: 'Production Manager',
+    description: '5% of effective contract total',
+  },
+] as const
+
+const COMMISSION_STAGE_FALLBACK_LABELS = new Set([
+  'contracted',
+  'contract signed',
+  'signed contract',
+  'contract executed',
+  'pre-production prep',
+  'pre production prep',
+  'production',
+  'production ready',
+  'scheduled',
+  'install scheduled',
+  'install',
+  'installed',
+  'final qc',
+  'complete',
+  'completed',
+  'paid in full',
+  'paid',
+])
+
 function QueueMetricCard({
   label,
   value,
@@ -147,6 +198,11 @@ function getStageName(stage: JobRow['pipeline_stages']) {
   if (!stage) return 'No Stage'
   const item = Array.isArray(stage) ? stage[0] ?? null : stage
   return item?.name ?? 'No Stage'
+}
+
+function getStage(stage: JobRow['pipeline_stages']) {
+  if (!stage) return null
+  return Array.isArray(stage) ? stage[0] ?? null : stage
 }
 
 function getAssignedReps(jobReps: JobRow['job_reps']): RepOption[] {
@@ -188,18 +244,69 @@ function normalizeCommissionType(value: string): CommissionType | null {
   return null
 }
 
-function shouldShowInQueue(stageName: string, paid: boolean, paidInFull: boolean) {
-  if (paid) return false
-  if (paidInFull) return true
+function getPaidInFullStageThreshold(stages: PipelineStageRecord[]) {
+  const paidStage = stages.find((stage) => {
+    const normalized = normalizeStageName(stage.name)
 
-  const s = stageName.toLowerCase().trim()
+    return (
+      normalized === 'paid in full' ||
+      normalized === 'paid' ||
+      normalized.includes('paid in full')
+    )
+  })
+
+  if (!paidStage) return null
+
+  if (paidStage.sort_order !== null && paidStage.sort_order !== undefined) {
+    return paidStage.sort_order
+  }
+
+  return stages.findIndex((stage) => stage.id === paidStage.id)
+}
+
+function isStageWithinCommissionWindow(params: {
+  stageName: string
+  stageSortOrder: number | null | undefined
+  contractedThreshold: number | null
+  paidThreshold: number | null
+}) {
+  const { stageName, stageSortOrder, contractedThreshold, paidThreshold } = params
+
+  if (contractedThreshold !== null && stageSortOrder !== null && stageSortOrder !== undefined) {
+    if (stageSortOrder < contractedThreshold) return false
+    if (paidThreshold !== null && stageSortOrder > paidThreshold) return false
+    return true
+  }
+
+  const normalized = normalizeStageName(stageName)
+
+  if (COMMISSION_STAGE_FALLBACK_LABELS.has(normalized)) return true
 
   return (
-    s.includes('contract') ||
-    s.includes('pre-production') ||
-    s.includes('deposit') ||
-    s.includes('install')
+    normalized.includes('contract') ||
+    normalized.includes('production') ||
+    normalized.includes('install') ||
+    normalized.includes('paid')
   )
+}
+
+function shouldShowInQueue(params: {
+  stageName: string
+  stageSortOrder: number | null | undefined
+  contractedThreshold: number | null
+  paidThreshold: number | null
+  paid: boolean
+}) {
+  const { stageName, stageSortOrder, contractedThreshold, paidThreshold, paid } = params
+
+  if (paid) return false
+
+  return isStageWithinCommissionWindow({
+    stageName,
+    stageSortOrder,
+    contractedThreshold,
+    paidThreshold,
+  })
 }
 
 function calculateRepCommission(params: {
@@ -265,6 +372,25 @@ function calculateRepCommission(params: {
   }
 }
 
+function calculateManagementPayouts(params: {
+  effectiveContractTotal: number
+  grossProfit: number
+}) {
+  const { effectiveContractTotal, grossProfit } = params
+
+  const grsm = effectiveContractTotal * 0.02
+  const salesManager = Math.max(0, grossProfit) * 0.125
+  const productionManager = effectiveContractTotal * 0.05
+  const total = grsm + salesManager + productionManager
+
+  return {
+    grsm,
+    salesManager,
+    productionManager,
+    total,
+  }
+}
+
 function buildDraft(job: JobRow, row?: CommissionRow): CommissionDraft {
   const assignedReps = getAssignedReps(job.job_reps)
 
@@ -302,26 +428,9 @@ function matchesCommissionSearch(job: JobRow, search: string) {
 
 export default function CommissionsPage() {
   return (
-    <ManagerOnlyRoute>
+    <ProtectedRoute>
       <CommissionsPageContent />
-    </ManagerOnlyRoute>
-  )
-}
-
-function CommissionHistoryFact({
-  label,
-  value,
-}: {
-  label: string
-  value: string
-}) {
-  return (
-    <div>
-      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
-        {label}
-      </div>
-      <div className="mt-1 text-sm font-semibold text-white">{value}</div>
-    </div>
+    </ProtectedRoute>
   )
 }
 
@@ -347,8 +456,10 @@ function CommissionsPageContent() {
   const [savingJobId, setSavingJobId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [search, setSearch] = useState('')
+  const [profile, setProfile] = useState<UserProfile | null>(null)
 
   const [jobs, setJobs] = useState<JobRow[]>([])
+  const [pipelineStages, setPipelineStages] = useState<PipelineStageRecord[]>([])
   const [commissionRows, setCommissionRows] = useState<Record<string, CommissionRow>>({})
   const [drafts, setDrafts] = useState<Record<string, CommissionDraft>>({})
 
@@ -356,7 +467,8 @@ function CommissionsPageContent() {
     setLoading(true)
     setMessage('')
 
-    const [jobsRes, commissionsRes] = await Promise.all([
+    const [currentProfile, jobsRes, commissionsRes, stagesRes] = await Promise.all([
+      getCurrentUserProfile(),
       supabase
         .from('jobs')
         .select(`
@@ -370,7 +482,10 @@ function CommissionsPageContent() {
             address
           ),
           pipeline_stages (
+            id,
             name
+            ,
+            sort_order
           ),
           job_reps (
             profile_id,
@@ -384,7 +499,18 @@ function CommissionsPageContent() {
       supabase
         .from('job_commissions')
         .select('*'),
+
+      supabase
+        .from('pipeline_stages')
+        .select('id, name, sort_order')
+        .order('sort_order', { ascending: true }),
     ])
+
+    if (!currentProfile) {
+      setMessage('Unable to load your profile.')
+      setLoading(false)
+      return
+    }
 
     if (jobsRes.error) {
       setMessage(jobsRes.error.message)
@@ -398,8 +524,21 @@ function CommissionsPageContent() {
       return
     }
 
+    if (stagesRes.error) {
+      setMessage(stagesRes.error.message)
+      setLoading(false)
+      return
+    }
+
+    const permissions = getPermissions(currentProfile.role)
     const jobsData = (jobsRes.data ?? []) as JobRow[]
     const commissionData = (commissionsRes.data ?? []) as CommissionRow[]
+    const stagesData = (stagesRes.data ?? []) as PipelineStageRecord[]
+    const visibleJobs = permissions.canViewAllCommissions
+      ? jobsData
+      : jobsData.filter((job) =>
+          (job.job_reps ?? []).some((rep) => rep.profile_id === currentProfile.id)
+        )
 
     const byJobId: Record<string, CommissionRow> = {}
     commissionData.forEach((row) => {
@@ -407,11 +546,13 @@ function CommissionsPageContent() {
     })
 
     const nextDrafts: Record<string, CommissionDraft> = {}
-    jobsData.forEach((job) => {
+    visibleJobs.forEach((job) => {
       nextDrafts[job.id] = buildDraft(job, byJobId[job.id])
     })
 
-    setJobs(jobsData)
+    setProfile(currentProfile)
+    setJobs(visibleJobs)
+    setPipelineStages(stagesData)
     setCommissionRows(byJobId)
     setDrafts(nextDrafts)
     setLoading(false)
@@ -436,6 +577,16 @@ function CommissionsPageContent() {
       },
     }))
   }
+
+  const permissions = useMemo(() => getPermissions(profile?.role), [profile?.role])
+  const contractedThreshold = useMemo(
+    () => getManagementStageThreshold(pipelineStages),
+    [pipelineStages]
+  )
+  const paidThreshold = useMemo(
+    () => getPaidInFullStageThreshold(pipelineStages),
+    [pipelineStages]
+  )
 
   async function saveCommissionRow(jobId: string, extraPartial?: Partial<CommissionRow>) {
     setSavingJobId(jobId)
@@ -498,35 +649,24 @@ function CommissionsPageContent() {
         return false
       }
 
-      const stageName = getStageName(job.pipeline_stages)
+      const stage = getStage(job.pipeline_stages)
+      const stageName = stage?.name ?? 'No Stage'
       const existing = commissionRows[job.id]
       const allPaid = existing?.all_commissions_paid ?? false
-      const paidInFull = isPaidInFull(job.remaining_balance)
 
-      return shouldShowInQueue(stageName, allPaid, paidInFull)
+      return shouldShowInQueue({
+        stageName,
+        stageSortOrder: stage?.sort_order,
+        contractedThreshold,
+        paidThreshold,
+        paid: allPaid,
+      })
     })
-  }, [jobs, commissionRows])
-
-  const paidOutJobs = useMemo(() => {
-    return jobs.filter((job) => {
-      if (isArchivedByInactivity(job.updated_at)) {
-        return false
-      }
-
-      const existing = commissionRows[job.id]
-
-      return Boolean(existing?.all_commissions_paid) && isPaidInFull(job.remaining_balance)
-    })
-  }, [jobs, commissionRows])
+  }, [commissionRows, contractedThreshold, jobs, paidThreshold])
 
   const filteredQueueJobs = useMemo(
     () => queueJobs.filter((job) => matchesCommissionSearch(job, search)),
     [queueJobs, search]
-  )
-
-  const filteredPaidOutJobs = useMemo(
-    () => paidOutJobs.filter((job) => matchesCommissionSearch(job, search)),
-    [paidOutJobs, search]
   )
 
   return (
@@ -546,7 +686,7 @@ function CommissionsPageContent() {
             </h1>
 
             <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
-              Review payout-ready jobs, lock front-end payouts, calculate backend commissions, and keep fully paid files visible until the team closes them out.
+              Review contracted-through-paid jobs, lock front-end payouts, calculate backend commissions, and let files fall out of the queue as soon as all commissions are marked paid.
             </p>
           </div>
 
@@ -563,7 +703,10 @@ function CommissionsPageContent() {
 
       <section className="grid gap-4 md:grid-cols-3">
         <QueueMetricCard label="Active Queue" value={String(queueJobs.length)} />
-        <QueueMetricCard label="Paid Out / Closed" value={String(paidOutJobs.length)} />
+        <QueueMetricCard
+          label="Access Scope"
+          value={permissions.canViewAllCommissions ? 'All Jobs' : 'Assigned Only'}
+        />
         <QueueMetricCard
           label="Archive Threshold"
           value={`${ARCHIVE_INACTIVITY_DAYS} days`}
@@ -578,7 +721,7 @@ function CommissionsPageContent() {
               <Search className="h-4 w-4 text-[#d6b37a]" />
               <input
                 className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
-                placeholder="Search homeowner, address, stage, or rep..."
+                placeholder="Search homeowner, address, stage, or assignee..."
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
@@ -591,13 +734,15 @@ function CommissionsPageContent() {
                 Visible Results
               </div>
               <div className="mt-2 text-2xl font-bold tracking-tight text-white">
-                {filteredQueueJobs.length + filteredPaidOutJobs.length}
+                {filteredQueueJobs.length}
               </div>
             </div>
 
             <div className="text-right text-sm text-white/55">
               <div>{filteredQueueJobs.length} queue items</div>
-              <div className="mt-1">{filteredPaidOutJobs.length} paid-out items</div>
+              <div className="mt-1">
+                {permissions.canViewAllCommissions ? 'All eligible jobs' : 'Assigned to you'}
+              </div>
             </div>
           </div>
         </div>
@@ -679,6 +824,14 @@ function CommissionsPageContent() {
                 frontEndPaid: row?.rep_2_front_end_paid ?? false,
                 lockedFrontEndAmount: Number(row?.rep_2_front_end_locked_amount ?? 0),
               })
+              const managementPayouts = calculateManagementPayouts({
+                effectiveContractTotal,
+                grossProfit,
+              })
+              const totalRepPayout =
+                rep1Calc.totalCommission + rep2Calc.totalCommission
+              const grandProjectedPayout =
+                totalRepPayout + managementPayouts.total
 
               const homeowner = getHomeowner(job.homeowners)
               const stageName = getStageName(job.pipeline_stages)
@@ -1038,8 +1191,69 @@ function CommissionsPageContent() {
                     </div>
                   </div>
 
+                  <div className={`${SUB_SURFACE_CLASS} mt-6 p-4`}>
+                    <div className="flex items-center justify-between gap-4">
+                      <h3 className="text-lg font-semibold text-white">
+                        Static Management Payouts
+                      </h3>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/82">
+                        Every Job
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
+                          {MANAGEMENT_PAYOUT_RULES[0].label}
+                        </div>
+                        <div className="mt-2 text-lg font-bold text-white">
+                          {toMoney(managementPayouts.grsm)}
+                        </div>
+                        <div className="mt-1 text-xs text-white/45">
+                          {MANAGEMENT_PAYOUT_RULES[0].description}
+                        </div>
+                      </div>
+
+                      <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
+                          {MANAGEMENT_PAYOUT_RULES[1].label}
+                        </div>
+                        <div className="mt-2 text-lg font-bold text-white">
+                          {toMoney(managementPayouts.salesManager)}
+                        </div>
+                        <div className="mt-1 text-xs text-white/45">
+                          {MANAGEMENT_PAYOUT_RULES[1].description}
+                        </div>
+                      </div>
+
+                      <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
+                          {MANAGEMENT_PAYOUT_RULES[2].label}
+                        </div>
+                        <div className="mt-2 text-lg font-bold text-white">
+                          {toMoney(managementPayouts.productionManager)}
+                        </div>
+                        <div className="mt-1 text-xs text-white/45">
+                          {MANAGEMENT_PAYOUT_RULES[2].description}
+                        </div>
+                      </div>
+
+                      <div className={`${SUB_SURFACE_CLASS} p-3`}>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
+                          Total Management Payout
+                        </div>
+                        <div className="mt-2 text-lg font-bold text-white">
+                          {toMoney(managementPayouts.total)}
+                        </div>
+                        <div className="mt-1 text-xs text-white/45">
+                          Static defaults shown for every job.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-[linear-gradient(135deg,rgba(214,179,122,0.14),rgba(255,255,255,0.04))] p-4">
-                    <div className="grid gap-4 md:grid-cols-3">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                       <div>
                         <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                           Rep 1 Type
@@ -1060,10 +1274,28 @@ function CommissionsPageContent() {
 
                       <div>
                         <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
+                          Rep Projected Payout
+                        </div>
+                        <div className="mt-2 text-lg font-bold text-white">
+                          {toMoney(totalRepPayout)}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
+                          Management Payout
+                        </div>
+                        <div className="mt-2 text-lg font-bold text-white">
+                          {toMoney(managementPayouts.total)}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/76">
                           Total Projected Payout
                         </div>
                         <div className="mt-2 text-lg font-bold text-white">
-                          {toMoney(rep1Calc.totalCommission + rep2Calc.totalCommission)}
+                          {toMoney(grandProjectedPayout)}
                         </div>
                       </div>
                     </div>
@@ -1084,22 +1316,6 @@ function CommissionsPageContent() {
                       Mark All Commissions Paid
                     </button>
 
-                    {row?.all_commissions_paid ? (
-                      <button
-                        type="button"
-                        disabled={isSaving}
-                        onClick={() =>
-                          saveCommissionRow(job.id, {
-                            all_commissions_paid: false,
-                            all_commissions_paid_at: null,
-                          })
-                        }
-                        className={SECONDARY_BUTTON_CLASS}
-                      >
-                        Reopen
-                      </button>
-                    ) : null}
-
                     {isSaving ? (
                       <div className="flex items-center text-sm text-white/55">
                         Saving...
@@ -1109,79 +1325,6 @@ function CommissionsPageContent() {
                 </section>
               )
             })}
-
-            <section className={`${SURFACE_CLASS} p-6`}>
-              <div className="flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d6b37a]/82">
-                    Closed Queue
-                  </div>
-                  <h2 className="mt-2 text-2xl font-semibold text-white">Paid Out / Closed</h2>
-                  <p className={`mt-2 text-sm ${MUTED_TEXT_CLASS}`}>
-                    Jobs stay here once the homeowner balance is paid in full and all commissions have been marked paid.
-                  </p>
-                </div>
-              </div>
-
-              {filteredPaidOutJobs.length === 0 ? (
-                <div className="mt-4 rounded-[1.35rem] border border-dashed border-white/14 p-4 text-sm text-white/55">
-                  {search.trim()
-                    ? 'No paid-out jobs match this search.'
-                    : 'No paid-out jobs are currently being tracked here.'}
-                </div>
-              ) : (
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  {filteredPaidOutJobs.map((job) => {
-                    const homeowner = getHomeowner(job.homeowners)
-                    const stageName = getStageName(job.pipeline_stages)
-                    const row = commissionRows[job.id]
-
-                    return (
-                      <Link
-                        key={job.id}
-                        href={`/jobs/${job.id}`}
-                        className="block rounded-[1.6rem] border border-white/10 bg-black/20 p-5 transition hover:-translate-y-0.5 hover:border-white/18 hover:bg-white/[0.06]"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <div className="text-lg font-semibold text-white">
-                              {homeowner?.name ?? 'Unnamed Homeowner'}
-                            </div>
-                            <div className={`mt-1 text-sm ${MUTED_TEXT_CLASS}`}>
-                              {homeowner?.address ?? '-'}
-                            </div>
-                          </div>
-
-                          <div className="rounded-full border border-emerald-400/30 bg-emerald-500/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
-                            Paid Out
-                          </div>
-                        </div>
-
-                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                          <CommissionHistoryFact label="Stage" value={stageName} />
-                          <CommissionHistoryFact
-                            label="Paid In Full"
-                            value={`Yes • ${toMoney(Number(job.remaining_balance ?? 0))} balance`}
-                          />
-                          <CommissionHistoryFact
-                            label="Contract"
-                            value={toMoney(Number(job.contract_amount ?? 0))}
-                          />
-                          <CommissionHistoryFact
-                            label="Commissions Paid"
-                            value={
-                              row?.all_commissions_paid_at
-                                ? new Date(row.all_commissions_paid_at).toLocaleString('en-US')
-                                : 'Recorded'
-                            }
-                          />
-                        </div>
-                      </Link>
-                    )
-                  })}
-                </div>
-              )}
-            </section>
           </div>
         )}
     </main>
