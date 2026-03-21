@@ -5,23 +5,8 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  Archive,
-  Bell,
-  BookOpenText,
-  Briefcase,
-  CalendarDays,
   ChevronRight,
-  ClipboardList,
-  FileText,
-  Home,
-  LayoutDashboard,
-  MapPinned,
-  PenSquare,
   PlusSquare,
-  Settings2,
-  ShieldCheck,
-  UserRound,
-  Users,
   X,
 } from 'lucide-react'
 
@@ -30,19 +15,12 @@ import HeaderWorkspaceSearch from '@/components/HeaderWorkspaceSearch'
 import LiveNotificationToasts from '@/components/LiveNotificationToasts'
 import NotificationBell from '@/components/NotificationBell'
 import { authorizedFetch } from '@/lib/api-client'
+import { buildNavigationItems, type AppNavItem } from '@/lib/app-navigation'
 import {
   getCurrentUserProfile,
   getPermissions,
   type UserProfile,
 } from '@/lib/auth-helpers'
-
-type NavItem = {
-  href: string
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-  show: boolean
-  group: 'main' | 'workspace' | 'admin' | 'account'
-}
 
 function formatRoleLabel(role: string | null | undefined) {
   return role?.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase()) || 'Team Member'
@@ -114,120 +92,7 @@ export default function AppShell({
   const permissions = getPermissions(profile?.role)
   const roleLabel = formatRoleLabel(profile?.role)
 
-  const navItems: NavItem[] = [
-    {
-      href: '/',
-      label: 'Home',
-      icon: Home,
-      show: permissions.canViewHome,
-      group: 'main',
-    },
-    {
-      href: '/dashboard',
-      label: 'Dashboard',
-      icon: LayoutDashboard,
-      show: permissions.canViewDashboard,
-      group: 'main',
-    },
-    {
-      href: '/jobs',
-      label: 'Jobs',
-      icon: Briefcase,
-      show: permissions.canViewJobs,
-      group: 'workspace',
-    },
-    {
-      href: '/jobs/new',
-      label: 'Create Job',
-      icon: PlusSquare,
-      show: permissions.canCreateJob,
-      group: 'workspace',
-    },
-    {
-      href: '/calendar/installs',
-      label: 'Calendar',
-      icon: CalendarDays,
-      show: permissions.canViewInstallCalendar,
-      group: 'workspace',
-    },
-    {
-      href: '/stats/submit',
-      label: 'Submit Numbers',
-      icon: ClipboardList,
-      show: true,
-      group: 'workspace',
-    },
-    {
-      href: '/map',
-      label: 'Lead Map',
-      icon: MapPinned,
-      show: permissions.canViewLeadMap,
-      group: 'workspace',
-    },
-    {
-      href: '/training',
-      label: 'Training',
-      icon: BookOpenText,
-      show: true,
-      group: 'workspace',
-    },
-    {
-      href: '/commissions',
-      label: 'Commissions',
-      icon: ShieldCheck,
-      show: permissions.canViewCommissions,
-      group: 'workspace',
-    },
-    {
-      href: '/templates',
-      label: 'Templates',
-      icon: FileText,
-      show: permissions.canViewTemplates,
-      group: 'workspace',
-    },
-    {
-      href: '/contracts/editor',
-      label: 'Signer',
-      icon: PenSquare,
-      show: permissions.canUseSigner,
-      group: 'workspace',
-    },
-    {
-      href: '/notifications',
-      label: 'Notifications',
-      icon: Bell,
-      show: permissions.canViewNotifications,
-      group: 'workspace',
-    },
-    {
-      href: '/team/users',
-      label: 'Users',
-      icon: Users,
-      show: permissions.canManageUsers,
-      group: 'admin',
-    },
-    {
-      href: '/stats/manager',
-      label: 'Branch Numbers',
-      icon: Settings2,
-      show: permissions.canViewManagerEntry,
-      group: 'admin',
-    },
-    {
-      href: '/profile',
-      label: 'Profile',
-      icon: UserRound,
-      show: true,
-      group: 'account',
-    },
-    {
-      href: '/archive',
-      label: 'Archive',
-      icon: Archive,
-      show: permissions.canViewArchive,
-      group: 'account',
-    },
-  ]
+  const navItems: AppNavItem[] = buildNavigationItems(permissions)
 
   const visibleNavItems = navItems.filter((item) => item.show)
 
@@ -441,7 +306,7 @@ function NavGroup({
   onNavigate,
 }: {
   title: string
-  items: NavItem[]
+  items: AppNavItem[]
   pathname: string
   onNavigate: () => void
 }) {

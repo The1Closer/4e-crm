@@ -30,6 +30,7 @@ export type AppPermissions = {
   canViewTeamManagement: boolean
   canManageUsers: boolean
   canViewManagerEntry: boolean
+  canManageHomeContent: boolean
 
   canViewInstallCalendar: boolean
 
@@ -91,6 +92,7 @@ export function getPermissions(role: AppRole | null | undefined): AppPermissions
     canViewTeamManagement: managerLike,
     canManageUsers: managerLike,
     canViewManagerEntry: managerLike,
+    canManageHomeContent: managerLike,
 
     canViewInstallCalendar: true,
 
