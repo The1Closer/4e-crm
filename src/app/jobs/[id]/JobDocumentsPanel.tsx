@@ -9,6 +9,7 @@ import {
   getPermissions,
   type UserProfile,
 } from '@/lib/auth-helpers'
+import SendDocumentButton from '@/components/documents/SendDocumentButton'
 
 type UploadedDocument = {
   id: string
@@ -40,6 +41,7 @@ type DocumentsPanelData = {
   uploadedDocs: UploadedDocument[]
   signedDocs: SignedJobDocument[]
   templates: TemplateRow[]
+  recipientEmail: string | null
 }
 
 function buildUploadedDocUrl(filePath: string) {
@@ -50,7 +52,7 @@ function buildUploadedDocUrl(filePath: string) {
 async function fetchDocumentsPanelData(
   jobId: string
 ): Promise<DocumentsPanelData | { error: string }> {
-  const [uploadedRes, signedRes, templatesRes] = await Promise.all([
+  const [uploadedRes, signedRes, templatesRes, jobRes] = await Promise.all([
     supabase
       .from('documents')
       .select('id, file_name, file_path, file_type, created_at')
@@ -71,6 +73,18 @@ async function fetchDocumentsPanelData(
       .select('id, name, category, file_url')
       .eq('is_active', true)
       .order('name', { ascending: true }),
+
+    supabase
+      .from('jobs')
+      .select(
+        `
+          homeowners (
+            email
+          )
+        `
+      )
+      .eq('id', jobId)
+      .maybeSingle(),
   ])
 
   if (uploadedRes.error) {
@@ -85,10 +99,19 @@ async function fetchDocumentsPanelData(
     return { error: templatesRes.error.message }
   }
 
+  if (jobRes.error) {
+    return { error: jobRes.error.message }
+  }
+
+  const homeowner = Array.isArray(jobRes.data?.homeowners)
+    ? jobRes.data?.homeowners[0] ?? null
+    : jobRes.data?.homeowners ?? null
+
   return {
     uploadedDocs: (uploadedRes.data ?? []) as UploadedDocument[],
     signedDocs: (signedRes.data ?? []) as SignedJobDocument[],
     templates: (templatesRes.data ?? []) as TemplateRow[],
+    recipientEmail: homeowner?.email ?? null,
   }
 }
 
@@ -103,6 +126,7 @@ export default function JobDocumentsPanel({
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocument[]>([])
   const [signedDocs, setSignedDocs] = useState<SignedJobDocument[]>([])
   const [templates, setTemplates] = useState<TemplateRow[]>([])
+  const [recipientEmail, setRecipientEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
 
@@ -123,6 +147,7 @@ export default function JobDocumentsPanel({
     setUploadedDocs(data.uploadedDocs)
     setSignedDocs(data.signedDocs)
     setTemplates(data.templates)
+    setRecipientEmail(data.recipientEmail)
     setLoading(false)
   }
 
@@ -219,7 +244,7 @@ export default function JobDocumentsPanel({
       open_url: doc.file_url,
       signer_url: `/contracts/editor?jobId=${jobId}&documentId=${doc.id}&name=${encodeURIComponent(
         doc.file_name
-      )}`,
+      )}&sourceUrl=${encodeURIComponent(doc.file_url)}`,
       subtitle: `${doc.is_signed ? 'Signed' : 'Generated'} • ${
         doc.document_type || 'Document'
       }`,
@@ -237,7 +262,7 @@ export default function JobDocumentsPanel({
         open_url: url,
         signer_url: `/contracts/editor?jobId=${jobId}&jobFileId=${doc.id}&name=${encodeURIComponent(
           doc.file_name
-        )}`,
+        )}&sourceUrl=${encodeURIComponent(url)}`,
         subtitle: 'Uploaded document',
         deletable: permissions.canManageTemplates,
         onDelete: () => deleteUploadedDocument(doc),
@@ -296,7 +321,7 @@ export default function JobDocumentsPanel({
                   <Link
                     href={`/contracts/editor?jobId=${jobId}&templateId=${template.id}&name=${encodeURIComponent(
                       template.name
-                    )}`}
+                    )}&sourceUrl=${encodeURIComponent(template.file_url)}`}
                     className="rounded-2xl bg-[#d6b37a] px-3 py-2 text-xs font-semibold text-black shadow-[0_10px_24px_rgba(214,179,122,0.24)] transition hover:bg-[#e2bf85]"
                   >
                     Open Template
@@ -352,6 +377,13 @@ export default function JobDocumentsPanel({
                   >
                     Edit / Sign
                   </Link>
+
+                  <SendDocumentButton
+                    documentName={doc.file_name}
+                    documentUrl={doc.open_url}
+                    defaultTo={recipientEmail}
+                    className="rounded-2xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
+                  />
 
                   {doc.deletable ? (
                     <button

@@ -34,6 +34,9 @@ export type AppPermissions = {
 
   canViewInstallCalendar: boolean
 
+  canViewClaimResourceLibrary: boolean
+  canManageClaimResourceLibrary: boolean
+
   canViewCommissions: boolean
   canViewAllCommissions: boolean
 
@@ -95,6 +98,9 @@ export function getPermissions(role: AppRole | null | undefined): AppPermissions
     canManageHomeContent: managerLike,
 
     canViewInstallCalendar: true,
+
+    canViewClaimResourceLibrary: true,
+    canManageClaimResourceLibrary: managerLike,
 
     canViewCommissions: true,
     canViewAllCommissions: managerLike,

@@ -1,6 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type TouchEvent as ReactTouchEvent,
+} from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Document, Page, pdfjs } from 'react-pdf'
@@ -10,6 +17,7 @@ import SignatureCanvas from 'react-signature-canvas'
 import { authorizedFetch } from '@/lib/api-client'
 import { slugifyFileName } from '@/lib/file-utils'
 import { supabase } from '@/lib/supabase'
+import SendDocumentButton from '@/components/documents/SendDocumentButton'
 
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
@@ -73,11 +81,16 @@ const PDF_STANDARD_FONT_DATA_URL = '/pdfjs/standard_fonts/'
 const PDF_CMAP_URL = '/pdfjs/cmaps/'
 
 const PAGE_WIDTH = 880
+const PAGE_PADDING = 8
 
 pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC
 
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
 }
 
 function isPdfLikeFile(file: File) {
@@ -154,46 +167,133 @@ function downloadPdfBlob(blob: Blob, fileName: string) {
 function getAnnotationDefaults(type: AnnotationType) {
   if (type === 'date') {
     return {
-      width: 148,
-      height: 36,
+      width: 168,
+      height: 42,
       value: new Date().toLocaleDateString('en-US'),
-      fontSize: 16,
+      fontSize: 18,
     }
   }
 
   if (type === 'initials') {
     return {
-      width: 104,
-      height: 34,
+      width: 118,
+      height: 40,
       value: 'JC',
-      fontSize: 16,
+      fontSize: 20,
     }
   }
 
   if (type === 'signature-box') {
     return {
-      width: 178,
-      height: 46,
-      value: 'Signature',
-      fontSize: 14,
+      width: 220,
+      height: 72,
+      value: 'Click to sign',
+      fontSize: 22,
     }
   }
 
   if (type === 'check') {
     return {
-      width: 30,
-      height: 30,
+      width: 34,
+      height: 34,
       value: '✓',
-      fontSize: 22,
+      fontSize: 26,
     }
   }
 
   return {
-    width: 220,
-    height: 42,
+    width: 240,
+    height: 48,
     value: 'Type here',
-    fontSize: 16,
+    fontSize: 18,
   }
+}
+
+function getAnnotationTypeLabel(type: AnnotationType) {
+  return ANNOTATION_PRESETS.find((preset) => preset.type === type)?.label ??
+    (type === 'signature' ? 'Signature' : type.replace('-', ' '))
+}
+
+function getAnnotationDisplayValue(annotation: Annotation) {
+  if (annotation.type === 'signature') {
+    return annotation.imageDataUrl ? 'Signature ready' : 'Signature needed'
+  }
+
+  if (annotation.type === 'signature-box') {
+    return annotation.value ?? 'Click to sign'
+  }
+
+  if (annotation.type === 'check') {
+    return 'Checkmark'
+  }
+
+  return annotation.value?.trim() || 'Empty'
+}
+
+function getFittedOverlayFontSize(annotation: Annotation) {
+  const baseSize =
+    annotation.fontSize ??
+    (annotation.type === 'signature-box' ? 22 : annotation.type === 'check' ? 26 : 18)
+
+  if (annotation.type === 'signature-box') {
+    return clamp(
+      Math.min(baseSize, annotation.height * 0.34, annotation.width / 5.8),
+      14,
+      28
+    )
+  }
+
+  if (annotation.type === 'check') {
+    return clamp(
+      Math.min(baseSize, annotation.height * 0.82, annotation.width * 0.78),
+      16,
+      34
+    )
+  }
+
+  const lines = (annotation.value ?? ' ').split(/\n+/).filter(Boolean)
+  const longestLine = lines.reduce(
+    (maxLength, line) => Math.max(maxLength, line.length),
+    1
+  )
+  const lineCount = Math.max(lines.length, 1)
+  const maxByHeight = (annotation.height - 10) / lineCount
+  const maxByWidth = (annotation.width - 12) / Math.max(longestLine * 0.58, 1)
+
+  return clamp(Math.min(baseSize, maxByHeight, maxByWidth), 8, 28)
+}
+
+function buildTypedSignatureDataUrl(value: string) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1600
+  canvas.height = 420
+
+  const context = canvas.getContext('2d')
+
+  if (!context) {
+    throw new Error('Could not create the signature preview.')
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = '#111111'
+  context.textBaseline = 'middle'
+
+  let fontSize = 180
+
+  while (fontSize > 84) {
+    context.font = `italic ${fontSize}px "Brush Script MT", "Segoe Script", "Snell Roundhand", cursive`
+
+    if (context.measureText(value).width <= canvas.width - 120) {
+      break
+    }
+
+    fontSize -= 8
+  }
+
+  context.font = `italic ${fontSize}px "Brush Script MT", "Segoe Script", "Snell Roundhand", cursive`
+  context.fillText(value, 48, canvas.height / 2)
+
+  return canvas.toDataURL('image/png')
 }
 
 function sourceLabel(params: {
@@ -291,7 +391,10 @@ export default function ContractsEditorCore() {
   const [numPages, setNumPages] = useState(0)
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [activeInsertionType, setActiveInsertionType] = useState<AnnotationType | null>(null)
   const [signatureOpen, setSignatureOpen] = useState(false)
+  const [signatureMode, setSignatureMode] = useState<'draw' | 'type'>('draw')
+  const [typedSignature, setTypedSignature] = useState('')
   const [pendingSignaturePage, setPendingSignaturePage] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -300,6 +403,10 @@ export default function ContractsEditorCore() {
   const [localFileName, setLocalFileName] = useState('')
   const [isOnline, setIsOnline] = useState(true)
   const [sourceLoading, setSourceLoading] = useState(false)
+  const [recipientEmail, setRecipientEmail] = useState<string | null>(null)
+  const [shareableDocumentUrl, setShareableDocumentUrl] = useState<string | null>(
+    sourceUrl || null
+  )
 
   const signaturePadRef = useRef<SignatureCanvas | null>(null)
 
@@ -328,6 +435,15 @@ export default function ContractsEditorCore() {
   const selectedAnnotation = useMemo(
     () => annotations.find((annotation) => annotation.id === selectedId) ?? null,
     [annotations, selectedId]
+  )
+
+  const orderedAnnotations = useMemo(
+    () =>
+      [...annotations].sort(
+        (left, right) =>
+          left.page - right.page || left.y - right.y || left.x - right.x
+      ),
+    [annotations]
   )
 
   const annotationCounts = useMemo(() => {
@@ -397,6 +513,7 @@ export default function ContractsEditorCore() {
       setActiveJobFileId(jobFileId)
       setTemplatePickerId(templateId ?? '')
       setLocalFileName('')
+      setShareableDocumentUrl(sourceUrl || null)
 
       if (!templateId && !documentId && !jobFileId && !sourceUrl) {
         setSourceLoading(false)
@@ -561,6 +678,50 @@ export default function ContractsEditorCore() {
   }, [])
 
   useEffect(() => {
+    let isActive = true
+
+    async function loadRecipientEmail() {
+      if (!jobId) {
+        setRecipientEmail(null)
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(
+          `
+            homeowners (
+              email
+            )
+          `
+        )
+        .eq('id', jobId)
+        .maybeSingle()
+
+      if (!isActive) {
+        return
+      }
+
+      if (error) {
+        setRecipientEmail(null)
+        return
+      }
+
+      const homeowner = Array.isArray(data?.homeowners)
+        ? data.homeowners[0] ?? null
+        : data?.homeowners ?? null
+
+      setRecipientEmail(homeowner?.email ?? null)
+    }
+
+    void loadRecipientEmail()
+
+    return () => {
+      isActive = false
+    }
+  }, [jobId])
+
+  useEffect(() => {
     const rawDraft = localStorage.getItem(draftKey)
 
     if (!rawDraft) {
@@ -649,6 +810,7 @@ export default function ContractsEditorCore() {
     setActiveDocumentId(null)
     setActiveJobFileId(null)
     setTemplatePickerId('')
+    setShareableDocumentUrl(null)
     resetEditorForDocument(nextFileData, file.name.replace(/\.pdf$/i, ''))
   }
 
@@ -664,6 +826,7 @@ export default function ContractsEditorCore() {
     setActiveTemplateId(selectedTemplate.id)
     setActiveDocumentId(null)
     setActiveJobFileId(null)
+    setShareableDocumentUrl(selectedTemplate.file_url || null)
     setSourceLoading(true)
     resetEditorForDocument(null, selectedTemplate.name)
 
@@ -747,6 +910,43 @@ export default function ContractsEditorCore() {
     setSelectedId(nextAnnotation.id)
   }
 
+  function queueAnnotationPlacement(type: AnnotationType) {
+    setActiveInsertionType((current) => {
+      const nextType = current === type ? null : type
+
+      if (nextType) {
+        setMessage(`Click anywhere on a page to place a ${getAnnotationTypeLabel(type)} field.`)
+      } else {
+        setMessage('Field placement cancelled.')
+      }
+
+      return nextType
+    })
+  }
+
+  function placeAnnotationFromPointer(
+    page: number,
+    type: AnnotationType,
+    event: ReactMouseEvent<HTMLDivElement>
+  ) {
+    const surface = event.currentTarget.getBoundingClientRect()
+    const defaults = getAnnotationDefaults(type)
+    const nextX = clamp(
+      event.clientX - surface.left - defaults.width / 2,
+      PAGE_PADDING,
+      PAGE_WIDTH - defaults.width - PAGE_PADDING
+    )
+    const nextY = clamp(
+      event.clientY - surface.top - defaults.height / 2,
+      PAGE_PADDING,
+      surface.height - defaults.height - PAGE_PADDING
+    )
+
+    addAnnotation(page, type, nextX, nextY)
+    setActiveInsertionType(null)
+    setMessage(`${getAnnotationTypeLabel(type)} field added on page ${page}.`)
+  }
+
   function duplicateSelected() {
     if (!selectedAnnotation) return
 
@@ -785,6 +985,7 @@ export default function ContractsEditorCore() {
 
   function openSignaturePad(page: number) {
     setPendingSignaturePage(page)
+    setSignatureMode('draw')
     setSignatureOpen(true)
   }
 
@@ -802,13 +1003,7 @@ export default function ContractsEditorCore() {
     signaturePadRef.current?.clear()
   }
 
-  function addSignatureFromPad() {
-    if (!signaturePadRef.current || signaturePadRef.current.isEmpty()) {
-      setMessage('Draw a signature first.')
-      return
-    }
-
-    const dataUrl = signaturePadRef.current.toDataURL('image/png')
+  function placeSignatureDataUrl(dataUrl: string) {
     const targetAnnotation = selectedId
       ? annotations.find((annotation) => annotation.id === selectedId)
       : null
@@ -821,7 +1016,6 @@ export default function ContractsEditorCore() {
       })
       setSignatureOpen(false)
       setPendingSignaturePage(null)
-      signaturePadRef.current.clear()
       return
     }
 
@@ -836,8 +1030,8 @@ export default function ContractsEditorCore() {
       type: 'signature',
       x: 60,
       y: 120,
-      width: 190,
-      height: 58,
+      width: 240,
+      height: 90,
       imageDataUrl: dataUrl,
     }
 
@@ -845,7 +1039,27 @@ export default function ContractsEditorCore() {
     setSelectedId(signatureAnnotation.id)
     setSignatureOpen(false)
     setPendingSignaturePage(null)
+  }
+
+  function addSignatureFromPad() {
+    if (!signaturePadRef.current || signaturePadRef.current.isEmpty()) {
+      setMessage('Draw a signature first.')
+      return
+    }
+
+    const dataUrl = signaturePadRef.current.toDataURL('image/png')
+    placeSignatureDataUrl(dataUrl)
     signaturePadRef.current.clear()
+  }
+
+  function addTypedSignature() {
+    if (!typedSignature.trim()) {
+      setMessage('Type a signature first.')
+      return
+    }
+
+    const dataUrl = buildTypedSignatureDataUrl(typedSignature.trim())
+    placeSignatureDataUrl(dataUrl)
   }
 
   function hasNearbyAnnotation(page: number, x: number, y: number) {
@@ -1011,16 +1225,17 @@ export default function ContractsEditorCore() {
         }
 
         const text = annotation.type === 'check' ? '✓' : annotation.value ?? ''
-        const fontSize = annotation.fontSize ?? 16
+        const fontSize = getFittedOverlayFontSize(annotation)
         const scaledFontSize = (fontSize / renderWidth) * pageSize.width
 
         page.drawText(text, {
-          x: pdfX,
-          y: pdfY + pdfHeight / 2 - scaledFontSize / 2,
+          x: pdfX + 2,
+          y: pdfY + Math.max((pdfHeight - scaledFontSize) / 2, 0),
           size: scaledFontSize,
           font,
           color: rgb(0, 0, 0),
-          maxWidth: pdfWidth,
+          lineHeight: scaledFontSize * 1.08,
+          maxWidth: Math.max(pdfWidth - 4, scaledFontSize),
         })
       }
 
@@ -1058,7 +1273,13 @@ export default function ContractsEditorCore() {
         })
 
         const result = (await response.json().catch(() => null)) as
-          | { error?: string }
+          | {
+              error?: string
+              document?: {
+                file_url?: string | null
+                file_name?: string | null
+              }
+            }
           | null
 
         if (!response.ok) {
@@ -1066,6 +1287,10 @@ export default function ContractsEditorCore() {
         }
 
         localStorage.removeItem(draftKey)
+        setShareableDocumentUrl(result?.document?.file_url ?? null)
+        if (result?.document?.file_name) {
+          setDocumentName(result.document.file_name.replace(/\.pdf$/i, ''))
+        }
         setMessage('Signed document saved back to the job.')
         return
       }
@@ -1122,7 +1347,7 @@ export default function ContractsEditorCore() {
             <StatusPill>{annotations.length} overlay item(s)</StatusPill>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)_220px_220px]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)_220px_220px_220px]">
             <input
               className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35"
               placeholder="Document name"
@@ -1180,6 +1405,15 @@ export default function ContractsEditorCore() {
             >
               {saving ? 'Saving...' : jobId ? 'Save Back to Job' : 'Download Signed PDF'}
             </button>
+
+            <SendDocumentButton
+              documentName={`${documentName || 'document'}.pdf`}
+              documentUrl={shareableDocumentUrl ?? ''}
+              defaultTo={recipientEmail}
+              disabled={!shareableDocumentUrl}
+              className="rounded-2xl border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-50"
+              triggerLabel="Send / Share"
+            />
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -1208,6 +1442,19 @@ export default function ContractsEditorCore() {
             >
               Sign Selected Box
             </button>
+
+            {activeInsertionType ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveInsertionType(null)
+                  setMessage('Field placement cancelled.')
+                }}
+                className="rounded-full border border-amber-400/20 bg-amber-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-100 transition hover:bg-amber-500/18"
+              >
+                Cancel Insert Mode
+              </button>
+            ) : null}
           </div>
 
           {message ? (
@@ -1230,29 +1477,41 @@ export default function ContractsEditorCore() {
             <PanelTitle
               eyebrow="Toolbox"
               title="Insert Fields"
-              body="Use page controls for exact placement, then refine the selected field here."
+              body="Choose a field type here, then click directly on the PDF to place it where it belongs."
             />
 
             <div className="mt-5 grid gap-3">
               {ANNOTATION_PRESETS.map((preset) => (
-                <div
+                <button
                   key={preset.type}
-                  className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
+                  type="button"
+                  onClick={() => queueAnnotationPlacement(preset.type)}
+                  className={`flex items-center justify-between rounded-2xl px-4 py-3 text-left transition ${
+                    activeInsertionType === preset.type
+                      ? 'border border-[#d6b37a]/35 bg-[#d6b37a]/12'
+                      : 'border border-white/10 bg-black/20 hover:bg-white/[0.06]'
+                  }`}
                 >
                   <div className="text-sm font-semibold text-white">{preset.label}</div>
                   <div className="text-xs uppercase tracking-[0.16em] text-white/42">
-                    Add per page
+                    {activeInsertionType === preset.type ? 'Click Page' : 'Ready'}
                   </div>
-                </div>
+                </button>
               ))}
 
               <button
                 type="button"
-                onClick={() => openSignaturePad(1)}
+                onClick={() => openSignaturePad(selectedAnnotation?.page ?? 1)}
                 className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
               >
-                Open Signature Pad
+                Open Signature Modal
               </button>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/65">
+              {activeInsertionType
+                ? `Placement mode is active for ${getAnnotationTypeLabel(activeInsertionType)}. Click on the page to drop a field there.`
+                : 'Tip: auto detect first, then use insert mode for anything the PDF misses.'}
             </div>
           </section>
 
@@ -1275,9 +1534,50 @@ export default function ContractsEditorCore() {
 
           <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
             <PanelTitle
+              eyebrow="Field Map"
+              title="Placed Fields"
+              body="Select fields from a readable list instead of hunting for tiny boxes."
+            />
+
+            {orderedAnnotations.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-white/14 p-4 text-sm text-white/55">
+                No fields placed yet.
+              </div>
+            ) : (
+              <div className="mt-5 space-y-2">
+                {orderedAnnotations.map((annotation) => (
+                  <button
+                    key={annotation.id}
+                    type="button"
+                    onClick={() => setSelectedId(annotation.id)}
+                    className={`block w-full rounded-2xl border px-4 py-3 text-left transition ${
+                      selectedId === annotation.id
+                        ? 'border-[#d6b37a]/35 bg-[#d6b37a]/10'
+                        : 'border-white/10 bg-black/20 hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-semibold text-white">
+                        {getAnnotationTypeLabel(annotation.type)}
+                      </div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/42">
+                        Page {annotation.page}
+                      </div>
+                    </div>
+                    <div className="mt-1 truncate text-xs text-white/55">
+                      {getAnnotationDisplayValue(annotation)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+            <PanelTitle
               eyebrow="Inspector"
               title="Selected Element"
-              body="Click any overlay field on the document to edit or duplicate it."
+              body="Update values, sizes, or signatures from here once a field is selected."
             />
 
             {!selectedAnnotation ? (
@@ -1427,16 +1727,11 @@ export default function ContractsEditorCore() {
                               {detectingPage === pageNumber ? 'Detecting...' : 'Auto Detect'}
                             </button>
 
-                            {ANNOTATION_PRESETS.map((preset) => (
-                              <button
-                                key={`${pageNumber}-${preset.type}`}
-                                type="button"
-                                onClick={() => addAnnotation(pageNumber, preset.type)}
-                                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:bg-white/[0.06] hover:text-white"
-                              >
-                                {preset.label}
-                              </button>
-                            ))}
+                            {activeInsertionType ? (
+                              <div className="rounded-2xl border border-[#d6b37a]/25 bg-[#d6b37a]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#f6e7c7]">
+                                Click page to place {getAnnotationTypeLabel(activeInsertionType)}
+                              </div>
+                            ) : null}
 
                             <button
                               type="button"
@@ -1450,8 +1745,17 @@ export default function ContractsEditorCore() {
 
                         <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-4">
                           <div
-                            className="relative overflow-hidden rounded-[1.4rem] bg-white shadow-[0_16px_40px_rgba(0,0,0,0.28)]"
+                            className={`relative overflow-hidden rounded-[1.4rem] bg-white shadow-[0_16px_40px_rgba(0,0,0,0.28)] ${
+                              activeInsertionType ? 'cursor-crosshair' : ''
+                            }`}
                             style={{ width: PAGE_WIDTH }}
+                            onClick={(event) => {
+                              if (activeInsertionType) {
+                                placeAnnotationFromPointer(pageNumber, activeInsertionType, event)
+                              } else {
+                                setSelectedId(null)
+                              }
+                            }}
                           >
                             <Page pageNumber={pageNumber} width={PAGE_WIDTH} />
 
@@ -1470,8 +1774,14 @@ export default function ContractsEditorCore() {
                                 minHeight={annotation.type === 'check' ? 22 : 24}
                                 bounds="parent"
                                 enableUserSelectHack={false}
-                                onMouseDown={() => setSelectedId(annotation.id)}
-                                onTouchStart={() => setSelectedId(annotation.id)}
+                                onMouseDown={(event) => {
+                                  event.stopPropagation()
+                                  setSelectedId(annotation.id)
+                                }}
+                                onTouchStart={(event: ReactTouchEvent) => {
+                                  event.stopPropagation()
+                                  setSelectedId(annotation.id)
+                                }}
                                 onDragStop={(_, position) =>
                                   updateAnnotation(annotation.id, {
                                     x: position.x,
@@ -1521,13 +1831,13 @@ export default function ContractsEditorCore() {
                                   />
                                 ) : annotation.type === 'signature-box' ? (
                                   <div className="pointer-events-none flex h-full w-full items-center justify-center text-center text-xs font-semibold text-blue-700">
-                                    {annotation.value ?? 'Signature'}
+                                    {annotation.value ?? 'Click to sign'}
                                   </div>
                                 ) : annotation.type === 'check' ? (
                                   <div
                                     className="pointer-events-none flex h-full w-full items-center justify-center font-bold text-green-700"
                                     style={{
-                                      fontSize: annotation.fontSize ?? 22,
+                                      fontSize: getFittedOverlayFontSize(annotation),
                                     }}
                                   >
                                     ✓
@@ -1536,7 +1846,8 @@ export default function ContractsEditorCore() {
                                   <div
                                     className="pointer-events-none h-full w-full overflow-hidden whitespace-pre-wrap break-words text-black"
                                     style={{
-                                      fontSize: annotation.fontSize ?? 16,
+                                      fontSize: getFittedOverlayFontSize(annotation),
+                                      lineHeight: 1.05,
                                     }}
                                   >
                                     {annotation.value}
@@ -1562,11 +1873,13 @@ export default function ContractsEditorCore() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#9c7a4a]">
-                  Signature Pad
+                  Signature Builder
                 </div>
-                <h2 className="mt-2 text-2xl font-bold text-gray-900">Draw Signature</h2>
+                <h2 className="mt-2 text-2xl font-bold text-gray-900">
+                  {signatureMode === 'draw' ? 'Draw Signature' : 'Type Signature'}
+                </h2>
                 <p className="mt-2 text-sm text-gray-600">
-                  Sign directly on the canvas, then place it on the contract.
+                  Create a signature once, then place it into the selected box or onto the active page.
                 </p>
               </div>
 
@@ -1582,30 +1895,90 @@ export default function ContractsEditorCore() {
               </button>
             </div>
 
-            <div className="mt-6 flex-1 overflow-hidden rounded-[1.5rem] border border-gray-200 bg-gray-50">
-              <SignatureCanvas
-                ref={(instance) => {
-                  signaturePadRef.current = instance
-                }}
-                penColor="black"
-                canvasProps={{
-                  className: 'h-full w-full',
-                }}
-              />
-            </div>
-
             <div className="mt-6 flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={clearSignaturePad}
-                className="rounded-2xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 transition hover:bg-gray-100"
+                onClick={() => setSignatureMode('draw')}
+                className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${
+                  signatureMode === 'draw'
+                    ? 'bg-gray-900 text-white'
+                    : 'border border-gray-300 bg-white text-gray-900 hover:bg-gray-100'
+                }`}
               >
-                Clear
+                Draw
               </button>
+              <button
+                type="button"
+                onClick={() => setSignatureMode('type')}
+                className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${
+                  signatureMode === 'type'
+                    ? 'bg-gray-900 text-white'
+                    : 'border border-gray-300 bg-white text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                Type
+              </button>
+            </div>
+
+            {signatureMode === 'draw' ? (
+              <div className="mt-6 flex-1 overflow-hidden rounded-[1.5rem] border border-gray-200 bg-gray-50">
+                <SignatureCanvas
+                  ref={(instance) => {
+                    signaturePadRef.current = instance
+                  }}
+                  penColor="black"
+                  canvasProps={{
+                    className: 'h-full w-full',
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="mt-6 space-y-4 rounded-[1.5rem] border border-gray-200 bg-gray-50 p-6">
+                <label className="block">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                    Signature Name
+                  </div>
+                  <input
+                    value={typedSignature}
+                    onChange={(event) => setTypedSignature(event.target.value)}
+                    placeholder="Type the full signature name"
+                    className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-3 text-base text-gray-900 outline-none transition focus:border-[#9c7a4a]"
+                  />
+                </label>
+
+                <div className="rounded-[1.5rem] border border-dashed border-gray-300 bg-white p-6">
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                    Preview
+                  </div>
+                  <div
+                    className="mt-4 min-h-[150px] overflow-hidden text-gray-900"
+                    style={{
+                      fontFamily:
+                        '"Brush Script MT", "Segoe Script", "Snell Roundhand", cursive',
+                      fontSize: 'clamp(3rem, 7vw, 5.75rem)',
+                      lineHeight: 1.1,
+                    }}
+                  >
+                    {typedSignature || 'Signature Preview'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              {signatureMode === 'draw' ? (
+                <button
+                  type="button"
+                  onClick={clearSignaturePad}
+                  className="rounded-2xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 transition hover:bg-gray-100"
+                >
+                  Clear
+                </button>
+              ) : null}
 
               <button
                 type="button"
-                onClick={addSignatureFromPad}
+                onClick={signatureMode === 'draw' ? addSignatureFromPad : addTypedSignature}
                 className="rounded-2xl bg-gray-900 px-5 py-2 text-sm font-semibold text-white transition hover:bg-gray-800"
               >
                 Use Signature

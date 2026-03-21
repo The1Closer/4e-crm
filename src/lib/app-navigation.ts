@@ -88,6 +88,14 @@ export function buildNavigationItems(permissions: AppPermissions): AppNavItem[] 
       group: 'workspace',
     },
     {
+      href: '/claim-resource-library',
+      label: 'Claim Library',
+      description: 'Browse claim documents, videos, and photos organized by category.',
+      icon: BookOpenText,
+      show: permissions.canViewClaimResourceLibrary,
+      group: 'workspace',
+    },
+    {
       href: '/training',
       label: 'Training',
       description: 'Open playbooks, decks, and videos for the team.',
