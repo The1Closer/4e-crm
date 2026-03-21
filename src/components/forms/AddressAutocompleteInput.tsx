@@ -1,22 +1,19 @@
 'use client'
 
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
+  type GoogleAutocompletePrediction,
+  type GooglePlacesAutocompleteServiceInstance,
   loadGoogleMapsApi,
-  setGeocodeCache,
-  type GooglePlaceResult,
-  type GooglePlacesAutocompleteInstance,
 } from '@/lib/google-maps'
 import { cn } from '@/lib/utils'
 
 const GOOGLE_MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? ''
+const MIN_ADDRESS_QUERY_LENGTH = 3
+const ADDRESS_SUGGESTION_DEBOUNCE_MS = 180
 
 const DEFAULT_INPUT_CLASS_NAME =
   'w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35 disabled:cursor-not-allowed disabled:opacity-60'
-
-function getAddressValue(place: GooglePlaceResult, fallbackValue: string) {
-  return place.formatted_address?.trim() || fallbackValue.trim()
-}
 
 export default function AddressAutocompleteInput({
   value,
@@ -35,98 +32,139 @@ export default function AddressAutocompleteInput({
   id?: string
   name?: string
 }) {
-  const inputRef = useRef<HTMLInputElement | null>(null)
-  const autocompleteRef = useRef<GooglePlacesAutocompleteInstance | null>(null)
+  const listId = useId()
+  const autocompleteServiceRef = useRef<GooglePlacesAutocompleteServiceInstance | null>(null)
+  const requestSequenceRef = useRef(0)
+  const [suggestionsEnabled, setSuggestionsEnabled] = useState(false)
+  const [suggestions, setSuggestions] = useState<GoogleAutocompletePrediction[]>([])
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-
-  const handlePlaceChanged = useEffectEvent(
-    (autocomplete: GooglePlacesAutocompleteInstance) => {
-      const place = autocomplete.getPlace()
-      const fallbackValue = inputRef.current?.value ?? value
-      const nextAddress = getAddressValue(place, fallbackValue)
-
-      onChange(nextAddress)
-
-      const location = place.geometry?.location
-
-      if (nextAddress && location) {
-        setGeocodeCache(nextAddress, {
-          lat: location.lat(),
-          lng: location.lng(),
-        })
-      }
-    }
-  )
 
   useEffect(() => {
     if (!GOOGLE_MAPS_KEY) {
       setErrorMessage(
-        'Address search is unavailable until the Google Maps API key is configured.'
+        'Address suggestions are unavailable until the Google Maps API key is configured. You can still enter any address manually.'
       )
+      setSuggestionsEnabled(false)
       return
     }
 
-    if (!inputRef.current || autocompleteRef.current) return
+    if (autocompleteServiceRef.current) return
 
     let isActive = true
 
-    async function initializeAutocomplete() {
+    async function initializeAutocompleteService() {
       try {
         const mapsApi = await loadGoogleMapsApi(GOOGLE_MAPS_KEY)
 
-        if (!isActive || !inputRef.current || autocompleteRef.current) return
+        if (!isActive || autocompleteServiceRef.current) return
 
-        const Autocomplete = mapsApi.places?.Autocomplete
+        const AutocompleteService = mapsApi.places?.AutocompleteService
 
-        if (!Autocomplete) {
-          throw new Error('Google Places autocomplete is unavailable for the address field.')
+        if (!AutocompleteService) {
+          throw new Error('Google Places address suggestions are unavailable right now.')
         }
 
-        const autocomplete = new Autocomplete(inputRef.current, {
-          fields: ['formatted_address', 'geometry', 'name', 'place_id'],
-          types: ['address'],
-        })
-
-        autocomplete.addListener('place_changed', () => {
-          handlePlaceChanged(autocomplete)
-        })
-
-        autocompleteRef.current = autocomplete
+        autocompleteServiceRef.current = new AutocompleteService()
+        setSuggestionsEnabled(true)
         setErrorMessage('')
       } catch (error) {
         console.error('Failed to initialize Google address autocomplete.', error)
 
         if (!isActive) return
 
+        setSuggestionsEnabled(false)
         setErrorMessage(
           error instanceof Error
-            ? error.message
-            : 'Address search is unavailable right now.'
+            ? `${error.message} You can still enter the address manually.`
+            : 'Address suggestions are unavailable right now. You can still enter the address manually.'
         )
       }
     }
 
-    void initializeAutocomplete()
+    void initializeAutocompleteService()
 
     return () => {
       isActive = false
     }
   }, [])
 
+  useEffect(() => {
+    const autocompleteService = autocompleteServiceRef.current
+    const normalizedValue = value.trim()
+
+    if (!suggestionsEnabled || !autocompleteService || disabled) {
+      setSuggestions([])
+      setIsLoadingSuggestions(false)
+      return
+    }
+
+    if (normalizedValue.length < MIN_ADDRESS_QUERY_LENGTH) {
+      setSuggestions([])
+      setIsLoadingSuggestions(false)
+      return
+    }
+
+    const requestSequence = requestSequenceRef.current + 1
+    requestSequenceRef.current = requestSequence
+    setIsLoadingSuggestions(true)
+
+    const timeoutId = window.setTimeout(() => {
+      autocompleteService.getPlacePredictions(
+        {
+          input: normalizedValue,
+          types: ['address'],
+        },
+        (predictions, status) => {
+          if (requestSequenceRef.current !== requestSequence) return
+
+          setIsLoadingSuggestions(false)
+
+          if (status === 'OK') {
+            setSuggestions((predictions ?? []).filter((prediction) => prediction.description))
+            return
+          }
+
+          setSuggestions([])
+        }
+      )
+    }, ADDRESS_SUGGESTION_DEBOUNCE_MS)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [disabled, suggestionsEnabled, value])
+
   return (
     <div className="space-y-2">
       <input
-        ref={inputRef}
         id={id}
         name={name}
         type="text"
         value={value}
         disabled={disabled}
+        list={suggestionsEnabled ? listId : undefined}
         autoComplete="street-address"
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         className={cn(DEFAULT_INPUT_CLASS_NAME, className)}
       />
+
+      {suggestionsEnabled ? (
+        <datalist id={listId}>
+          {suggestions.map((prediction) => (
+            <option key={prediction.place_id ?? prediction.description} value={prediction.description} />
+          ))}
+        </datalist>
+      ) : null}
+
+      {suggestionsEnabled ? (
+        <div className="text-xs text-white/45">
+          {isLoadingSuggestions
+            ? 'Loading address suggestions...'
+            : 'Choose a suggested address or keep typing your own. Manual entry is always allowed.'}
+        </div>
+      ) : null}
 
       {errorMessage ? (
         <div className="text-xs text-amber-200/85">{errorMessage}</div>

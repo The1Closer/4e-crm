@@ -52,6 +52,13 @@ export type GooglePlaceResult = {
   place_id?: string
 }
 
+export type GooglePlacesServiceStatus = 'OK' | 'ZERO_RESULTS' | string
+
+export type GoogleAutocompletePrediction = {
+  description: string
+  place_id?: string
+}
+
 export type GoogleMapInstance = {
   fitBounds: (bounds: GoogleLatLngBoundsInstance) => void
   setCenter: (center: GoogleLatLngLiteral) => void
@@ -84,9 +91,24 @@ export type GooglePlacesAutocompleteOptions = {
   types?: string[]
 }
 
+export type GoogleAutocompletionRequest = {
+  input: string
+  types?: string[]
+}
+
 export type GooglePlacesAutocompleteInstance = {
   addListener: (eventName: 'place_changed', handler: () => void) => void
   getPlace: () => GooglePlaceResult
+}
+
+export type GooglePlacesAutocompleteServiceInstance = {
+  getPlacePredictions: (
+    request: GoogleAutocompletionRequest,
+    callback: (
+      predictions: GoogleAutocompletePrediction[] | null,
+      status: GooglePlacesServiceStatus
+    ) => void
+  ) => void
 }
 
 export type GooglePlacesNamespace = {
@@ -94,6 +116,7 @@ export type GooglePlacesNamespace = {
     input: HTMLInputElement,
     options?: GooglePlacesAutocompleteOptions
   ) => GooglePlacesAutocompleteInstance
+  AutocompleteService?: new () => GooglePlacesAutocompleteServiceInstance
 }
 
 export type GoogleMapsNamespace = {
