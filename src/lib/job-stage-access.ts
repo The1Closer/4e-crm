@@ -82,6 +82,12 @@ export function isInstallScheduledStage(stageInput: PipelineStageInput) {
   return hasExactStageLabel(stage?.name, INSTALL_SCHEDULED_LABELS)
 }
 
+export function isInstallWorkflowStage(stageInput: PipelineStageInput) {
+  return (
+    isPreProductionPrepStage(stageInput) || isInstallScheduledStage(stageInput)
+  )
+}
+
 export function findPreProductionPrepStage(stages: PipelineStageRecord[]) {
   return findStageByLabels(stages, PRE_PRODUCTION_PREP_LABELS)
 }
@@ -137,7 +143,10 @@ export function getVisibleStagesForUser(
 ) {
   if (canManageLockedStages) return stages
 
-  return stages.filter((stage) => !isManagementLockedStage(stage, stages))
+  return stages.filter(
+    (stage) =>
+      !isManagementLockedStage(stage, stages) || isInstallWorkflowStage(stage)
+  )
 }
 
 export function getStageColor(stageName: string | null | undefined) {

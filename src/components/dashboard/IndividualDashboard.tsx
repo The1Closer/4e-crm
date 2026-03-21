@@ -13,7 +13,6 @@ import PipelineKanban from '@/components/dashboard/PipelineKanban'
 import ChartModule from '@/components/dashboard/ChartModule'
 import PersonalMetricsPanel from '@/components/dashboard/PersonalMetricsPanel'
 import AnnouncementsPanel from '@/components/dashboard/AnnouncementsPanel'
-import ChessChallengePanel from '@/components/dashboard/ChessChallengePanel'
 import type { UserProfile } from '@/lib/auth-helpers'
 
 export default function IndividualDashboard({
@@ -156,9 +155,6 @@ export default function IndividualDashboard({
           <AnnouncementsPanel rows={announcements} />
         </div>
       </div>
-
-      <ChessChallengePanel profile={profile} />
-
       <SmartInsights insights={insights} />
     </div>
   )

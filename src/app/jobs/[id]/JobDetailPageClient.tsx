@@ -547,11 +547,11 @@ export default function JobDetailPageClient({
               <OverviewItem label="Email" value={homeowner?.email ?? '-'} />
               <OverviewItem label="Address" value={homeowner?.address ?? '-'} />
               <OverviewItem
-                label="Assigned Reps"
+                label="Assigned Team"
                 value={
                   assignedReps.length > 0
                     ? assignedReps.map((rep) => rep.full_name).join(', ')
-                    : 'No reps assigned'
+                    : 'No one assigned'
                 }
               />
               <OverviewItem

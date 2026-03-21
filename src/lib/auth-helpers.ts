@@ -1,4 +1,9 @@
 import { supabase } from '@/lib/supabase'
+import {
+  isMissingNightlyNumbersColumnError,
+  PROFILE_SELECT_FIELDS,
+  PROFILE_SELECT_WITH_NIGHTLY_FIELDS,
+} from '@/lib/nightly-numbers'
 
 export type AppRole = 'admin' | 'manager' | 'sales_manager' | 'rep' | string
 
@@ -11,6 +16,7 @@ export type UserProfile = {
   rep_type_id?: number | null
   avatar_url?: string | null
   phone?: string | null
+  include_in_nightly_numbers?: boolean | null
 }
 
 export type AppPermissions = {
@@ -45,13 +51,22 @@ export async function getCurrentUserProfile(): Promise<UserProfile | null> {
 
   if (!user) return null
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('profiles')
-    .select(
-      'id, full_name, role, is_active, manager_id, rep_type_id, avatar_url, phone'
-    )
+    .select(PROFILE_SELECT_WITH_NIGHTLY_FIELDS)
     .eq('id', user.id)
     .single()
+
+  if (error && isMissingNightlyNumbersColumnError(error)) {
+    const fallbackResult = await supabase
+      .from('profiles')
+      .select(PROFILE_SELECT_FIELDS)
+      .eq('id', user.id)
+      .single()
+
+    data = fallbackResult.data as typeof data
+    error = fallbackResult.error
+  }
 
   if (error || !data) return null
 

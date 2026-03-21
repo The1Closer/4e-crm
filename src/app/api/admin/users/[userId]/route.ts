@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isMissingNightlyNumbersColumnError } from '@/lib/nightly-numbers'
 import { getRouteRequester, requireManager } from '@/lib/server-auth'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 
@@ -16,6 +17,7 @@ type UpdateUserBody = {
   rep_type_id?: number | null
   is_active?: boolean
   avatar_url?: string | null
+  include_in_nightly_numbers?: boolean
 }
 
 const ALLOWED_ROLES = new Set(['admin', 'manager', 'sales_manager', 'rep'])
@@ -74,6 +76,33 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     const role = normalizeRole(body.role)
     const managerId = normalizeText(body.manager_id)
     const repTypeId = normalizeRepTypeId(body.rep_type_id)
+    const includeInNightlyNumbers =
+      typeof body.include_in_nightly_numbers === 'boolean'
+        ? body.include_in_nightly_numbers
+        : undefined
+
+    const updates: {
+      full_name: string | null
+      role: string | null
+      phone: string | null
+      manager_id: string | null
+      rep_type_id: number | null
+      is_active: boolean
+      avatar_url: string | null
+      include_in_nightly_numbers?: boolean
+    } = {
+      full_name: normalizeText(body.full_name),
+      role,
+      phone: normalizeText(body.phone),
+      manager_id: managerId,
+      rep_type_id: repTypeId,
+      is_active: body.is_active ?? true,
+      avatar_url: normalizeText(body.avatar_url),
+    }
+
+    if (includeInNightlyNumbers !== undefined) {
+      updates.include_in_nightly_numbers = includeInNightlyNumbers
+    }
 
     if (managerId) {
       const { data: managerProfile, error: managerCheckError } = await supabaseAdmin
@@ -106,22 +135,29 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       }
     }
 
-    const { data, error } = await supabaseAdmin
+    let { data, error } = await supabaseAdmin
       .from('profiles')
-      .update({
-        full_name: normalizeText(body.full_name),
-        role,
-        phone: normalizeText(body.phone),
-        manager_id: managerId,
-        rep_type_id: repTypeId,
-        is_active: body.is_active ?? true,
-        avatar_url: normalizeText(body.avatar_url),
-      })
+      .update(updates)
       .eq('id', userId)
       .select(
-        'id, full_name, role, is_active, manager_id, rep_type_id, avatar_url, phone'
+        'id, full_name, role, is_active, manager_id, rep_type_id, avatar_url, phone, include_in_nightly_numbers'
       )
       .single()
+
+    if (error && isMissingNightlyNumbersColumnError(error)) {
+      const fallbackUpdates = { ...updates }
+      delete fallbackUpdates.include_in_nightly_numbers
+
+      const fallbackResult = await supabaseAdmin
+        .from('profiles')
+        .update(fallbackUpdates)
+        .eq('id', userId)
+        .select('id, full_name, role, is_active, manager_id, rep_type_id, avatar_url, phone')
+        .single()
+
+      data = fallbackResult.data as typeof data
+      error = fallbackResult.error
+    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 })

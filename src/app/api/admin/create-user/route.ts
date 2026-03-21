@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import {
+  getDefaultNightlyNumbersInclusion,
+  isMissingNightlyNumbersColumnError,
+} from '@/lib/nightly-numbers'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 
 type CreateUserBody = {
@@ -12,6 +16,7 @@ type CreateUserBody = {
   rep_type_id?: number | null
   is_active?: boolean
   avatar_url?: string | null
+  include_in_nightly_numbers?: boolean
 }
 
 const ALLOWED_ROLES = ['manager', 'sales_manager', 'rep', 'admin']
@@ -29,6 +34,8 @@ export async function POST(req: NextRequest) {
     const repTypeId = body.rep_type_id ?? null
     const isActive = body.is_active ?? true
     const avatarUrl = body.avatar_url?.trim() || null
+    const includeInNightlyNumbers =
+      body.include_in_nightly_numbers ?? getDefaultNightlyNumbersInclusion(role)
 
     if (!fullName) {
       return NextResponse.json({ error: 'Full name is required.' }, { status: 400 })
@@ -151,7 +158,7 @@ export async function POST(req: NextRequest) {
 
     const newUserId = createdAuthUser.user.id
 
-    const { error: profileInsertError } = await supabaseAdmin.from('profiles').insert({
+    const profilePayload = {
       id: newUserId,
       full_name: fullName,
       role,
@@ -160,7 +167,17 @@ export async function POST(req: NextRequest) {
       rep_type_id: repTypeId,
       avatar_url: avatarUrl,
       phone,
+    }
+
+    let { error: profileInsertError } = await supabaseAdmin.from('profiles').insert({
+      ...profilePayload,
+      include_in_nightly_numbers: includeInNightlyNumbers,
     })
+
+    if (profileInsertError && isMissingNightlyNumbersColumnError(profileInsertError)) {
+      const fallbackResult = await supabaseAdmin.from('profiles').insert(profilePayload)
+      profileInsertError = fallbackResult.error
+    }
 
     if (profileInsertError) {
       // Best-effort cleanup so you do not leave orphaned auth users
@@ -184,6 +201,7 @@ export async function POST(req: NextRequest) {
         is_active: isActive,
         avatar_url: avatarUrl,
         phone,
+        include_in_nightly_numbers: includeInNightlyNumbers,
       },
     })
   } catch (error) {

@@ -9,7 +9,9 @@ import AddressAutocompleteInput from '@/components/forms/AddressAutocompleteInpu
 import {
   getVisibleStagesForUser,
   isInstallScheduledStage,
+  isInstallWorkflowStage,
   isManagementLockedStage,
+  isPreProductionPrepStage,
 } from '@/lib/job-stage-access'
 
 type Stage = {
@@ -150,34 +152,28 @@ export default function EditJobForm({
     return reps.filter((rep) => !selectedRepIds.includes(rep.id))
   }, [reps, selectedRepIds])
 
-  const currentStage = useMemo(
-    () => stages.find((stage) => String(stage.id) === initialData.stage_id) ?? null,
-    [initialData.stage_id, stages]
+  const selectedStage = useMemo(
+    () => stages.find((stage) => String(stage.id) === form.stage_id) ?? null,
+    [form.stage_id, stages]
   )
 
   const visibleStages = useMemo(() => {
-    const unlockedStages = getVisibleStagesForUser(stages, canManageLockedStages).filter(
-      (stage) => !isInstallScheduledStage(stage)
-    )
+    const unlockedStages = getVisibleStagesForUser(stages, canManageLockedStages)
 
-    if (!currentStage || unlockedStages.some((stage) => stage.id === currentStage.id)) {
+    if (!selectedStage || unlockedStages.some((stage) => stage.id === selectedStage.id)) {
       return unlockedStages
     }
 
-    return [currentStage, ...unlockedStages]
-  }, [canManageLockedStages, currentStage, stages])
+    return [selectedStage, ...unlockedStages]
+  }, [canManageLockedStages, selectedStage, stages])
 
   const stageLockedForUser = useMemo(
     () =>
-      Boolean(currentStage) &&
-      isManagementLockedStage(currentStage, stages) &&
+      Boolean(selectedStage) &&
+      isManagementLockedStage(selectedStage, stages) &&
+      !isInstallWorkflowStage(selectedStage) &&
       !canManageLockedStages,
-    [canManageLockedStages, currentStage, stages]
-  )
-
-  const stageManagedByCalendar = useMemo(
-    () => Boolean(form.install_date && currentStage && isInstallScheduledStage(currentStage)),
-    [currentStage, form.install_date]
+    [canManageLockedStages, selectedStage, stages]
   )
 
   function removeRep(repId: string) {
@@ -211,14 +207,21 @@ export default function EditJobForm({
     event.preventDefault()
 
     const nextStage = stages.find((stage) => String(stage.id) === form.stage_id) ?? null
+    const nextInstallDate =
+      nextStage && isPreProductionPrepStage(nextStage) ? '' : form.install_date
 
-    if (nextStage && isInstallScheduledStage(nextStage)) {
+    if (nextStage && isInstallScheduledStage(nextStage) && !nextInstallDate) {
       setMessageTone('error')
-      setMessage('Install Scheduled is managed from the install calendar.')
+      setMessage('Set an install date before moving this job into Install Scheduled.')
       return
     }
 
-    if (nextStage && isManagementLockedStage(nextStage, stages) && !canManageLockedStages) {
+    if (
+      nextStage &&
+      isManagementLockedStage(nextStage, stages) &&
+      !isInstallWorkflowStage(nextStage) &&
+      !canManageLockedStages
+    ) {
       setMessageTone('error')
       setMessage('Only management can move jobs into Contracted and later stages.')
       return
@@ -236,6 +239,7 @@ export default function EditJobForm({
         },
         body: JSON.stringify({
           ...form,
+          install_date: nextInstallDate,
           rep_ids: selectedRepIds,
         }),
       })
@@ -464,16 +468,23 @@ export default function EditJobForm({
                   <div className="grid gap-4 md:grid-cols-2">
                     <FormField label="Install Date">
                       <div className="space-y-3">
-                        <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/72">
-                          {form.install_date
-                            ? formatScheduleDate(form.install_date)
-                            : 'Not scheduled yet'}
-                        </div>
+                        <input
+                          type="date"
+                          className={INPUT_CLASS_NAME}
+                          value={form.install_date}
+                          onChange={(event) =>
+                            updateField('install_date', event.target.value)
+                          }
+                        />
                         <div className="text-xs leading-5 text-white/45">
-                          Install dates are managed from the install calendar. Drag a job
-                          from the Ready Queue onto a day there, or update the date from the
-                          calendar board.
+                          Setting an install date pairs with the Install Scheduled stage.
+                          Clear the date to move the job back into Pre-Production Prep.
                         </div>
+                        {form.install_date ? (
+                          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/72">
+                            Scheduled for {formatScheduleDate(form.install_date)}
+                          </div>
+                        ) : null}
                       </div>
                     </FormField>
 
@@ -553,7 +564,7 @@ export default function EditJobForm({
                       <select
                         className={INPUT_CLASS_NAME}
                         value={form.stage_id}
-                        disabled={stageLockedForUser || stageManagedByCalendar}
+                        disabled={stageLockedForUser}
                         onChange={(event) => updateField('stage_id', event.target.value)}
                       >
                         <option value="">Select stage</option>
@@ -572,16 +583,9 @@ export default function EditJobForm({
                       </div>
                     ) : null}
 
-                    {stageManagedByCalendar ? (
-                      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
-                        Install Scheduled is controlled from the install calendar while the
-                        job has an install date.
-                      </div>
-                    ) : null}
-
                     <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/38">
-                        Assigned Reps
+                        Assigned Team
                       </div>
 
                       <div className="mt-3 space-y-3">
@@ -606,7 +610,7 @@ export default function EditJobForm({
                           ))
                         ) : (
                           <div className="rounded-2xl border border-dashed border-white/14 p-4 text-sm text-white/55">
-                            No reps assigned yet.
+                            No one assigned yet.
                           </div>
                         )}
                       </div>
@@ -617,7 +621,7 @@ export default function EditJobForm({
                           value={repToAdd}
                           onChange={(event) => setRepToAdd(event.target.value)}
                         >
-                          <option value="">Select rep to add</option>
+                          <option value="">Select assignee to add</option>
                           {availableReps.map((rep) => (
                             <option key={rep.id} value={rep.id}>
                               {rep.full_name}
@@ -631,7 +635,7 @@ export default function EditJobForm({
                           disabled={!repToAdd}
                           className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:opacity-50"
                         >
-                          Add Rep
+                          Add Assignee
                         </button>
                       </div>
                     </div>
@@ -641,8 +645,8 @@ export default function EditJobForm({
                 <SurfacePanel eyebrow="Review" title="Before You Save">
                   <div className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/68">
                     <p>
-                      Stage changes, homeowner updates, and rep assignments all save in one
-                      pass.
+                      Stage changes, install scheduling updates, homeowner edits, and rep
+                      assignments all save in one pass.
                     </p>
                     <p>
                       New rep assignments trigger notifications automatically through the job

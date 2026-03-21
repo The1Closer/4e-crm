@@ -52,7 +52,9 @@ export function dispatchNotificationsRefresh() {
 }
 
 export async function fetchNotifications() {
-  const response = await authorizedFetch('/api/notifications')
+  const response = await authorizedFetch('/api/notifications', {
+    cache: 'no-store',
+  })
   const result = (await response.json().catch(() => null)) as
     | NotificationListResponse
     | null
@@ -66,7 +68,10 @@ export async function fetchNotifications() {
 
 export async function fetchNotification(notificationId: string) {
   const response = await authorizedFetch(
-    `/api/notifications?notificationId=${encodeURIComponent(notificationId)}`
+    `/api/notifications?notificationId=${encodeURIComponent(notificationId)}`,
+    {
+      cache: 'no-store',
+    }
   )
   const result = (await response.json().catch(() => null)) as
     | NotificationSingleResponse
@@ -80,7 +85,9 @@ export async function fetchNotification(notificationId: string) {
 }
 
 export async function fetchUnreadNotificationCount() {
-  const response = await authorizedFetch('/api/notifications?view=unread-count')
+  const response = await authorizedFetch('/api/notifications?view=unread-count', {
+    cache: 'no-store',
+  })
   const result = (await response.json().catch(() => null)) as
     | NotificationCountResponse
     | null

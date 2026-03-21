@@ -40,7 +40,7 @@ export default function JobsTable({
             <tr className="border-b border-white/10 text-left text-white/45">
               <th className="px-4 py-4">Homeowner</th>
               <th className="px-4 py-4">Stage</th>
-              <th className="px-4 py-4">Reps</th>
+              <th className="px-4 py-4">Assignees</th>
               <th className="px-4 py-4">Carrier</th>
               <th className="px-4 py-4">Install</th>
               <th className="px-4 py-4">Contract</th>

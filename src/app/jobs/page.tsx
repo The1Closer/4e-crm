@@ -437,7 +437,6 @@ function JobsPageContent() {
   const reps = useMemo<JobRepOption[]>(
     () =>
       profileOptions
-        .filter((profile) => profile.role === 'rep')
         .map((profile) => ({
           id: profile.id,
           full_name: profile.full_name,
@@ -453,7 +452,10 @@ function JobsPageContent() {
 
       const managerTeamIds = new Set(
         profileOptions
-          .filter((profile) => profile.role === 'rep' && profile.manager_id === managerFilter)
+          .filter(
+            (profile) =>
+              profile.id === managerFilter || profile.manager_id === managerFilter
+          )
           .map((profile) => profile.id)
       )
 
@@ -751,7 +753,9 @@ function JobsPageContent() {
               value={repFilter}
               onChange={(event) => setRepFilter(event.target.value)}
             >
-              <option value="">{managerFilter ? 'All Team Reps' : 'All Reps'}</option>
+              <option value="">
+                {managerFilter ? 'All Team Assignees' : 'All Assignees'}
+              </option>
               {visibleReps.map((rep) => (
                 <option key={rep.id} value={rep.id}>
                   {rep.full_name}

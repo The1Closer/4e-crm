@@ -357,11 +357,11 @@ function ArchivePageContent() {
 
                 <div className="mt-5 rounded-[1.35rem] border border-white/10 bg-black/20 p-4">
                   <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/38">
-                    Assigned Reps
+                    Assigned Team
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {repNames.length === 0 ? (
-                      <span className="text-sm text-white/55">No reps assigned</span>
+                      <span className="text-sm text-white/55">No one assigned</span>
                     ) : (
                       repNames.map((rep) => (
                         <span

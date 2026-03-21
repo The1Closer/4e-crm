@@ -175,10 +175,10 @@ export default function JobEditorFields({
       <section className="space-y-4">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#d6b37a]">
-            Assigned Reps
+            Assigned Team
           </div>
           <div className="mt-2 text-sm text-white/58">
-            Add or remove reps without opening the full detail page.
+            Add or remove assignees without opening the full detail page.
           </div>
         </div>
 
@@ -205,14 +205,14 @@ export default function JobEditorFields({
           </div>
         ) : (
           <div className="rounded-[1.4rem] border border-dashed border-white/14 p-4 text-sm text-white/55">
-            No reps assigned yet.
+            No one assigned yet.
           </div>
         )}
 
         <div className="flex flex-col gap-3 md:flex-row">
           <div className="flex-1">
             <SelectField
-              label="Add Rep"
+              label="Add Assignee"
               value={normalizedRepToAdd}
               disabled={disabled || availableReps.length === 0}
               onChange={setRepToAdd}
@@ -220,7 +220,9 @@ export default function JobEditorFields({
                 {
                   value: '',
                   label:
-                    availableReps.length === 0 ? 'No more reps available' : 'Select a rep',
+                    availableReps.length === 0
+                      ? 'No more assignees available'
+                      : 'Select an assignee',
                 },
                 ...availableReps.map((rep) => ({
                   value: rep.id,
@@ -237,7 +239,7 @@ export default function JobEditorFields({
             className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:opacity-60"
           >
             <Plus className="h-4 w-4 text-[#d6b37a]" />
-            Add Rep
+            Add Assignee
           </button>
         </div>
       </section>

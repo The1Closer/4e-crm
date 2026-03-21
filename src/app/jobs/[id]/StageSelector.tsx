@@ -8,7 +8,9 @@ import { getCurrentUserProfile, getPermissions } from '@/lib/auth-helpers'
 import {
   getVisibleStagesForUser,
   isInstallScheduledStage,
+  isInstallWorkflowStage,
   isManagementLockedStage,
+  isPreProductionPrepStage,
 } from '@/lib/job-stage-access'
 
 type Stage = {
@@ -56,9 +58,7 @@ export default function StageSelector({
   const selectedValue = saving ? value : currentStageId ? String(currentStageId) : ''
 
   const visibleStages = useMemo(() => {
-    const unlockedStages = getVisibleStagesForUser(stages, canManageLockedStages).filter(
-      (stage) => !isInstallScheduledStage(stage)
-    )
+    const unlockedStages = getVisibleStagesForUser(stages, canManageLockedStages)
 
     if (!currentStage || unlockedStages.some((stage) => stage.id === currentStage.id)) {
       return unlockedStages
@@ -71,24 +71,25 @@ export default function StageSelector({
     return (
       Boolean(currentStage) &&
       isManagementLockedStage(currentStage, stages) &&
+      !isInstallWorkflowStage(currentStage) &&
       !canManageLockedStages
     )
   }, [canManageLockedStages, currentStage, stages])
 
-  const stageManagedByCalendar = useMemo(
-    () => Boolean(installDate && currentStage && isInstallScheduledStage(currentStage)),
-    [currentStage, installDate]
-  )
-
   async function handleChange(nextValue: string) {
     const nextStage = stages.find((stage) => String(stage.id) === nextValue) ?? null
 
-    if (nextStage && isInstallScheduledStage(nextStage)) {
-      setMessage('Install Scheduled is managed from the install calendar.')
+    if (nextStage && isInstallScheduledStage(nextStage) && !installDate) {
+      setMessage('Set an install date in Edit Job or on the install calendar first.')
       return
     }
 
-    if (nextStage && isManagementLockedStage(nextStage, stages) && !canManageLockedStages) {
+    if (
+      nextStage &&
+      isManagementLockedStage(nextStage, stages) &&
+      !isInstallWorkflowStage(nextStage) &&
+      !canManageLockedStages
+    ) {
       setMessage('Only management can move jobs into Contracted and later stages.')
       return
     }
@@ -101,26 +102,35 @@ export default function StageSelector({
       data: { user },
     } = await supabase.auth.getUser()
 
+    const nextInstallDate = nextStage && isPreProductionPrepStage(nextStage) ? null : installDate
+
     const { error } = await supabase
       .from('jobs')
       .update({
         stage_id: nextValue ? Number(nextValue) : null,
+        install_date: nextInstallDate,
       })
       .eq('id', jobId)
 
-    if (!error) {
-      const selectedStage = stages.find((stage) => String(stage.id) === nextValue)
+    if (error) {
+      setMessage(error.message)
+      setSaving(false)
+      return
+    }
 
-      const { data: assignments } = await supabase
-        .from('job_reps')
-        .select('profile_id')
-        .eq('job_id', jobId)
+    const selectedStage = stages.find((stage) => String(stage.id) === nextValue)
 
-      const assignedUserIds = ((assignments ?? []) as JobAssignment[]).map(
-        (assignment) => assignment.profile_id
-      )
+    const { data: assignments } = await supabase
+      .from('job_reps')
+      .select('profile_id')
+      .eq('job_id', jobId)
 
-      if (assignedUserIds.length > 0 && selectedStage) {
+    const assignedUserIds = ((assignments ?? []) as JobAssignment[]).map(
+      (assignment) => assignment.profile_id
+    )
+
+    if (assignedUserIds.length > 0 && selectedStage) {
+      try {
         await createNotifications({
           userIds: assignedUserIds,
           actorUserId: user?.id ?? null,
@@ -134,15 +144,17 @@ export default function StageSelector({
             stage_name: selectedStage.name,
           },
         })
+      } catch (notificationError) {
+        console.error('Could not send stage-change notifications.', notificationError)
       }
-
-      window.dispatchEvent(
-        new CustomEvent('job-detail:refresh', {
-          detail: { jobId },
-        })
-      )
-      router.refresh()
     }
+
+    window.dispatchEvent(
+      new CustomEvent('job-detail:refresh', {
+        detail: { jobId },
+      })
+    )
+    router.refresh()
 
     setSaving(false)
   }
@@ -153,7 +165,7 @@ export default function StageSelector({
         <select
           value={selectedValue}
           onChange={(e) => handleChange(e.target.value)}
-          disabled={saving || stageLockedForUser || stageManagedByCalendar}
+          disabled={saving || stageLockedForUser}
           className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white shadow-sm outline-none transition focus:border-[#d6b37a]/40"
         >
           <option value="">No Stage</option>
@@ -174,13 +186,6 @@ export default function StageSelector({
       {stageLockedForUser ? (
         <div className="text-xs text-[#f8c38a]">
           Only management can change the stage once a job reaches Contracted or later.
-        </div>
-      ) : null}
-
-      {stageManagedByCalendar ? (
-        <div className="text-xs text-[#f8c38a]">
-          Install Scheduled is controlled from the install calendar while an install date
-          is set.
         </div>
       ) : null}
 

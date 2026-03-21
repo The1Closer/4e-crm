@@ -68,10 +68,9 @@ const INITIALS_PATTERNS = [/\binitials\b/i, /\binit\.\b/i]
 const DATE_PATTERNS = [/\bdate\b/i]
 const CHECK_PATTERNS = [/\bcheck\b/i, /\baccept\b/i, /\bagree\b/i, /\byes\b/i]
 
-const PDF_WORKER_SRC = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).toString()
+const PDF_WORKER_SRC = '/pdfjs/pdf.worker.min.mjs'
+const PDF_STANDARD_FONT_DATA_URL = '/pdfjs/standard_fonts/'
+const PDF_CMAP_URL = '/pdfjs/cmaps/'
 
 const PAGE_WIDTH = 880
 
@@ -350,6 +349,14 @@ export default function ContractsEditorCore() {
   const documentFile = useMemo(
     () => (loadedPdfData ? { data: loadedPdfData } : null),
     [loadedPdfData]
+  )
+  const pdfDocumentOptions = useMemo(
+    () => ({
+      cMapPacked: true,
+      cMapUrl: PDF_CMAP_URL,
+      standardFontDataUrl: PDF_STANDARD_FONT_DATA_URL,
+    }),
+    []
   )
 
   useEffect(() => {
@@ -1360,6 +1367,7 @@ export default function ContractsEditorCore() {
               <Document
                 key={`${activeTemplateId ?? 'template-none'}:${activeDocumentId ?? 'document-none'}:${activeJobFileId ?? 'job-file-none'}:${localFileName || 'local-none'}:${loadedPdfData?.byteLength ?? 0}:${sourceUrl || 'no-source'}`}
                 file={documentFile ?? undefined}
+                options={pdfDocumentOptions}
                 onLoadSuccess={onLoadSuccess}
                 onLoadError={onLoadError}
               >

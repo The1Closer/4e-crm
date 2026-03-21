@@ -67,7 +67,7 @@ export default function JobCard({
       <div className="mt-5 rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/38">
-            Assigned Reps
+            Assigned Team
           </div>
 
           {noRepAssigned ? (
@@ -79,7 +79,7 @@ export default function JobCard({
 
         <div className="mt-2 flex flex-wrap gap-2">
           {noRepAssigned ? (
-            <span className="text-sm text-white/55">No reps assigned</span>
+            <span className="text-sm text-white/55">No one assigned</span>
           ) : (
             job.repNames.map((rep) => (
               <span

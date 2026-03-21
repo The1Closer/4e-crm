@@ -1,5 +1,11 @@
 import { supabase } from '@/lib/supabase'
 import {
+  isIncludedInNightlyNumbers,
+  isMissingNightlyNumbersColumnError,
+  ROSTER_PROFILE_SELECT_FIELDS,
+  ROSTER_PROFILE_SELECT_WITH_NIGHTLY_FIELDS,
+} from '@/lib/nightly-numbers'
+import {
   buildRepSummaries,
   buildTotals,
   safePercent,
@@ -35,6 +41,7 @@ type ProfileRow = {
   role: string | null
   manager_id: string | null
   is_active?: boolean | null
+  include_in_nightly_numbers?: boolean | null
 }
 
 type JobRepLinkRow = {
@@ -174,40 +181,76 @@ export async function loadDashboardDataset({
 }): Promise<DashboardDataset> {
   let repRows: ProfileRow[] = []
 
-  if (scope === 'branch') {
-    const { data } = await supabase
+  async function fetchNightlyRoster(
+    filters: {
+      managerId?: string
+      profileId?: string
+    } = {}
+  ) {
+    let query = supabase
       .from('profiles')
-      .select('id, full_name, role, manager_id, is_active')
-      .eq('role', 'rep')
-      .eq('is_active', true)
-      .order('full_name', { ascending: true })
+      .select(ROSTER_PROFILE_SELECT_WITH_NIGHTLY_FIELDS)
 
-    repRows = (data ?? []) as ProfileRow[]
+    if (filters.profileId) {
+      query = query.eq('id', filters.profileId).limit(1)
+    } else {
+      query = query.eq('is_active', true).order('full_name', { ascending: true })
+    }
+
+    if (filters.managerId) {
+      query = query.eq('manager_id', filters.managerId)
+    }
+
+    let { data, error } = await query
+
+    if (error && isMissingNightlyNumbersColumnError(error)) {
+      let fallbackQuery = supabase
+        .from('profiles')
+        .select(ROSTER_PROFILE_SELECT_FIELDS)
+
+      if (filters.profileId) {
+        fallbackQuery = fallbackQuery.eq('id', filters.profileId).limit(1)
+      } else {
+        fallbackQuery = fallbackQuery.eq('is_active', true).order('full_name', {
+          ascending: true,
+        })
+      }
+
+      if (filters.managerId) {
+        fallbackQuery = fallbackQuery.eq('manager_id', filters.managerId)
+      }
+
+      const fallbackResult = await fallbackQuery
+      data = fallbackResult.data as typeof data
+      error = fallbackResult.error
+    }
+
+    return { data, error }
+  }
+
+  if (scope === 'branch') {
+    const { data } = await fetchNightlyRoster()
+
+    repRows = ((data ?? []) as ProfileRow[]).filter(isIncludedInNightlyNumbers)
   }
 
   if (scope === 'team') {
     if ((profile?.role ?? '') !== 'sales_manager') {
       repRows = []
     } else {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, full_name, role, manager_id, is_active')
-        .eq('role', 'rep')
-        .eq('is_active', true)
-        .eq('manager_id', profile?.id ?? '')
-        .order('full_name', { ascending: true })
+      const { data } = await fetchNightlyRoster({
+        managerId: profile?.id ?? '',
+      })
 
-      repRows = (data ?? []) as ProfileRow[]
+      repRows = ((data ?? []) as ProfileRow[]).filter(isIncludedInNightlyNumbers)
     }
   }
 
   if (scope === 'individual') {
     if (profile?.id) {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, full_name, role, manager_id, is_active')
-        .eq('id', profile.id)
-        .limit(1)
+      const { data } = await fetchNightlyRoster({
+        profileId: profile.id,
+      })
 
       repRows = (data ?? []) as ProfileRow[]
     } else {
@@ -363,7 +406,7 @@ export async function loadDashboardDataset({
     alertFeed.push({
       id: 'missing-today',
       title: 'Missing nightly reports',
-      body: `${missingToday.length} rep(s) still have not submitted today.`,
+      body: `${missingToday.length} team member(s) still have not submitted today.`,
       tone: 'red',
     })
   }
@@ -439,7 +482,7 @@ export function buildSmartInsights(dataset: DashboardDataset) {
   }
 
   if (dataset.missingToday.length > 0) {
-    insights.push(`${dataset.missingToday.length} rep(s) are still missing nightly numbers today.`)
+    insights.push(`${dataset.missingToday.length} team member(s) are still missing nightly numbers today.`)
   }
 
   if (insights.length === 0) {

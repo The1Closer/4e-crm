@@ -18,7 +18,7 @@ export default function JobsQuickFilters({
   const options: Array<{ key: JobsQuickFilter; label: string }> = [
     { key: 'all', label: 'All' },
     { key: 'mine', label: 'My Jobs' },
-    { key: 'unassigned', label: 'No Rep Assigned' },
+    { key: 'unassigned', label: 'Unassigned' },
     { key: 'has_install', label: 'Has Install Date' },
     { key: 'no_install', label: 'No Install Date' },
     { key: 'high_value', label: 'High Value' },

@@ -191,6 +191,10 @@ export default function NotificationsClient() {
       </section>
 
       <section className="grid gap-3 md:grid-cols-3">
+        <NotificationPermissionCard />
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-3">
         <NotificationMetric label="Unread" value={String(unread.length)} />
         <NotificationMetric label="Read" value={String(read.length)} />
         <NotificationMetric label="Total" value={String(notifications.length)} />
@@ -226,6 +230,81 @@ export default function NotificationsClient() {
         </div>
       )}
     </main>
+  )
+}
+
+function NotificationPermissionCard() {
+  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(
+    'unsupported'
+  )
+  const [requesting, setRequesting] = useState(false)
+
+  useEffect(() => {
+    if (typeof Notification === 'undefined') {
+      setPermission('unsupported')
+      return
+    }
+
+    setPermission(Notification.permission)
+  }, [])
+
+  async function enableNotifications() {
+    if (typeof Notification === 'undefined') {
+      setPermission('unsupported')
+      return
+    }
+
+    setRequesting(true)
+
+    try {
+      const nextPermission = await Notification.requestPermission()
+      setPermission(nextPermission)
+    } finally {
+      setRequesting(false)
+    }
+  }
+
+  const description =
+    permission === 'granted'
+      ? 'Browser alerts are enabled for new CRM notifications.'
+      : permission === 'denied'
+        ? 'Browser alerts are blocked in this browser. Re-enable them from site permissions if needed.'
+        : permission === 'default'
+          ? 'Enable browser alerts so notifications can break through even when this tab is not frontmost.'
+          : 'This browser does not support the Notification API.'
+
+  return (
+    <section className="md:col-span-3 rounded-[1.5rem] border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/38">
+            Browser Alerts
+          </div>
+          <div className="mt-2 text-sm font-medium text-white">{description}</div>
+        </div>
+
+        {permission === 'default' ? (
+          <button
+            type="button"
+            onClick={() => {
+              void enableNotifications()
+            }}
+            disabled={requesting}
+            className="rounded-2xl bg-[#d6b37a] px-4 py-3 text-sm font-semibold text-black transition hover:bg-[#e2bf85] disabled:opacity-60"
+          >
+            {requesting ? 'Enabling...' : 'Enable Alerts'}
+          </button>
+        ) : (
+          <div className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-white/70">
+            {permission === 'granted'
+              ? 'Enabled'
+              : permission === 'denied'
+                ? 'Blocked'
+                : 'Unsupported'}
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 

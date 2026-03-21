@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import {
   findInstallScheduledStage,
   isInstallScheduledStage,
+  isInstallWorkflowStage,
   isManagementLockedStage,
+  isPreProductionPrepStage,
 } from '@/lib/job-stage-access'
 import {
   getRouteRequester,
@@ -135,6 +137,34 @@ async function notifyAssignedReps(params: {
       job_id: params.jobId,
       note_id: null,
       metadata: {},
+    }))
+
+  if (rows.length === 0) return
+
+  await supabaseAdmin.from('notifications').insert(rows)
+}
+
+async function notifyStageChange(params: {
+  jobId: string
+  actorUserId: string
+  repIds: string[]
+  stage: StageRow
+}) {
+  const rows = params.repIds
+    .filter((repId) => repId !== params.actorUserId)
+    .map((repId) => ({
+      user_id: repId,
+      actor_user_id: params.actorUserId,
+      type: 'stage_change',
+      title: 'Job stage changed',
+      message: `A job was moved to ${params.stage.name}.`,
+      link: `/jobs/${params.jobId}`,
+      job_id: params.jobId,
+      note_id: null,
+      metadata: {
+        stage_id: params.stage.id,
+        stage_name: params.stage.name,
+      },
     }))
 
   if (rows.length === 0) return
@@ -296,39 +326,63 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
 
   try {
     const body = (await req.json()) as JobMutationBody
+    const { data: existingJob, error: existingJobError } = await supabaseAdmin
+      .from('jobs')
+      .select('id, homeowner_id, stage_id, install_date')
+      .eq('id', jobId)
+      .single()
+
+    if (existingJobError || !existingJob) {
+      return NextResponse.json({ error: 'Job not found.' }, { status: 404 })
+    }
+
     const stages = await loadStageRows()
-    const requestedStageId = normalizeStageId(body.stage_id)
-    const installDate = normalizeDate(body.install_date)
+    const bodyIncludesStageId = Object.prototype.hasOwnProperty.call(body, 'stage_id')
+    const bodyIncludesInstallDate = Object.prototype.hasOwnProperty.call(body, 'install_date')
+    const requestedStageId = bodyIncludesStageId
+      ? normalizeStageId(body.stage_id)
+      : existingJob.stage_id
+    const installDate = bodyIncludesInstallDate
+      ? normalizeDate(body.install_date)
+      : existingJob.install_date
     const repIds = normalizeRepIds(body.rep_ids)
 
+    const requestedStage =
+      requestedStageId === null
+        ? null
+        : stages.find((stage) => stage.id === requestedStageId) ?? null
     const autoScheduledStage = installDate ? findInstallScheduledStage(stages) : null
-    const stageId = autoScheduledStage?.id ?? requestedStageId
+    const stageId =
+      installDate && (!requestedStage || isPreProductionPrepStage(requestedStage))
+        ? autoScheduledStage?.id ?? requestedStageId
+        : requestedStageId
     const targetStage = stageId === null ? null : stages.find((stage) => stage.id === stageId)
+
+    if (requestedStageId !== null && !requestedStage) {
+      return NextResponse.json({ error: 'Stage not found.' }, { status: 400 })
+    }
 
     if (stageId !== null && !targetStage) {
       return NextResponse.json({ error: 'Stage not found.' }, { status: 400 })
     }
 
+    if (targetStage && isInstallScheduledStage(targetStage) && !installDate) {
+      return NextResponse.json(
+        { error: 'Install Scheduled requires an install date.' },
+        { status: 400 }
+      )
+    }
+
     if (
       targetStage &&
       isManagementLockedStage(targetStage, stages) &&
-      !(installDate && isInstallScheduledStage(targetStage)) &&
+      !isInstallWorkflowStage(targetStage) &&
       !isManagerRole(authResult.requester.profile.role)
     ) {
       return NextResponse.json(
         { error: 'Only management can move jobs into this stage.' },
         { status: 403 }
       )
-    }
-
-    const { data: existingJob, error: existingJobError } = await supabaseAdmin
-      .from('jobs')
-      .select('id, homeowner_id')
-      .eq('id', jobId)
-      .single()
-
-    if (existingJobError || !existingJob) {
-      return NextResponse.json({ error: 'Job not found.' }, { status: 404 })
     }
 
     const { data: currentAssignments, error: assignmentError } = await supabaseAdmin
@@ -404,12 +458,28 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     }
 
     const newlyAddedRepIds = repIds.filter((repId) => !currentRepIds.includes(repId))
+    try {
+      await notifyAssignedReps({
+        jobId,
+        actorUserId: authResult.requester.profile.id,
+        repIds: newlyAddedRepIds,
+      })
+    } catch (notificationError) {
+      console.error('Could not notify newly assigned reps.', notificationError)
+    }
 
-    await notifyAssignedReps({
-      jobId,
-      actorUserId: authResult.requester.profile.id,
-      repIds: newlyAddedRepIds,
-    })
+    if (targetStage && existingJob.stage_id !== stageId) {
+      try {
+        await notifyStageChange({
+          jobId,
+          actorUserId: authResult.requester.profile.id,
+          repIds,
+          stage: targetStage,
+        })
+      } catch (notificationError) {
+        console.error('Could not notify reps about the stage change.', notificationError)
+      }
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -1,6 +1,7 @@
 'use client'
 
 import Image from 'next/image'
+import Link from 'next/link'
 import { Suspense, useEffect, useState, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../../src/lib/supabase'
@@ -85,6 +86,15 @@ function SignInPageContent() {
           onChange={setPassword}
           autoComplete="current-password"
         />
+
+        <div className="flex justify-end">
+          <Link
+            href="/reset-password"
+            className="text-sm font-medium text-[#f0ce94] transition hover:text-[#f7ddb0]"
+          >
+            Forgot password?
+          </Link>
+        </div>
 
         <button
           type="submit"

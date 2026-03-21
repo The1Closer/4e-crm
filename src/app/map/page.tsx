@@ -717,11 +717,11 @@ function LeadMapPageContent() {
                   <LeadFact label="Carrier" value={selectedLead.insuranceCarrier} />
                   <LeadFact label="Install" value={formatDate(selectedLead.installDate)} />
                   <LeadFact
-                    label="Reps"
+                    label="Assignees"
                     value={
                       selectedLead.repNames.length > 0
                         ? selectedLead.repNames.join(', ')
-                        : 'No reps assigned'
+                        : 'No one assigned'
                     }
                   />
                 </div>

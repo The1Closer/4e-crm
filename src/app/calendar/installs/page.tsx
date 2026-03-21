@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import ProtectedRoute from '../../../components/ProtectedRoute'
 import { supabase } from '../../../lib/supabase'
+import { createNotifications } from '../../../lib/notification-utils'
 import { getCurrentUserProfile, isManagerLike } from '../../../lib/auth-helpers'
 import {
   findInstallScheduledStage,
@@ -98,6 +99,12 @@ function getRepNames(jobReps: JobRow['job_reps']): string[] {
       return profile?.full_name ?? null
     })
     .filter((name): name is string => Boolean(name))
+}
+
+function getRepIds(jobReps: JobRow['job_reps']): string[] {
+  if (!jobReps || jobReps.length === 0) return []
+
+  return [...new Set(jobReps.map((rep) => rep.profile_id).filter(Boolean))]
 }
 
 function formatDateKey(date: Date) {
@@ -350,6 +357,32 @@ function InstallCalendarContent() {
       setMessage(error.message)
       setSavingJobId(null)
       return
+    }
+
+    const assignedRepIds = getRepIds(targetJob.job_reps)
+
+    if (assignedRepIds.length > 0 && nextStage?.name) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      try {
+        await createNotifications({
+          userIds: assignedRepIds,
+          actorUserId: user?.id ?? null,
+          type: 'stage_change',
+          title: 'Job stage changed',
+          message: `A job was moved to ${nextStage.name}.`,
+          link: `/jobs/${jobId}`,
+          jobId,
+          metadata: {
+            stage_id: nextStage.id ?? null,
+            stage_name: nextStage.name,
+          },
+        })
+      } catch (notificationError) {
+        console.error('Could not send calendar stage-change notifications.', notificationError)
+      }
     }
 
     setJobs((prev) =>
@@ -614,7 +647,7 @@ function InstallCalendarContent() {
                             </div>
 
                             <div className="mt-3 text-[11px] text-white/62">
-                              {repNames.length > 0 ? repNames.join(', ') : 'No reps assigned'}
+                              {repNames.length > 0 ? repNames.join(', ') : 'No one assigned'}
                             </div>
 
                             <div className="mt-3 flex items-center justify-between gap-2">
@@ -729,7 +762,7 @@ function InstallCalendarContent() {
                   </div>
 
                   <div className="mt-3 text-xs text-white/62">
-                    {repNames.length > 0 ? repNames.join(', ') : 'No reps assigned'}
+                    {repNames.length > 0 ? repNames.join(', ') : 'No one assigned'}
                   </div>
 
                   <div className="mt-4 flex items-center justify-between gap-2">

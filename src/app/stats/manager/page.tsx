@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import ManagerOnlyRoute from '@/components/ManagerOnlyRoute'
+import {
+  isIncludedInNightlyNumbers,
+  isMissingNightlyNumbersColumnError,
+  ROSTER_PROFILE_SELECT_FIELDS,
+  ROSTER_PROFILE_SELECT_WITH_NIGHTLY_FIELDS,
+} from '@/lib/nightly-numbers'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUserProfile } from '@/lib/auth-helpers'
 
@@ -10,6 +16,8 @@ type Profile = {
   full_name: string
   role: string | null
   manager_id: string | null
+  is_active?: boolean | null
+  include_in_nightly_numbers?: boolean | null
 }
 
 type StatRow = {
@@ -195,12 +203,22 @@ function ManagerNightlyEntryContent() {
 
     setViewerName(currentProfile.full_name ?? 'Manager')
 
-    const { data: repsData, error: repsError } = await supabase
+    let { data: repsData, error: repsError } = await supabase
       .from('profiles')
-      .select('id, full_name, role, manager_id')
+      .select(ROSTER_PROFILE_SELECT_WITH_NIGHTLY_FIELDS)
       .eq('is_active', true)
-      .eq('role', 'rep')
       .order('full_name', { ascending: true })
+
+    if (repsError && isMissingNightlyNumbersColumnError(repsError)) {
+      const fallbackResult = await supabase
+        .from('profiles')
+        .select(ROSTER_PROFILE_SELECT_FIELDS)
+        .eq('is_active', true)
+        .order('full_name', { ascending: true })
+
+      repsData = fallbackResult.data as typeof repsData
+      repsError = fallbackResult.error
+    }
 
     if (repsError) {
       setMessageType('error')
@@ -213,7 +231,7 @@ function ManagerNightlyEntryContent() {
       return
     }
 
-    const reps = (repsData ?? []) as Profile[]
+    const reps = ((repsData ?? []) as Profile[]).filter(isIncludedInNightlyNumbers)
     setBranchReps(reps)
 
     if (reps.length === 0) {
@@ -445,7 +463,7 @@ function ManagerNightlyEntryContent() {
             </h1>
 
             <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
-              Enter the full branch sheet in one pass, keep every rep visible, and track month-to-date plus projected totals without bouncing to another page.
+              Enter the full branch sheet in one pass, keep everyone on the nightly roster visible, and track month-to-date plus projected totals without bouncing to another page.
             </p>
           </div>
 
@@ -475,7 +493,7 @@ function ManagerNightlyEntryContent() {
       </section>
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <ManagerMetric label="Branch Reps" value={String(branchReps.length)} />
+        <ManagerMetric label="Nightly Roster" value={String(branchReps.length)} />
         <ManagerMetric label="Submitted" value={String(submittedCount)} />
         <ManagerMetric label="Missing" value={String(missingCount)} />
         <ManagerMetric label="Month" value={monthLabel} />
@@ -500,9 +518,9 @@ function ManagerNightlyEntryContent() {
         </div>
       ) : branchReps.length === 0 ? (
         <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          <h2 className="text-xl font-semibold text-white">No reps found</h2>
+          <h2 className="text-xl font-semibold text-white">No nightly roster found</h2>
           <p className="mt-2 text-sm leading-6 text-white/60">
-            There are no active reps in the system yet, so there is nothing to enter for nightly numbers.
+            There are no active users included in nightly numbers yet, so there is nothing to enter for this branch sheet.
           </p>
         </div>
       ) : (
@@ -527,7 +545,7 @@ function ManagerNightlyEntryContent() {
                 Branch Nightly Numbers
               </h2>
               <p className="mt-2 text-sm leading-6 text-white/60">
-                Enter numbers for every active rep, then save the full branch sheet at once.
+                Enter numbers for every included user, then save the full branch sheet at once.
               </p>
             </div>
 
@@ -629,10 +647,10 @@ function ManagerNightlyEntryContent() {
           <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
             <div className="mb-5">
               <h2 className="text-2xl font-bold tracking-tight text-white">
-                {monthLabel} Rep Totals
+                {monthLabel} Nightly Totals
               </h2>
               <p className="mt-2 text-sm leading-6 text-white/60">
-                Month-to-date totals for every rep based on saved daily numbers through the selected date.
+                Month-to-date totals for everyone on the nightly roster based on saved daily numbers through the selected date.
               </p>
             </div>
 

@@ -38,8 +38,6 @@ const NOTIFICATION_SELECT = `
 const ALLOWED_NOTIFICATION_TYPES = new Set([
   'assignment',
   'stage_change',
-  'chess_invite',
-  'chess_bot_invite',
   'note_mention',
 ])
 

@@ -30,7 +30,7 @@ export default function JobsExportTools({
                 'Contract Amount',
                 'Deposit Collected',
                 'Remaining Balance',
-                'Assigned Reps',
+                'Assigned Team',
             ],
             ...rows.map((row) => [
                 row.homeownerName,

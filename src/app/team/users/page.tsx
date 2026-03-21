@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import ManagerOnlyRoute from '@/components/ManagerOnlyRoute'
 import { authorizedFetch } from '@/lib/api-client'
 import { uploadAvatarViaApi } from '@/lib/avatar-client'
+import {
+  getDefaultNightlyNumbersInclusion,
+  isIncludedInNightlyNumbers,
+  isMissingNightlyNumbersColumnError,
+  PROFILE_SELECT_FIELDS,
+  PROFILE_SELECT_WITH_NIGHTLY_FIELDS,
+} from '@/lib/nightly-numbers'
 import { supabase } from '@/lib/supabase'
 
 type ProfileRow = {
@@ -15,6 +22,7 @@ type ProfileRow = {
   rep_type_id: number | null
   avatar_url: string | null
   phone: string | null
+  include_in_nightly_numbers: boolean | null
 }
 
 type RepTypeRow = {
@@ -37,6 +45,7 @@ type DraftRow = {
   rep_type_id: string
   is_active: boolean
   avatar_url: string
+  include_in_nightly_numbers: boolean
 }
 
 function digitsOnly(value: string) {
@@ -95,6 +104,10 @@ export default function TeamUsersPage() {
   const [managerId, setManagerId] = useState('')
   const [repTypeId, setRepTypeId] = useState('')
   const [isActive, setIsActive] = useState(true)
+  const [includeInNightlyNumbers, setIncludeInNightlyNumbers] = useState(
+    getDefaultNightlyNumbersInclusion('rep')
+  )
+  const [createNightlyToggleTouched, setCreateNightlyToggleTouched] = useState(false)
 
   const [avatarPreview, setAvatarPreview] = useState('')
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
@@ -125,14 +138,22 @@ export default function TeamUsersPage() {
     setLoading(true)
     setMessage('')
 
-    const [profilesRes, managersRes, repTypesRes] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select(
-          'id, full_name, role, is_active, manager_id, rep_type_id, avatar_url, phone'
-        )
-        .order('full_name', { ascending: true }),
+    let { data: profilesData, error: profilesError } = await supabase
+      .from('profiles')
+      .select(PROFILE_SELECT_WITH_NIGHTLY_FIELDS)
+      .order('full_name', { ascending: true })
 
+    if (profilesError && isMissingNightlyNumbersColumnError(profilesError)) {
+      const fallbackResult = await supabase
+        .from('profiles')
+        .select(PROFILE_SELECT_FIELDS)
+        .order('full_name', { ascending: true })
+
+      profilesData = fallbackResult.data as typeof profilesData
+      profilesError = fallbackResult.error
+    }
+
+    const [managersRes, repTypesRes] = await Promise.all([
       supabase
         .from('profiles')
         .select('id, full_name, role')
@@ -147,9 +168,9 @@ export default function TeamUsersPage() {
         .order('name', { ascending: true }),
     ])
 
-    if (profilesRes.error) {
+    if (profilesError) {
       setMessageType('error')
-      setMessage(profilesRes.error.message)
+      setMessage(profilesError.message)
       setLoading(false)
       return
     }
@@ -168,7 +189,7 @@ export default function TeamUsersPage() {
       return
     }
 
-    const nextProfiles = (profilesRes.data ?? []) as ProfileRow[]
+    const nextProfiles = (profilesData ?? []) as ProfileRow[]
     const nextManagers = (managersRes.data ?? []) as ManagerRow[]
     const nextRepTypes = (repTypesRes.data ?? []) as RepTypeRow[]
 
@@ -186,6 +207,7 @@ export default function TeamUsersPage() {
         rep_type_id: profile.rep_type_id !== null ? String(profile.rep_type_id) : '',
         is_active: profile.is_active,
         avatar_url: profile.avatar_url ?? '',
+        include_in_nightly_numbers: isIncludedInNightlyNumbers(profile),
       }
     }
 
@@ -255,6 +277,7 @@ export default function TeamUsersPage() {
           rep_type_id: repTypeId ? Number(repTypeId) : null,
           is_active: isActive,
           avatar_url: avatarUrl,
+          include_in_nightly_numbers: includeInNightlyNumbers,
         }),
       })
 
@@ -276,6 +299,8 @@ export default function TeamUsersPage() {
       setManagerId('')
       setRepTypeId('')
       setIsActive(true)
+      setIncludeInNightlyNumbers(getDefaultNightlyNumbersInclusion('rep'))
+      setCreateNightlyToggleTouched(false)
       setAvatarPreview('')
       setAvatarFile(null)
       setSaving(false)
@@ -330,6 +355,7 @@ export default function TeamUsersPage() {
           rep_type_id: draft.rep_type_id ? Number(draft.rep_type_id) : null,
           is_active: draft.is_active,
           avatar_url: avatarUrl,
+          include_in_nightly_numbers: draft.include_in_nightly_numbers,
         }),
       })
 
@@ -384,6 +410,7 @@ export default function TeamUsersPage() {
         rep_type_id: profile.rep_type_id,
         is_active: !profile.is_active,
         avatar_url: profile.avatar_url,
+        include_in_nightly_numbers: isIncludedInNightlyNumbers(profile),
       }),
     })
 
@@ -636,7 +663,16 @@ export default function TeamUsersPage() {
                   <select
                     className={INPUT_CLASS_NAME}
                     value={role}
-                    onChange={(e) => setRole(e.target.value)}
+                    onChange={(e) => {
+                      const nextRole = e.target.value
+                      setRole(nextRole)
+
+                      if (!createNightlyToggleTouched) {
+                        setIncludeInNightlyNumbers(
+                          getDefaultNightlyNumbersInclusion(nextRole)
+                        )
+                      }
+                    }}
                   >
                     <option value="rep">Rep</option>
                     <option value="manager">Manager</option>
@@ -695,6 +731,21 @@ export default function TeamUsersPage() {
                   <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/78">
                     <input
                       type="checkbox"
+                      checked={includeInNightlyNumbers}
+                      onChange={(e) => {
+                        setIncludeInNightlyNumbers(e.target.checked)
+                        setCreateNightlyToggleTouched(true)
+                      }}
+                      className="accent-[#d6b37a]"
+                    />
+                    Include on nightly numbers roster
+                  </label>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/78">
+                    <input
+                      type="checkbox"
                       checked={isActive}
                       onChange={(e) => setIsActive(e.target.checked)}
                       className="accent-[#d6b37a]"
@@ -741,6 +792,11 @@ export default function TeamUsersPage() {
                       </div>
                       <div className="mt-3 inline-flex rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-white/70">
                         {formatRoleLabel(role)}
+                      </div>
+                      <div className="mt-2 text-xs font-medium text-white/55">
+                        {includeInNightlyNumbers
+                          ? 'Included on nightly numbers'
+                          : 'Excluded from nightly numbers'}
                       </div>
                     </div>
                   </div>
@@ -912,6 +968,17 @@ export default function TeamUsersPage() {
                                 >
                                   {profile.is_active ? 'Active' : 'Inactive'}
                                 </div>
+                                <div
+                                  className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                                    isIncludedInNightlyNumbers(profile)
+                                      ? 'border-[#d6b37a]/25 bg-[#d6b37a]/12 text-[#f5deb3]'
+                                      : 'border-white/10 bg-white/[0.04] text-white/55'
+                                  }`}
+                                >
+                                  {isIncludedInNightlyNumbers(profile)
+                                    ? 'Nightly Included'
+                                    : 'Nightly Excluded'}
+                                </div>
                               </div>
 
                               <div className="mt-4 grid gap-3 text-sm text-white/62 md:grid-cols-3">
@@ -1060,6 +1127,22 @@ export default function TeamUsersPage() {
                               </select>
                             </div>
 
+                            <div className="md:col-span-2">
+                              <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/78">
+                                <input
+                                  type="checkbox"
+                                  checked={draft.include_in_nightly_numbers}
+                                  onChange={(e) =>
+                                    updateDraft(profile.id, {
+                                      include_in_nightly_numbers: e.target.checked,
+                                    })
+                                  }
+                                  className="accent-[#d6b37a]"
+                                />
+                                Include on nightly numbers roster
+                              </label>
+                            </div>
+
                             <div className="md:col-span-2 rounded-[1.6rem] border border-white/10 bg-black/20 p-4">
                               <div className="flex flex-wrap items-center gap-4">
                                 {activeDraftAvatarPreview ? (
@@ -1165,6 +1248,8 @@ export default function TeamUsersPage() {
                                         : '',
                                     is_active: profile.is_active,
                                     avatar_url: profile.avatar_url ?? '',
+                                    include_in_nightly_numbers:
+                                      isIncludedInNightlyNumbers(profile),
                                   },
                                 }))
                                 setDraftAvatarFiles((prev) => ({

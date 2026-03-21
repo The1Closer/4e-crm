@@ -99,6 +99,8 @@ function SubmitNumbersPageContent() {
     () => isManagerLike(profile?.role ?? null),
     [profile?.role]
   )
+  const todayLocalDate = useMemo(() => getTodayLocalDate(), [])
+  const effectiveReportDate = isManager ? reportDate : todayLocalDate
 
   useEffect(() => {
     async function loadExistingEntry() {
@@ -123,7 +125,7 @@ function SubmitNumbersPageContent() {
           revenue_signed
         `)
         .eq('rep_id', profile.id)
-        .eq('report_date', reportDate)
+        .eq('report_date', effectiveReportDate)
         .maybeSingle()
 
       if (error) {
@@ -156,7 +158,7 @@ function SubmitNumbersPageContent() {
     if (!loadingProfile) {
       loadExistingEntry()
     }
-  }, [profile?.id, reportDate, loadingProfile])
+  }, [effectiveReportDate, loadingProfile, profile?.id])
 
   function updateField(field: keyof FormState, value: string) {
     setForm((prev) => ({
@@ -174,13 +176,19 @@ function SubmitNumbersPageContent() {
       return
     }
 
+    if (!isManager && reportDate !== todayLocalDate) {
+      setMessage('Reps can only submit nightly numbers for the current day.')
+      setMessageType('error')
+      return
+    }
+
     setSaving(true)
     setMessage('')
     setMessageType('')
 
     const payload = {
       rep_id: profile.id,
-      report_date: reportDate,
+      report_date: effectiveReportDate,
       knocks: toNumber(form.knocks),
       talks: toNumber(form.talks),
       walks: toNumber(form.walks),
@@ -255,9 +263,10 @@ function SubmitNumbersPageContent() {
             </div>
             <input
               type="date"
-              value={reportDate}
-              max={isManager ? undefined : getTodayLocalDate()}
+              value={effectiveReportDate}
+              max={isManager ? undefined : todayLocalDate}
               onChange={(e) => setReportDate(e.target.value)}
+              disabled={!isManager}
               className="w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-white outline-none transition focus:border-[#d6b37a]/50 focus:bg-white/[0.08]"
             />
           </label>
@@ -265,7 +274,7 @@ function SubmitNumbersPageContent() {
           <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/60">
             {isManager
               ? 'Manager mode: you can open different dates and edit your own entries.'
-              : 'Rep mode: submit today’s numbers here.'}
+              : 'Rep mode: this page is locked to today so previous nightly numbers cannot be changed.'}
           </div>
         </div>
       </section>

@@ -52,7 +52,6 @@ function NewJobPageContent() {
           .from('profiles')
           .select('id, full_name, role')
           .eq('is_active', true)
-          .eq('role', 'rep')
           .order('full_name', { ascending: true }),
       ])
 
