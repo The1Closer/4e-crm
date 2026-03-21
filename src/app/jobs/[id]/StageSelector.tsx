@@ -23,6 +23,21 @@ type JobAssignment = {
   profile_id: string
 }
 
+function formatNotificationDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+
+  if (!year || !month || !day) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, day)))
+}
+
 export default function StageSelector({
   jobId,
   currentStageId,
@@ -131,15 +146,22 @@ export default function StageSelector({
 
     if (assignedUserIds.length > 0 && selectedStage) {
       try {
+        const isInstallScheduledChange =
+          isInstallScheduledStage(selectedStage) && Boolean(nextInstallDate)
+
         await createNotifications({
           userIds: assignedUserIds,
           actorUserId: user?.id ?? null,
           type: 'stage_change',
-          title: 'Job stage changed',
-          message: `A job was moved to ${selectedStage.name}.`,
+          title: isInstallScheduledChange ? 'Install scheduled' : 'Job stage changed',
+          message: isInstallScheduledChange
+            ? `Install scheduled for ${formatNotificationDate(nextInstallDate as string)}.`
+            : `A job was moved to ${selectedStage.name}.`,
           link: `/jobs/${jobId}`,
           jobId,
           metadata: {
+            event: isInstallScheduledChange ? 'install_scheduled' : 'stage_change',
+            install_date: nextInstallDate,
             stage_id: selectedStage.id,
             stage_name: selectedStage.name,
           },

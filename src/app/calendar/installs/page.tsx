@@ -107,6 +107,21 @@ function getRepIds(jobReps: JobRow['job_reps']): string[] {
   return [...new Set(jobReps.map((rep) => rep.profile_id).filter(Boolean))]
 }
 
+function formatNotificationDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+
+  if (!year || !month || !day) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, day)))
+}
+
 function formatDateKey(date: Date) {
   const year = date.getFullYear()
   const month = `${date.getMonth() + 1}`.padStart(2, '0')
@@ -367,15 +382,22 @@ function InstallCalendarContent() {
       } = await supabase.auth.getUser()
 
       try {
+        const isInstallScheduleNotice =
+          Boolean(nextDate) && Boolean(nextStage) && isInstallScheduledStage(nextStage)
+
         await createNotifications({
           userIds: assignedRepIds,
           actorUserId: user?.id ?? null,
           type: 'stage_change',
-          title: 'Job stage changed',
-          message: `A job was moved to ${nextStage.name}.`,
+          title: isInstallScheduleNotice ? 'Install scheduled' : 'Job stage changed',
+          message: isInstallScheduleNotice
+            ? `Install scheduled for ${formatNotificationDate(nextDate as string)}.`
+            : `A job was moved to ${nextStage.name}.`,
           link: `/jobs/${jobId}`,
           jobId,
           metadata: {
+            event: isInstallScheduleNotice ? 'install_scheduled' : 'stage_change',
+            install_date: nextDate,
             stage_id: nextStage.id ?? null,
             stage_name: nextStage.name,
           },

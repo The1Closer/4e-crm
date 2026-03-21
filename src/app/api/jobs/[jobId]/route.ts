@@ -55,6 +55,21 @@ type JobFileRow = {
   file_path: string | null
 }
 
+function formatNotificationDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+
+  if (!year || !month || !day) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, day)))
+}
+
 function normalizeText(value: unknown) {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
@@ -164,6 +179,37 @@ async function notifyStageChange(params: {
       metadata: {
         stage_id: params.stage.id,
         stage_name: params.stage.name,
+      },
+    }))
+
+  if (rows.length === 0) return
+
+  await supabaseAdmin.from('notifications').insert(rows)
+}
+
+async function notifyInstallScheduled(params: {
+  jobId: string
+  actorUserId: string
+  repIds: string[]
+  installDate: string
+}) {
+  if (params.repIds.length === 0) return
+
+  const formattedDate = formatNotificationDate(params.installDate)
+  const rows = params.repIds
+    .filter((repId) => repId !== params.actorUserId)
+    .map((repId) => ({
+      user_id: repId,
+      actor_user_id: params.actorUserId,
+      type: 'stage_change',
+      title: 'Install scheduled',
+      message: `Install scheduled for ${formattedDate}.`,
+      link: `/jobs/${params.jobId}`,
+      job_id: params.jobId,
+      note_id: null,
+      metadata: {
+        event: 'install_scheduled',
+        install_date: params.installDate,
       },
     }))
 
@@ -468,7 +514,24 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       console.error('Could not notify newly assigned reps.', notificationError)
     }
 
-    if (targetStage && existingJob.stage_id !== stageId) {
+    const shouldNotifyInstallScheduled =
+      Boolean(targetStage) &&
+      Boolean(installDate) &&
+      isInstallScheduledStage(targetStage as StageRow) &&
+      (existingJob.stage_id !== stageId || existingJob.install_date !== installDate)
+
+    if (shouldNotifyInstallScheduled && installDate) {
+      try {
+        await notifyInstallScheduled({
+          jobId,
+          actorUserId: authResult.requester.profile.id,
+          repIds,
+          installDate,
+        })
+      } catch (notificationError) {
+        console.error('Could not notify reps about the install schedule.', notificationError)
+      }
+    } else if (targetStage && existingJob.stage_id !== stageId) {
       try {
         await notifyStageChange({
           jobId,

@@ -100,6 +100,19 @@ function arrayBufferToUint8Array(value: ArrayBuffer) {
   return new Uint8Array(value)
 }
 
+function cloneUint8Array(value: Uint8Array) {
+  const copy = new Uint8Array(value.byteLength)
+  copy.set(value)
+  return copy
+}
+
+function uint8ArrayToArrayBuffer(value: Uint8Array) {
+  return value.buffer.slice(
+    value.byteOffset,
+    value.byteOffset + value.byteLength
+  ) as ArrayBuffer
+}
+
 function buildDraftKey(params: {
   jobId: string | null
   templateId: string | null
@@ -267,6 +280,7 @@ export default function ContractsEditorCore() {
   const initialName = searchParams.get('name') ?? 'document'
 
   const [loadedPdfData, setLoadedPdfData] = useState<Uint8Array | null>(null)
+  const [loadedPdfUrl, setLoadedPdfUrl] = useState<string | null>(null)
   const [documentName, setDocumentName] = useState(initialName)
   const [templates, setTemplates] = useState<TemplateOption[]>([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
@@ -346,10 +360,6 @@ export default function ContractsEditorCore() {
   )
 
   const hasSource = Boolean(loadedPdfData)
-  const documentFile = useMemo(
-    () => (loadedPdfData ? { data: loadedPdfData } : null),
-    [loadedPdfData]
-  )
   const pdfDocumentOptions = useMemo(
     () => ({
       cMapPacked: true,
@@ -358,6 +368,25 @@ export default function ContractsEditorCore() {
     }),
     []
   )
+
+  useEffect(() => {
+    if (!loadedPdfData) {
+      setLoadedPdfUrl(null)
+      return
+    }
+
+    const nextUrl = URL.createObjectURL(
+      new Blob([uint8ArrayToArrayBuffer(cloneUint8Array(loadedPdfData))], {
+        type: 'application/pdf',
+      })
+    )
+
+    setLoadedPdfUrl(nextUrl)
+
+    return () => {
+      URL.revokeObjectURL(nextUrl)
+    }
+  }, [loadedPdfData])
 
   useEffect(() => {
     let isActive = true
@@ -945,7 +974,7 @@ export default function ContractsEditorCore() {
       setSaving(true)
       setMessage('')
 
-      const pdfDoc = await PDFDocument.load(loadedPdfData)
+      const pdfDoc = await PDFDocument.load(cloneUint8Array(loadedPdfData))
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
       const pages = pdfDoc.getPages()
 
@@ -996,9 +1025,7 @@ export default function ContractsEditorCore() {
       }
 
       const finalPdfBytes = await pdfDoc.save()
-      const finalPdfBuffer = new ArrayBuffer(finalPdfBytes.byteLength)
-      new Uint8Array(finalPdfBuffer).set(finalPdfBytes)
-      const blob = new Blob([finalPdfBuffer], {
+      const blob = new Blob([uint8ArrayToArrayBuffer(finalPdfBytes)], {
         type: 'application/pdf',
       })
       const downloadName = `${documentName || 'annotated-document'}.pdf`
@@ -1366,7 +1393,7 @@ export default function ContractsEditorCore() {
             <div className="overflow-x-auto">
               <Document
                 key={`${activeTemplateId ?? 'template-none'}:${activeDocumentId ?? 'document-none'}:${activeJobFileId ?? 'job-file-none'}:${localFileName || 'local-none'}:${loadedPdfData?.byteLength ?? 0}:${sourceUrl || 'no-source'}`}
-                file={documentFile ?? undefined}
+                file={loadedPdfUrl ?? undefined}
                 options={pdfDocumentOptions}
                 onLoadSuccess={onLoadSuccess}
                 onLoadError={onLoadError}

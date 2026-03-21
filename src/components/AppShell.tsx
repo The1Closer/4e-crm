@@ -29,6 +29,7 @@ import AuthStatus from '@/components/AuthStatus'
 import HeaderWorkspaceSearch from '@/components/HeaderWorkspaceSearch'
 import LiveNotificationToasts from '@/components/LiveNotificationToasts'
 import NotificationBell from '@/components/NotificationBell'
+import { authorizedFetch } from '@/lib/api-client'
 import {
   getCurrentUserProfile,
   getPermissions,
@@ -93,6 +94,18 @@ export default function AppShell({
       window.removeEventListener('profile:updated', handleProfileUpdated)
     }
   }, [])
+
+  useEffect(() => {
+    if (isAuthPage || !profile?.id) {
+      return
+    }
+
+    void authorizedFetch('/api/notifications/archive-sync', {
+      method: 'POST',
+    }).catch((error) => {
+      console.error('Could not sync archive notifications.', error)
+    })
+  }, [isAuthPage, profile?.id])
 
   if (isAuthPage) {
     return <>{children}</>
