@@ -17,6 +17,7 @@ type NotificationBody = {
 type NotificationPatchBody = {
   notificationId?: string
   markAll?: boolean
+  isRead?: boolean
 }
 
 const NOTIFICATION_SELECT = `
@@ -41,6 +42,22 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   'note_mention',
 ])
 
+async function deleteExpiredReadNotifications(userId: string) {
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  const { error } = await supabaseAdmin
+    .from('notifications')
+    .delete()
+    .eq('user_id', userId)
+    .eq('is_read', true)
+    .not('read_at', 'is', null)
+    .lt('read_at', cutoff)
+
+  if (error) {
+    throw new Error(error.message)
+  }
+}
+
 export async function GET(req: NextRequest) {
   const authResult = await getRouteRequester(req)
 
@@ -51,12 +68,22 @@ export async function GET(req: NextRequest) {
   const view = req.nextUrl.searchParams.get('view')?.trim() ?? ''
   const notificationId =
     req.nextUrl.searchParams.get('notificationId')?.trim() ?? ''
+  const requesterId = authResult.requester.profile.id
+
+  try {
+    await deleteExpiredReadNotifications(requesterId)
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to clean notifications.' },
+      { status: 400 }
+    )
+  }
 
   if (view === 'unread-count') {
     const { count, error } = await supabaseAdmin
       .from('notifications')
       .select('*', { count: 'exact', head: true })
-      .eq('user_id', authResult.requester.profile.id)
+      .eq('user_id', requesterId)
       .eq('is_read', false)
 
     if (error) {
@@ -70,7 +97,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabaseAdmin
       .from('notifications')
       .select(NOTIFICATION_SELECT)
-      .eq('user_id', authResult.requester.profile.id)
+      .eq('user_id', requesterId)
       .eq('id', notificationId)
       .maybeSingle()
 
@@ -88,7 +115,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabaseAdmin
     .from('notifications')
     .select(NOTIFICATION_SELECT)
-    .eq('user_id', authResult.requester.profile.id)
+    .eq('user_id', requesterId)
     .order('created_at', { ascending: false })
     .limit(200)
 
@@ -110,6 +137,7 @@ export async function PATCH(req: NextRequest) {
   const notificationId = (body.notificationId ?? '').trim()
   const markAll = body.markAll === true
   const readAt = new Date().toISOString()
+  const isRead = body.isRead ?? true
 
   if (!notificationId && !markAll) {
     return NextResponse.json(
@@ -139,8 +167,8 @@ export async function PATCH(req: NextRequest) {
   const { data, error } = await supabaseAdmin
     .from('notifications')
     .update({
-      is_read: true,
-      read_at: readAt,
+      is_read: isRead,
+      read_at: isRead ? readAt : null,
     })
     .eq('user_id', authResult.requester.profile.id)
     .eq('id', notificationId)
@@ -211,4 +239,36 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ success: true, inserted: rows.length })
+}
+
+export async function DELETE(req: NextRequest) {
+  const authResult = await getRouteRequester(req)
+
+  if ('response' in authResult) {
+    return authResult.response
+  }
+
+  const notificationId =
+    req.nextUrl.searchParams.get('notificationId')?.trim() ?? ''
+
+  if (!notificationId) {
+    return NextResponse.json({ error: 'Notification id is required.' }, { status: 400 })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('notifications')
+    .delete()
+    .eq('user_id', authResult.requester.profile.id)
+    .eq('id', notificationId)
+    .select('id')
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
+
+  if (!data || data.length === 0) {
+    return NextResponse.json({ error: 'Notification not found.' }, { status: 404 })
+  }
+
+  return NextResponse.json({ success: true })
 }

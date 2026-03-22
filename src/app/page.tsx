@@ -447,7 +447,8 @@ function HomePageContent() {
             description="Upcoming tasks and appointments assigned to you or created by you, with quick access right from the home screen."
             contextLabel={profile?.full_name || 'you'}
             maxVisible={3}
-            compact
+            density="micro"
+            upcomingWindowDays={3}
           />
         </div>
 

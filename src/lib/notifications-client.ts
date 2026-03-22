@@ -100,6 +100,17 @@ export async function fetchUnreadNotificationCount() {
 }
 
 export async function markNotificationRead(notificationId: string) {
+  return updateNotificationReadState(notificationId, true)
+}
+
+export async function markNotificationUnread(notificationId: string) {
+  return updateNotificationReadState(notificationId, false)
+}
+
+export async function updateNotificationReadState(
+  notificationId: string,
+  isRead: boolean
+) {
   const response = await authorizedFetch('/api/notifications', {
     method: 'PATCH',
     headers: {
@@ -107,6 +118,7 @@ export async function markNotificationRead(notificationId: string) {
     },
     body: JSON.stringify({
       notificationId,
+      isRead,
     }),
   })
 
@@ -143,4 +155,24 @@ export async function markAllNotificationsRead() {
 
   dispatchNotificationsRefresh()
   return Number(result?.updated ?? 0)
+}
+
+export async function deleteNotification(notificationId: string) {
+  const response = await authorizedFetch(
+    `/api/notifications?notificationId=${encodeURIComponent(notificationId)}`,
+    {
+      method: 'DELETE',
+    }
+  )
+
+  const result = (await response.json().catch(() => null)) as
+    | { success?: boolean; error?: string }
+    | null
+
+  if (!response.ok) {
+    throw new Error(getErrorMessage(result, 'Failed to delete the notification.'))
+  }
+
+  dispatchNotificationsRefresh()
+  return true
 }

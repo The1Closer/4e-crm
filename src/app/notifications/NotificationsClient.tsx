@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import Link from 'next/link'
-import { BellRing, CheckCheck, Home, MailOpen } from 'lucide-react'
+import { BellRing, CheckCheck, Home, MailOpen, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import TasksPanel from '@/components/tasks/TasksPanel'
 import {
+  deleteNotification,
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  markNotificationUnread,
   NOTIFICATIONS_REFRESH_EVENT,
   type NotificationItem,
 } from '@/lib/notifications-client'
@@ -19,6 +22,8 @@ export default function NotificationsClient() {
   const router = useRouter()
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [updatingIds, setUpdatingIds] = useState<string[]>([])
+  const [deletingIds, setDeletingIds] = useState<string[]>([])
   const userId = useSupabaseAuthUserId()
 
   const loadNotifications = useCallback(
@@ -106,22 +111,35 @@ export default function NotificationsClient() {
 
   async function openNotification(notification: NotificationItem) {
     try {
-      await markNotificationRead(notification.id)
-      setNotifications((current) =>
-        current.map((item) =>
-          item.id === notification.id
-            ? {
-                ...item,
-                is_read: true,
-              }
-            : item
+      if (!notification.is_read) {
+        const updated = await markNotificationRead(notification.id)
+        setNotifications((current) =>
+          current.map((item) => (item.id === notification.id ? updated ?? item : item))
         )
-      )
+      }
     } catch {
       void loadNotifications({ silent: true })
     }
 
     router.push(notification.link || (notification.job_id ? `/jobs/${notification.job_id}` : '/notifications'))
+  }
+
+  async function toggleReadState(notification: NotificationItem) {
+    setUpdatingIds((current) => [...current, notification.id])
+
+    try {
+      const updated = notification.is_read
+        ? await markNotificationUnread(notification.id)
+        : await markNotificationRead(notification.id)
+
+      setNotifications((current) =>
+        current.map((item) => (item.id === notification.id ? updated ?? item : item))
+      )
+    } catch {
+      void loadNotifications({ silent: true })
+    } finally {
+      setUpdatingIds((current) => current.filter((id) => id !== notification.id))
+    }
   }
 
   async function markAllRead() {
@@ -135,6 +153,27 @@ export default function NotificationsClient() {
       )
     } catch {
       void loadNotifications({ silent: true })
+    }
+  }
+
+  async function handleDeleteNotification(notification: NotificationItem) {
+    const confirmed = window.confirm(`Delete notification "${notification.title}"?`)
+
+    if (!confirmed) {
+      return
+    }
+
+    setDeletingIds((current) => [...current, notification.id])
+
+    try {
+      await deleteNotification(notification.id)
+      setNotifications((current) =>
+        current.filter((item) => item.id !== notification.id)
+      )
+    } catch {
+      void loadNotifications({ silent: true })
+    } finally {
+      setDeletingIds((current) => current.filter((id) => id !== notification.id))
     }
   }
 
@@ -200,35 +239,54 @@ export default function NotificationsClient() {
         <NotificationMetric label="Total" value={String(notifications.length)} />
       </section>
 
-      {loading ? (
-        <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          Loading notifications...
-        </section>
-      ) : notifications.length === 0 ? (
-        <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          No notifications yet.
-        </section>
-      ) : (
-        <div className="grid gap-6 xl:grid-cols-2">
-          <NotificationColumn
-            title="Unread"
-            icon={BellRing}
-            emptyText="No unread notifications."
-            tone="unread"
-            rows={unread}
-            onOpen={openNotification}
-          />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <TasksPanel
+          title="Open Tasks And Appointments"
+          description="Everything still in play for you, including general work and job-linked appointments that have not been completed yet."
+          contextLabel="your notification desk"
+          density="micro"
+        />
 
-          <NotificationColumn
-            title="Read"
-            icon={MailOpen}
-            emptyText="No read notifications yet."
-            tone="read"
-            rows={read}
-            onOpen={openNotification}
-          />
+        <div className="space-y-6">
+          {loading ? (
+            <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+              Loading notifications...
+            </section>
+          ) : notifications.length === 0 ? (
+            <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-white/60 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+              No notifications yet.
+            </section>
+          ) : (
+            <div className="space-y-6">
+              <NotificationColumn
+                title="Unread"
+                icon={BellRing}
+                emptyText="No unread notifications."
+                tone="unread"
+                rows={unread}
+                updatingIds={updatingIds}
+                deletingIds={deletingIds}
+                onOpen={openNotification}
+                onToggleReadState={toggleReadState}
+                onDelete={handleDeleteNotification}
+              />
+
+              <NotificationColumn
+                title="Read"
+                icon={MailOpen}
+                emptyText="No read notifications yet."
+                tone="read"
+                rows={read}
+                updatingIds={updatingIds}
+                deletingIds={deletingIds}
+                onOpen={openNotification}
+                onToggleReadState={toggleReadState}
+                onDelete={handleDeleteNotification}
+              />
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </main>
   )
 }
@@ -331,14 +389,22 @@ function NotificationColumn({
   emptyText,
   tone,
   rows,
+  updatingIds,
+  deletingIds,
   onOpen,
+  onToggleReadState,
+  onDelete,
 }: {
   title: string
   icon: React.ComponentType<{ className?: string }>
   emptyText: string
   tone: 'unread' | 'read'
   rows: NotificationItem[]
+  updatingIds: string[]
+  deletingIds: string[]
   onOpen: (notification: NotificationItem) => void
+  onToggleReadState: (notification: NotificationItem) => void
+  onDelete: (notification: NotificationItem) => void
 }) {
   return (
     <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
@@ -361,38 +427,63 @@ function NotificationColumn({
             {emptyText}
           </div>
         ) : (
-          rows.map((notification) => (
-            <article
-              key={notification.id}
-              className={`rounded-[1.4rem] border p-4 shadow-[0_12px_35px_rgba(0,0,0,0.2)] ${
-                tone === 'unread'
-                  ? 'border-[#d6b37a]/20 bg-[#d6b37a]/10'
-                  : 'border-white/10 bg-black/20'
-              }`}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="text-sm font-semibold text-white">
-                    {notification.title}
+          rows.map((notification) => {
+            const isUpdating = updatingIds.includes(notification.id)
+            const isDeleting = deletingIds.includes(notification.id)
+
+            return (
+              <article
+                key={notification.id}
+                className={`rounded-[1.4rem] border p-4 shadow-[0_12px_35px_rgba(0,0,0,0.2)] ${
+                  tone === 'unread'
+                    ? 'border-[#d6b37a]/20 bg-[#d6b37a]/10'
+                    : 'border-white/10 bg-black/20'
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="text-sm font-semibold text-white">
+                      {notification.title}
+                    </div>
+                    <div className="text-sm leading-6 text-white/72">
+                      {notification.message}
+                    </div>
+                    <div className="text-xs text-white/42">
+                      {new Date(notification.created_at).toLocaleString('en-US')}
+                    </div>
                   </div>
-                  <div className="text-sm leading-6 text-white/72">
-                    {notification.message}
-                  </div>
-                  <div className="text-xs text-white/42">
-                    {new Date(notification.created_at).toLocaleString('en-US')}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onToggleReadState(notification)}
+                      disabled={isUpdating || isDeleting}
+                      className="rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1] disabled:opacity-50"
+                    >
+                      {notification.is_read ? 'Mark Unread' : 'Mark Read'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpen(notification)}
+                      disabled={isDeleting}
+                      className="rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1] disabled:opacity-50"
+                    >
+                      Open
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(notification)}
+                      disabled={isDeleting || isUpdating}
+                      className="inline-flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 transition hover:bg-red-500/18 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
+                    </button>
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => onOpen(notification)}
-                  className="rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
-                >
-                  Open
-                </button>
-              </div>
-            </article>
-          ))
+              </article>
+            )
+          })
         )}
       </div>
     </section>
