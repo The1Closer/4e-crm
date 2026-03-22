@@ -3,9 +3,8 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import PhotosSection from './PhotosSection'
 import JobDocumentsPanel from './JobDocumentsPanel'
-import NotesSection from './NotesSection'
 
-export type JobDetailTabKey = 'documents' | 'photos' | 'notes'
+export type JobDetailTabKey = 'documents' | 'photos'
 
 const TABS: Array<{
   key: JobDetailTabKey
@@ -13,24 +12,16 @@ const TABS: Array<{
 }> = [
   { key: 'documents', label: 'Documents' },
   { key: 'photos', label: 'Photos' },
-  { key: 'notes', label: 'Notes' },
 ]
 
 function isJobDetailTabKey(value: string | null): value is JobDetailTabKey {
-  return value === 'documents' || value === 'photos' || value === 'notes'
+  return value === 'documents' || value === 'photos'
 }
 
 export default function JobDetailTabs({
   jobId,
-  initialNotes,
 }: {
   jobId: string
-  initialNotes: Array<{
-    id: string
-    body: string
-    created_at: string
-    updated_at?: string
-  }>
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -78,9 +69,6 @@ export default function JobDetailTabs({
 
       {activeTab === 'documents' ? <JobDocumentsPanel jobId={jobId} /> : null}
       {activeTab === 'photos' ? <PhotosSection jobId={jobId} /> : null}
-      {activeTab === 'notes' ? (
-        <NotesSection jobId={jobId} initialNotes={initialNotes} />
-      ) : null}
     </section>
   )
 }

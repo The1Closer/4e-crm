@@ -8,6 +8,8 @@ import StageSelector from './StageSelector'
 import EditJobForm from './EditJobForm'
 import QuickUploadSection from './QuickUploadSection'
 import JobDetailTabs from './JobDetailTabs'
+import NotesSection from './NotesSection'
+import TasksPanel from '@/components/tasks/TasksPanel'
 import { authorizedFetch } from '@/lib/api-client'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
 import { getStageColor } from '@/lib/job-stage-access'
@@ -627,7 +629,20 @@ export default function JobDetailPageClient({
           </div>
         </section>
 
-        <JobDetailTabs jobId={payload.job.id} initialNotes={payload.initialNotes} />
+        <section className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
+          <NotesSection jobId={payload.job.id} initialNotes={payload.initialNotes} />
+
+          <TasksPanel
+            jobId={payload.job.id}
+            title="Tasks & Appointments"
+            description="Compact follow-ups, site visits, and internal handoffs tied to this job."
+            contextLabel={homeowner?.name ?? 'this job'}
+            compact
+            maxVisible={5}
+          />
+        </section>
+
+        <JobDetailTabs jobId={payload.job.id} />
       </div>
     </main>
   )

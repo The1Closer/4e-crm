@@ -12,6 +12,7 @@ import {
   Quote,
 } from 'lucide-react'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import TasksPanel from '@/components/tasks/TasksPanel'
 import { buildNavigationItems, type AppNavItem } from '@/lib/app-navigation'
 import { authorizedFetch } from '@/lib/api-client'
 import {
@@ -401,23 +402,23 @@ function HomePageContent() {
         </div>
       ) : null}
 
-      <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
-          <SectionHeader
-            eyebrow="Updates"
-            title="Announcements & spotlight"
-            description="Manager-posted updates land here first, with room for a quote or daily video when you want to push a message harder."
-          />
+      <section className="grid gap-6 xl:grid-cols-2">
+        <div className="space-y-6">
+          <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+            <SectionHeader
+              eyebrow="Updates"
+              title="Announcements & spotlight"
+              description="Manager-posted updates land here first, with room for a quote or daily video when you want to push a message harder."
+            />
 
-          {loading ? (
-            <div className="mt-6 text-sm text-white/55">Loading updates…</div>
-          ) : announcements.length === 0 && !spotlight ? (
-            <div className="mt-6 rounded-[1.6rem] border border-dashed border-white/12 bg-white/[0.03] px-4 py-5 text-sm text-white/50">
-              No announcements or spotlight content are active right now.
-            </div>
-          ) : (
-            <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-              <div className="space-y-4">
+            {loading ? (
+              <div className="mt-6 text-sm text-white/55">Loading updates…</div>
+            ) : announcements.length === 0 && !spotlight ? (
+              <div className="mt-6 rounded-[1.6rem] border border-dashed border-white/12 bg-white/[0.03] px-4 py-5 text-sm text-white/50">
+                No announcements or spotlight content are active right now.
+              </div>
+            ) : (
+              <div className="mt-6 space-y-4">
                 {announcements.map((announcement) => (
                   <article
                     key={announcement.id}
@@ -435,20 +436,22 @@ function HomePageContent() {
                     </p>
                   </article>
                 ))}
+
+                {spotlight ? <SpotlightCard spotlight={spotlight} /> : null}
               </div>
+            )}
+          </section>
 
-              {spotlight ? (
-                <SpotlightCard spotlight={spotlight} />
-              ) : (
-                <div className="rounded-[1.8rem] border border-dashed border-white/12 bg-white/[0.03] p-5 text-sm text-white/50">
-                  No quote or video spotlight is active right now.
-                </div>
-              )}
-            </div>
-          )}
-        </section>
+          <TasksPanel
+            title="My Tasks"
+            description="Upcoming tasks and appointments assigned to you or created by you, with quick access right from the home screen."
+            contextLabel={profile?.full_name || 'you'}
+            maxVisible={3}
+            compact
+          />
+        </div>
 
-        <section className="space-y-6">
+        <div className="space-y-6">
           {isIncludedInNightlyNumbers(profile) ? (
             <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
               <SectionHeader
@@ -476,9 +479,7 @@ function HomePageContent() {
                     />
                     <MetricCard
                       label="Contracts w/ Deposit"
-                      value={String(
-                        weeklyNumbers?.totals.contracts_with_deposit ?? 0
-                      )}
+                      value={String(weeklyNumbers?.totals.contracts_with_deposit ?? 0)}
                     />
                   </div>
 
@@ -546,7 +547,7 @@ function HomePageContent() {
               </div>
             )}
           </section>
-        </section>
+        </div>
       </section>
 
       <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
