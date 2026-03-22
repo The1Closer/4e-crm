@@ -3,18 +3,20 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, FilePenLine, Trash2 } from 'lucide-react'
-import { type JobListRow } from '@/components/jobs/job-types'
+import { type JobListRow, type JobStageOption } from '@/components/jobs/job-types'
 
 const COLUMN_PAGE_SIZE = 5
 
 export default function JobsKanban({
   rows,
+  stageOptions,
   onQuickEdit,
   canDelete,
   deletingJobId,
   onDelete,
 }: {
   rows: JobListRow[]
+  stageOptions: JobStageOption[]
   onQuickEdit?: (job: JobListRow) => void
   canDelete?: boolean
   deletingJobId?: string | null
@@ -29,7 +31,22 @@ export default function JobsKanban({
     }, {})
   }, [rows])
 
-  const stages = useMemo(() => Object.keys(grouped), [grouped])
+  const stages = useMemo(() => {
+    const groupedStageNames = new Set(Object.keys(grouped))
+    const orderedStages = stageOptions
+      .map((stage) => stage.name)
+      .filter((stageName) => groupedStageNames.has(stageName))
+
+    const remainingStages = Object.keys(grouped).filter(
+      (stageName) => !orderedStages.includes(stageName) && stageName !== 'No Stage'
+    )
+
+    if (groupedStageNames.has('No Stage')) {
+      remainingStages.push('No Stage')
+    }
+
+    return [...orderedStages, ...remainingStages]
+  }, [grouped, stageOptions])
 
   const [pageByStage, setPageByStage] = useState<Record<string, number>>({})
 

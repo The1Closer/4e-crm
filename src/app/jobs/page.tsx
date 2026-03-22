@@ -569,8 +569,24 @@ function JobsPageContent() {
       counts.set(stageName, (counts.get(stageName) ?? 0) + 1)
     })
 
-    return Array.from(counts.entries()).map(([name, count]) => ({ name, count }))
-  }, [baseFilteredJobs])
+    const orderedCounts = visibleStageOptions
+      .map((stage) => ({
+        name: stage.name,
+        count: counts.get(stage.name) ?? 0,
+      }))
+      .filter((stage) => stage.count > 0)
+
+    const noStageCount = counts.get('No Stage')
+
+    if (noStageCount && noStageCount > 0) {
+      orderedCounts.push({
+        name: 'No Stage',
+        count: noStageCount,
+      })
+    }
+
+    return orderedCounts
+  }, [baseFilteredJobs, visibleStageOptions])
 
   function toggleStageFilter(stageName: string) {
     setStageFilters((current) =>
@@ -811,6 +827,7 @@ function JobsPageContent() {
             ) : viewMode === 'kanban' ? (
               <JobsKanban
                 rows={paginatedJobs}
+                stageOptions={visibleStageOptions}
                 onQuickEdit={setEditingJob}
                 canDelete={canDeleteJobs}
                 deletingJobId={deletingJobId}
