@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { LogOut } from 'lucide-react'
@@ -141,9 +142,12 @@ export default function AuthStatus() {
         className="group flex items-center gap-3 rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-3 py-2.5 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.06]"
       >
         {profile?.avatar_url ? (
-          <img
+          <Image
             src={profile.avatar_url}
             alt={displayName}
+            width={44}
+            height={44}
+            unoptimized
             className="h-11 w-11 rounded-[1rem] object-cover"
           />
         ) : (

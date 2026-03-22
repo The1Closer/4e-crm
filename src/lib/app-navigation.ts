@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   MapPinned,
   Megaphone,
+  Package,
   PenSquare,
   PlusSquare,
   Settings2,
@@ -70,6 +71,14 @@ export function buildNavigationItems(permissions: AppPermissions): AppNavItem[] 
       icon: CalendarDays,
       show: permissions.canViewInstallCalendar,
       group: 'workspace',
+    },
+    {
+      href: '/material-orders',
+      label: 'Material Orders',
+      description: 'Build supplier orders, manage material templates, and keep production ordering organized.',
+      icon: Package,
+      show: permissions.canViewMaterialOrders,
+      group: 'admin',
     },
     {
       href: '/stats/submit',

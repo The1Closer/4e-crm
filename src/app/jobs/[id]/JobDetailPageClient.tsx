@@ -10,6 +10,7 @@ import QuickUploadSection from './QuickUploadSection'
 import JobDetailTabs from './JobDetailTabs'
 import NotesSection from './NotesSection'
 import TasksPanel from '@/components/tasks/TasksPanel'
+import MaterialOrdersJobPanel from '@/components/material-orders/MaterialOrdersJobPanel'
 import { authorizedFetch } from '@/lib/api-client'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
 import { getStageColor } from '@/lib/job-stage-access'
@@ -641,6 +642,13 @@ export default function JobDetailPageClient({
             maxVisible={5}
           />
         </section>
+
+        {canDeleteJob ? (
+          <MaterialOrdersJobPanel
+            jobId={payload.job.id}
+            homeownerName={homeowner?.name ?? 'this job'}
+          />
+        ) : null}
 
         <JobDetailTabs jobId={payload.job.id} />
       </div>

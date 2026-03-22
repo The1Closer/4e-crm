@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import {
   Camera,
   PencilLine,
@@ -219,9 +220,12 @@ function ProfilePageContent() {
           <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
             <div className="flex items-center gap-4">
               {activeAvatar ? (
-                <img
+                <Image
                   src={activeAvatar}
                   alt={form.full_name || 'Profile avatar'}
+                  width={96}
+                  height={96}
+                  unoptimized
                   className="h-24 w-24 rounded-[1.8rem] object-cover"
                 />
               ) : (

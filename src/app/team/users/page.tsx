@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import ManagerOnlyRoute from '@/components/ManagerOnlyRoute'
 import { authorizedFetch } from '@/lib/api-client'
 import { uploadAvatarViaApi } from '@/lib/avatar-client'
@@ -772,9 +773,12 @@ export default function TeamUsersPage() {
                   </div>
                   <div className="mt-4 flex items-center gap-4">
                     {avatarPreview ? (
-                      <img
+                      <Image
                         src={avatarPreview}
                         alt="Avatar preview"
+                        width={80}
+                        height={80}
+                        unoptimized
                         className="h-20 w-20 rounded-full object-cover ring-2 ring-white/10"
                       />
                     ) : (
@@ -939,9 +943,12 @@ export default function TeamUsersPage() {
                           <div className="min-w-0 flex items-start gap-4">
                             <div className="shrink-0">
                               {profile.avatar_url ? (
-                                <img
+                                <Image
                                   src={profile.avatar_url}
                                   alt={profile.full_name}
+                                  width={56}
+                                  height={56}
+                                  unoptimized
                                   className="h-14 w-14 rounded-full object-cover ring-2 ring-white/10"
                                 />
                               ) : (
@@ -1146,9 +1153,12 @@ export default function TeamUsersPage() {
                             <div className="md:col-span-2 rounded-[1.6rem] border border-white/10 bg-black/20 p-4">
                               <div className="flex flex-wrap items-center gap-4">
                                 {activeDraftAvatarPreview ? (
-                                  <img
+                                  <Image
                                     src={activeDraftAvatarPreview}
                                     alt={draft.full_name || profile.full_name}
+                                    width={64}
+                                    height={64}
+                                    unoptimized
                                     className="h-16 w-16 rounded-full object-cover ring-2 ring-white/10"
                                   />
                                 ) : (

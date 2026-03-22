@@ -8,6 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type TouchEvent as ReactTouchEvent,
 } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Document, Page, pdfjs } from 'react-pdf'
@@ -1820,13 +1821,16 @@ export default function ContractsEditorCore() {
                                   overflow: 'hidden',
                                   touchAction: 'none',
                                   userSelect: 'none',
+                                  position: 'relative',
                                   zIndex: selectedId === annotation.id ? 20 : 10,
                                 }}
                               >
                                 {annotation.type === 'signature' && annotation.imageDataUrl ? (
-                                  <img
+                                  <Image
                                     src={annotation.imageDataUrl}
                                     alt="Signature"
+                                    fill
+                                    unoptimized
                                     className="pointer-events-none h-full w-full object-contain"
                                   />
                                 ) : annotation.type === 'signature-box' ? (

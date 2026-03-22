@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { supabase } from '../../../lib/supabase'
 
 type PhotoItem = {
@@ -89,11 +90,16 @@ export default function PhotosSection({
                 rel="noreferrer"
                 className="block overflow-hidden rounded-[1.4rem] border border-white/10 bg-black/20 shadow-[0_16px_36px_rgba(0,0,0,0.18)]"
               >
-                <img
-                  src={url}
-                  alt={photo.file_name}
-                  className="h-56 w-full object-cover"
-                />
+                <div className="relative h-56 w-full">
+                  <Image
+                    src={url}
+                    alt={photo.file_name}
+                    fill
+                    unoptimized
+                    className="object-cover"
+                    sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
+                  />
+                </div>
                 <div className="p-3 text-sm font-medium text-white">
                   {photo.file_name}
                 </div>

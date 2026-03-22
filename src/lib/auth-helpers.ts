@@ -26,6 +26,7 @@ export type AppPermissions = {
   canViewDashboard: boolean
   canViewLeadMap: boolean
   canViewArchive: boolean
+  canViewMaterialOrders: boolean
 
   canViewTeamManagement: boolean
   canManageUsers: boolean
@@ -91,6 +92,7 @@ export function getPermissions(role: AppRole | null | undefined): AppPermissions
     canViewDashboard: true,
     canViewLeadMap: true,
     canViewArchive: true,
+    canViewMaterialOrders: managerLike,
 
     canViewTeamManagement: managerLike,
     canManageUsers: managerLike,
