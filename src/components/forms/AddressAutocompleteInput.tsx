@@ -14,6 +14,8 @@ const ADDRESS_SUGGESTION_DEBOUNCE_MS = 180
 
 const DEFAULT_INPUT_CLASS_NAME =
   'w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35 disabled:cursor-not-allowed disabled:opacity-60'
+const GOOGLE_MAPS_ATTRIBUTION_CLASS_NAME =
+  'whitespace-nowrap text-[12px] font-normal tracking-normal text-white/74'
 
 export default function AddressAutocompleteInput({
   value,
@@ -159,10 +161,18 @@ export default function AddressAutocompleteInput({
       ) : null}
 
       {suggestionsEnabled ? (
-        <div className="text-xs text-white/45">
-          {isLoadingSuggestions
-            ? 'Loading address suggestions...'
-            : 'Choose a suggested address or keep typing your own. Manual entry is always allowed.'}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-white/45">
+          <div>
+            {isLoadingSuggestions
+              ? 'Loading address suggestions...'
+              : 'Choose a suggested address or keep typing your own. Manual entry is always allowed.'}
+          </div>
+          <span
+            translate="no"
+            className={GOOGLE_MAPS_ATTRIBUTION_CLASS_NAME}
+          >
+            Google Maps
+          </span>
         </div>
       ) : null}
 
