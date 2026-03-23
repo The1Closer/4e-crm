@@ -6,7 +6,11 @@ import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { authorizedFetch } from '@/lib/api-client'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
+import {
+  getCurrentUserProfile,
+  getPermissions,
+  isManagerLike,
+} from '@/lib/auth-helpers'
 import JobCard from '@/components/jobs/JobCard'
 import JobsStageRail from '@/components/jobs/JobsStageRail'
 import JobsViewSwitcher, { type JobsViewMode } from '@/components/jobs/JobsViewSwitcher'
@@ -24,7 +28,15 @@ import {
   type JobRepOption,
   type JobStageOption,
 } from '@/components/jobs/job-types'
+import { createNotifications } from '@/lib/notification-utils'
 import { ARCHIVE_INACTIVITY_DAYS, isArchivedByInactivity } from '@/lib/job-lifecycle'
+import {
+  getVisibleStagesForUser,
+  isInstallScheduledStage,
+  isInstallWorkflowStage,
+  isManagementLockedStage,
+  isPreProductionPrepStage,
+} from '@/lib/job-stage-access'
 
 type JobRep = {
   profile_id: string
@@ -105,6 +117,21 @@ function formatCurrency(value: number | null) {
   }).format(value)
 }
 
+function formatNotificationDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+
+  if (!year || !month || !day) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, day)))
+}
+
 function getHomeowner(
   homeowner: JobRow['homeowners']
 ): {
@@ -159,6 +186,7 @@ function JobsPageContent() {
   const [role, setRole] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState('')
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null)
+  const [movingJobId, setMovingJobId] = useState<string | null>(null)
 
   const [stageOptions, setStageOptions] = useState<JobStageOption[]>([])
   const [profileOptions, setProfileOptions] = useState<ProfileOption[]>([])
@@ -465,6 +493,18 @@ function JobsPageContent() {
   )
 
   const visibleStageOptions = useMemo(() => stageOptions, [stageOptions])
+  const canManageLockedStages = useMemo(
+    () => getPermissions(role).canManageLockedStages,
+    [role]
+  )
+  const kanbanStageOptions = useMemo<JobStageOption[]>(
+    () =>
+      getVisibleStagesForUser(stageOptions, canManageLockedStages).filter(
+        (stage): stage is JobStageOption =>
+          typeof stage.id === 'number' && typeof stage.name === 'string'
+      ),
+    [canManageLockedStages, stageOptions]
+  )
 
   const normalizedJobs = useMemo<JobListRow[]>(
     () =>
@@ -594,6 +634,165 @@ function JobsPageContent() {
         ? current.filter((value) => value !== stageName)
         : [...current, stageName]
     )
+  }
+
+  function getStageOptionById(stageId: number | null, stageName?: string) {
+    if (stageId === null) {
+      return null
+    }
+
+    return (
+      stageOptions.find((stage) => stage.id === stageId) ?? {
+        id: stageId,
+        name: stageName ?? 'Unknown Stage',
+        sort_order: null,
+      }
+    )
+  }
+
+  function getKanbanMoveDisabledReason(job: JobListRow) {
+    const currentStage = getStageOptionById(job.stageId, job.stageName)
+
+    if (
+      currentStage &&
+      isManagementLockedStage(currentStage, stageOptions) &&
+      !isInstallWorkflowStage(currentStage) &&
+      !canManageLockedStages
+    ) {
+      return 'Only management can move jobs once they reach Contracted or later.'
+    }
+
+    return null
+  }
+
+  async function handleKanbanMove(job: JobListRow, nextStageId: number | null) {
+    if (movingJobId || deletingJobId) {
+      return
+    }
+
+    const currentStage = getStageOptionById(job.stageId, job.stageName)
+    const requestedStage = getStageOptionById(nextStageId)
+
+    if (nextStageId !== null && !requestedStage) {
+      setPageMessageTone('error')
+      setPageMessage('That status is no longer available.')
+      return
+    }
+
+    if (
+      currentStage &&
+      isManagementLockedStage(currentStage, stageOptions) &&
+      !isInstallWorkflowStage(currentStage) &&
+      !canManageLockedStages
+    ) {
+      setPageMessageTone('error')
+      setPageMessage(
+        'Only management can change the stage once a job reaches Contracted or later.'
+      )
+      return
+    }
+
+    if (requestedStage && isInstallScheduledStage(requestedStage) && !job.installDate) {
+      setPageMessageTone('error')
+      setPageMessage('Set an install date before moving this job into Install Scheduled.')
+      return
+    }
+
+    if (
+      requestedStage &&
+      isManagementLockedStage(requestedStage, stageOptions) &&
+      !isInstallWorkflowStage(requestedStage) &&
+      !canManageLockedStages
+    ) {
+      setPageMessageTone('error')
+      setPageMessage('Only management can move jobs into Contracted and later stages.')
+      return
+    }
+
+    const nextInstallDate =
+      requestedStage && isPreProductionPrepStage(requestedStage) ? null : job.installDate
+    const noChange =
+      job.stageId === (requestedStage?.id ?? null) && job.installDate === nextInstallDate
+
+    if (noChange) {
+      return
+    }
+
+    setMovingJobId(job.id)
+    setPageMessage('')
+
+    const { error } = await supabase
+      .from('jobs')
+      .update({
+        stage_id: requestedStage?.id ?? null,
+        install_date: nextInstallDate,
+      })
+      .eq('id', job.id)
+
+    if (error) {
+      setPageMessageTone('error')
+      setPageMessage(error.message)
+      setMovingJobId(null)
+      return
+    }
+
+    if (job.repIds.length > 0 && requestedStage?.name) {
+      try {
+        const isInstallScheduleNotice =
+          Boolean(nextInstallDate) && isInstallScheduledStage(requestedStage)
+
+        await createNotifications({
+          userIds: job.repIds,
+          actorUserId: currentUserId || null,
+          type: 'stage_change',
+          title: isInstallScheduleNotice ? 'Install scheduled' : 'Job stage changed',
+          message: isInstallScheduleNotice
+            ? `Install scheduled for ${formatNotificationDate(nextInstallDate as string)}.`
+            : `A job was moved to ${requestedStage.name}.`,
+          link: `/jobs/${job.id}`,
+          jobId: job.id,
+          metadata: {
+            event: isInstallScheduleNotice ? 'install_scheduled' : 'stage_change',
+            install_date: nextInstallDate,
+            stage_id: requestedStage.id,
+            stage_name: requestedStage.name,
+          },
+        })
+      } catch (notificationError) {
+        console.error('Could not send kanban stage-change notifications.', notificationError)
+      }
+    }
+
+    setJobs((current) =>
+      current.map((entry) =>
+        entry.id === job.id
+          ? {
+              ...entry,
+              install_date: nextInstallDate,
+              updated_at: new Date().toISOString(),
+              pipeline_stages: requestedStage
+                ? {
+                    id: requestedStage.id,
+                    name: requestedStage.name,
+                    sort_order: requestedStage.sort_order ?? null,
+                  }
+                : null,
+            }
+          : entry
+      )
+    )
+
+    setPageMessageTone('success')
+    setPageMessage(
+      requestedStage
+        ? nextInstallDate === null &&
+          job.installDate &&
+          isPreProductionPrepStage(requestedStage)
+          ? `${job.homeownerName} moved to ${requestedStage.name}. The install date was cleared.`
+          : `${job.homeownerName} moved to ${requestedStage.name}.`
+        : `${job.homeownerName} moved to No Stage.`
+    )
+    setMovingJobId(null)
   }
 
   async function handleQuickEditSaved() {
@@ -827,11 +1026,14 @@ function JobsPageContent() {
             ) : viewMode === 'kanban' ? (
               <JobsKanban
                 rows={paginatedJobs}
-                stageOptions={visibleStageOptions}
+                stageOptions={kanbanStageOptions}
                 onQuickEdit={setEditingJob}
                 canDelete={canDeleteJobs}
                 deletingJobId={deletingJobId}
                 onDelete={handleDeleteJob}
+                onMoveJob={handleKanbanMove}
+                movingJobId={movingJobId}
+                getMoveDisabledReason={getKanbanMoveDisabledReason}
               />
             ) : (
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
