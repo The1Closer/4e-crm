@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { authorizedFetch } from '@/lib/api-client'
 import { supabase } from '@/lib/supabase'
@@ -10,6 +10,9 @@ import {
   type UserProfile,
 } from '@/lib/auth-helpers'
 import SendDocumentButton from '@/components/documents/SendDocumentButton'
+import InAppFileViewerModal, {
+  type FileViewerItem,
+} from '@/components/media/InAppFileViewerModal'
 
 type UploadedDocument = {
   id: string
@@ -47,6 +50,26 @@ type DocumentsPanelData = {
 function buildUploadedDocUrl(filePath: string) {
   const { data } = supabase.storage.from('job-files').getPublicUrl(filePath)
   return data.publicUrl
+}
+
+function inferPreviewType(fileName: string, url: string): FileViewerItem['previewType'] {
+  const normalized = `${fileName} ${url}`.toLowerCase()
+
+  if (normalized.includes('.pdf')) return 'pdf'
+  if (
+    normalized.includes('.png') ||
+    normalized.includes('.jpg') ||
+    normalized.includes('.jpeg') ||
+    normalized.includes('.webp') ||
+    normalized.includes('.gif') ||
+    normalized.includes('.bmp') ||
+    normalized.includes('.heic') ||
+    normalized.includes('.heif')
+  ) {
+    return 'image'
+  }
+
+  return 'other'
 }
 
 async function fetchDocumentsPanelData(
@@ -129,6 +152,8 @@ export default function JobDocumentsPanel({
   const [recipientEmail, setRecipientEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
+  const [viewerOpen, setViewerOpen] = useState(false)
+  const [viewerIndex, setViewerIndex] = useState(0)
 
   useEffect(() => {
     async function loadProfile() {
@@ -142,43 +167,16 @@ export default function JobDocumentsPanel({
 
   const permissions = getPermissions(profile?.role)
 
-  function applyPanelData(data: DocumentsPanelData) {
+  const applyPanelData = useCallback((data: DocumentsPanelData) => {
     setMessage('')
     setUploadedDocs(data.uploadedDocs)
     setSignedDocs(data.signedDocs)
     setTemplates(data.templates)
     setRecipientEmail(data.recipientEmail)
     setLoading(false)
-  }
+  }, [])
 
-  useEffect(() => {
-    let isActive = true
-
-    async function loadInitialData() {
-      const result = await fetchDocumentsPanelData(jobId)
-
-      if (!isActive) return
-
-      if ('error' in result) {
-        setMessage(result.error)
-        setUploadedDocs([])
-        setSignedDocs([])
-        setTemplates([])
-        setLoading(false)
-        return
-      }
-
-      applyPanelData(result)
-    }
-
-    void loadInitialData()
-
-    return () => {
-      isActive = false
-    }
-  }, [jobId])
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true)
 
     const result = await fetchDocumentsPanelData(jobId)
@@ -190,7 +188,31 @@ export default function JobDocumentsPanel({
     }
 
     applyPanelData(result)
-  }
+  }, [applyPanelData, jobId])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadData()
+    }, 0)
+
+    return () => clearTimeout(timer)
+  }, [loadData])
+
+  useEffect(() => {
+    function onDocumentsRefresh(event: Event) {
+      const detail = (event as CustomEvent<{ jobId?: string }>).detail
+
+      if (!detail?.jobId || detail.jobId !== jobId) {
+        return
+      }
+
+      void loadData()
+    }
+
+    window.addEventListener('job-documents:refresh', onDocumentsRefresh)
+    return () =>
+      window.removeEventListener('job-documents:refresh', onDocumentsRefresh)
+  }, [jobId, loadData])
 
   async function deleteUploadedDocument(doc: UploadedDocument) {
     if (!permissions.canManageTemplates) return
@@ -270,6 +292,17 @@ export default function JobDocumentsPanel({
     }),
   ].sort((a, b) => a.file_name.localeCompare(b.file_name))
 
+  const documentViewerItems = useMemo<FileViewerItem[]>(
+    () =>
+      mergedDocuments.map((doc) => ({
+        id: `${doc.kind}-${doc.id}`,
+        title: doc.file_name,
+        url: doc.open_url,
+        previewType: inferPreviewType(doc.file_name, doc.open_url),
+      })),
+    [mergedDocuments]
+  )
+
   return (
     <section className="space-y-6">
       {message ? (
@@ -347,7 +380,7 @@ export default function JobDocumentsPanel({
           </div>
         ) : (
           <div className="mt-4 space-y-3">
-            {mergedDocuments.map((doc) => (
+            {mergedDocuments.map((doc, index) => (
               <div
                 key={`${doc.kind}-${doc.id}`}
                 className="flex flex-wrap items-center justify-between gap-4 rounded-[1.4rem] border border-white/10 bg-black/20 p-4"
@@ -362,14 +395,16 @@ export default function JobDocumentsPanel({
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <a
-                    href={doc.open_url}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewerIndex(index)
+                      setViewerOpen(true)
+                    }}
                     className="rounded-2xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
                   >
                     Open
-                  </a>
+                  </button>
 
                   <Link
                     href={doc.signer_url}
@@ -400,6 +435,14 @@ export default function JobDocumentsPanel({
           </div>
         )}
       </section>
+
+      <InAppFileViewerModal
+        isOpen={viewerOpen}
+        items={documentViewerItems}
+        index={viewerIndex}
+        onIndexChange={setViewerIndex}
+        onClose={() => setViewerOpen(false)}
+      />
     </section>
   )
 }

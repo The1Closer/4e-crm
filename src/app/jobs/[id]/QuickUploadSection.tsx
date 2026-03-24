@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, Upload, X } from 'lucide-react'
 import { authorizedFetch } from '@/lib/api-client'
+import { supabase } from '@/lib/supabase'
 
 const BUTTON_CLASS_NAME =
   'rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-45'
@@ -22,8 +23,9 @@ export default function QuickUploadSection({
 }) {
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
-  const [file, setFile] = useState<File | null>(null)
+  const [files, setFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
+  const [uploadingIndex, setUploadingIndex] = useState(0)
   const [message, setMessage] = useState('')
   const [messageTone, setMessageTone] = useState<'success' | 'error' | ''>('')
 
@@ -37,57 +39,166 @@ export default function QuickUploadSection({
     if (uploading) return
 
     setIsOpen(false)
-    setFile(null)
+    setFiles([])
+    setUploadingIndex(0)
     setMessage('')
     setMessageTone('')
   }
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault()
-    if (!file) return
+    if (files.length === 0) return
 
     setUploading(true)
+    setUploadingIndex(0)
     setMessage('')
     setMessageTone('')
 
     try {
-      const formData = new FormData()
-      formData.set('file', file)
+      let photoCount = 0
+      let documentCount = 0
+      const failedUploads: string[] = []
 
-      const response = await authorizedFetch(`/api/jobs/${jobId}/uploads`, {
-        method: 'POST',
-        body: formData,
-      })
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index]
+        setUploadingIndex(index + 1)
 
-      const result = (await response.json().catch(() => null)) as
-        | { error?: string; document?: { file_type?: string } }
-        | null
+        const prepareResponse = await authorizedFetch(`/api/jobs/${jobId}/uploads`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'create_signed_upload',
+            fileName: file.name,
+            mimeType: file.type,
+          }),
+        })
 
-      if (!response.ok) {
-        throw new Error(result?.error || 'Upload failed.')
+        const prepareResult = (await prepareResponse.json().catch(() => null)) as
+          | {
+              error?: string
+              upload?: {
+                filePath?: string
+                token?: string
+                fileType?: string
+                fileName?: string
+              }
+            }
+          | null
+
+        if (!prepareResponse.ok) {
+          failedUploads.push(
+            `${file.name}: ${prepareResult?.error || 'Could not start upload.'}`
+          )
+          continue
+        }
+
+        const uploadData = prepareResult?.upload
+        const filePath = uploadData?.filePath ?? ''
+        const token = uploadData?.token ?? ''
+
+        if (!filePath || !token) {
+          failedUploads.push(`${file.name}: Upload token was not returned.`)
+          continue
+        }
+
+        const storageUploadRes = await supabase.storage
+          .from('job-files')
+          .uploadToSignedUrl(filePath, token, file)
+
+        if (storageUploadRes.error) {
+          failedUploads.push(`${file.name}: ${storageUploadRes.error.message}`)
+          continue
+        }
+
+        const finalizeResponse = await authorizedFetch(`/api/jobs/${jobId}/uploads`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'finalize_signed_upload',
+            fileName: file.name,
+            filePath,
+            fileType: uploadData?.fileType,
+          }),
+        })
+
+        const finalizeResult = (await finalizeResponse.json().catch(() => null)) as
+          | { error?: string; document?: { file_type?: string } }
+          | null
+
+        if (!finalizeResponse.ok) {
+          failedUploads.push(
+            `${file.name}: ${finalizeResult?.error || 'Could not finalize upload.'}`
+          )
+          continue
+        }
+
+        const uploadedType = finalizeResult?.document?.file_type
+        if (uploadedType === 'photo') {
+          photoCount += 1
+        } else {
+          documentCount += 1
+        }
       }
 
-      const uploadedType = result?.document?.file_type
+      const uploadedCount = photoCount + documentCount
 
-      setFile(null)
-      setMessageTone('success')
+      if (uploadedCount > 0) {
+        const summaryParts: string[] = []
+
+        if (photoCount > 0) {
+          summaryParts.push(`${photoCount} photo${photoCount === 1 ? '' : 's'}`)
+        }
+
+        if (documentCount > 0) {
+          summaryParts.push(
+            `${documentCount} document${documentCount === 1 ? '' : 's'}`
+          )
+        }
+
+        const summary = summaryParts.join(' and ')
+
+        if (failedUploads.length > 0) {
+          setMessageTone('error')
+          setMessage(
+            `Uploaded ${summary}. ${failedUploads.length} file${
+              failedUploads.length === 1 ? '' : 's'
+            } failed.`
+          )
+        } else {
+          setMessageTone('success')
+          setMessage(`Uploaded ${summary}.`)
+        }
+
+        setFiles([])
+
+        window.dispatchEvent(
+          new CustomEvent('job-detail:refresh', {
+            detail: { jobId },
+          })
+        )
+        window.dispatchEvent(
+          new CustomEvent('job-documents:refresh', {
+            detail: { jobId },
+          })
+        )
+        router.refresh()
+        return
+      }
+
+      setMessageTone('error')
       setMessage(
-        uploadedType === 'photo'
-          ? 'Photo uploaded. It now appears in Photos.'
-          : 'Document uploaded. It now appears in Documents.'
+        failedUploads[0] || 'Upload failed. No files were uploaded.'
       )
-
-      window.dispatchEvent(
-        new CustomEvent('job-detail:refresh', {
-          detail: { jobId },
-        })
-      )
-      router.refresh()
     } catch (error) {
       setMessageTone('error')
       setMessage(error instanceof Error ? error.message : 'Upload failed.')
     } finally {
       setUploading(false)
+      setUploadingIndex(0)
     }
   }
 
@@ -152,7 +263,7 @@ export default function QuickUploadSection({
                 Upload File
               </div>
               <h3 className="mt-2 text-xl font-bold tracking-tight text-white">
-                Choose the file to attach
+                Choose file(s) to attach
               </h3>
               <p className="mt-2 text-sm leading-6 text-white/55">
                 PNG, JPG, HEIC, PDFs, and other common job files all work here.
@@ -160,13 +271,20 @@ export default function QuickUploadSection({
 
               <input
                 type="file"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                multiple
+                onChange={(event) =>
+                  setFiles(Array.from(event.target.files ?? []))
+                }
                 className={INPUT_CLASS_NAME}
               />
 
-              {file ? (
+              {files.length > 0 ? (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/78">
-                  Selected file: <span className="font-semibold text-white">{file.name}</span>
+                  Selected {files.length} file{files.length === 1 ? '' : 's'}:{' '}
+                  <span className="font-semibold text-white">
+                    {files.slice(0, 3).map((file) => file.name).join(', ')}
+                    {files.length > 3 ? `, +${files.length - 3} more` : ''}
+                  </span>
                 </div>
               ) : null}
             </div>
@@ -183,12 +301,14 @@ export default function QuickUploadSection({
 
               <button
                 type="submit"
-                disabled={uploading || !file}
+                disabled={uploading || files.length === 0}
                 className="rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <span className="inline-flex items-center gap-2">
                   {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  {uploading ? 'Uploading...' : 'Upload File'}
+                  {uploading
+                    ? `Uploading ${uploadingIndex}/${files.length}...`
+                    : `Upload ${files.length > 1 ? 'Files' : 'File'}`}
                 </span>
               </button>
             </div>
