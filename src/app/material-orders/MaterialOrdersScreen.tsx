@@ -197,26 +197,6 @@ function toDisplayNumber(value: number) {
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
-function buildMaterialOrderMailtoUrl(params: {
-  to: string
-  subject: string
-  message: string
-}) {
-  const searchParams = new URLSearchParams()
-
-  if (params.subject.trim()) {
-    searchParams.set('subject', params.subject.trim())
-  }
-
-  if (params.message.trim()) {
-    searchParams.set('body', params.message.trim())
-  }
-
-  const query = searchParams.toString()
-
-  return `mailto:${encodeURIComponent(params.to.trim())}${query ? `?${query}` : ''}`
-}
-
 function getFirstNonEmptyOptionValue(values: Array<{ value: string }>) {
   const firstNonEmpty = values.find((entry) => entry.value.trim().length > 0)
   return firstNonEmpty?.value ?? values[0]?.value ?? ''
@@ -679,9 +659,10 @@ export default function MaterialOrdersScreen() {
 
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [search, setSearch] = useState('')
-  const [sendStatusByOrderId, setSendStatusByOrderId] = useState<Record<string, string>>(
-    {}
-  )
+  const [sendingOrderId, setSendingOrderId] = useState<string | null>(null)
+  const [sendStatusByOrderId, setSendStatusByOrderId] = useState<
+    Record<string, { tone: 'success' | 'error'; message: string }>
+  >({})
 
   const requestedJob = useMemo(
     () => jobs.find((job) => job.id === requestedJobId) ?? null,
@@ -1786,37 +1767,59 @@ export default function MaterialOrdersScreen() {
     await deleteOrderById(orderDraft.id)
   }
 
-  function handleSendOrder(order: MaterialOrder) {
+  async function handleSendOrder(order: MaterialOrder) {
     if (!order.vendor_email?.trim()) {
       setSendStatusByOrderId((current) => ({
         ...current,
-        [order.id]: 'Add vendor email before sending.',
+        [order.id]: {
+          tone: 'error',
+          message: 'Add vendor email before sending.',
+        },
       }))
       return
     }
 
-    const homeownerName = order.job?.homeowner_name?.trim() || ''
-    const subject = homeownerName
-      ? `Material Order(${homeownerName})`
-      : 'Material Order'
-    const supplierPath = `/material-orders/${order.id}/supplier`
-    const supplierUrl =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}${supplierPath}`
-        : supplierPath
-    const message = `Please review this material order.\n\nSupplier document:\n${supplierUrl}`
+    setSendingOrderId(order.id)
+    try {
+      const response = await authorizedFetch(
+        `/api/material-orders/${order.id}/send-supplier-email`,
+        {
+          method: 'POST',
+        }
+      )
+      const result = (await response.json().catch(() => null)) as
+        | {
+            ok?: boolean
+            sentAt?: string
+            error?: string
+          }
+        | null
 
-    setSendStatusByOrderId((current) => {
-      const next = { ...current }
-      delete next[order.id]
-      return next
-    })
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || 'Could not send supplier email.')
+      }
 
-    window.location.href = buildMaterialOrderMailtoUrl({
-      to: order.vendor_email,
-      subject,
-      message,
-    })
+      const sentAt = result.sentAt ? new Date(result.sentAt).toLocaleString() : 'just now'
+      setSendStatusByOrderId((current) => ({
+        ...current,
+        [order.id]: {
+          tone: 'success',
+          message: `Sent successfully at ${sentAt}.`,
+        },
+      }))
+      window.open('https://outlook.office.com/mail/sentitems', '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      setSendStatusByOrderId((current) => ({
+        ...current,
+        [order.id]: {
+          tone: 'error',
+          message:
+            error instanceof Error ? error.message : 'Could not send supplier email.',
+        },
+      }))
+    } finally {
+      setSendingOrderId(null)
+    }
   }
 
   const orderCountLabel = `${orders.length} order${orders.length === 1 ? '' : 's'}`
@@ -2398,11 +2401,12 @@ export default function MaterialOrdersScreen() {
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation()
-                        handleSendOrder(order)
+                        void handleSendOrder(order)
                       }}
+                      disabled={sendingOrderId === order.id}
                       className={SECONDARY_BUTTON_CLASS_NAME}
                     >
-                      Send
+                      {sendingOrderId === order.id ? 'Sending...' : 'Send'}
                     </button>
                     <button
                       type="button"
@@ -2418,8 +2422,14 @@ export default function MaterialOrdersScreen() {
                   </div>
 
                   {sendStatusByOrderId[order.id] ? (
-                    <div className="mt-3 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100">
-                      {sendStatusByOrderId[order.id]}
+                    <div
+                      className={`mt-3 rounded-xl px-3 py-2 text-xs font-semibold ${
+                        sendStatusByOrderId[order.id].tone === 'error'
+                          ? 'border border-red-400/20 bg-red-500/10 text-red-100'
+                          : 'border border-emerald-400/20 bg-emerald-500/10 text-emerald-100'
+                      }`}
+                    >
+                      {sendStatusByOrderId[order.id].message}
                     </div>
                   ) : null}
                 </div>

@@ -28,7 +28,27 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
+MS365_TENANT_ID=
+MS365_CLIENT_ID=
+MS365_CLIENT_SECRET=
+MATERIAL_ORDERS_SENDER_EMAIL=
 ```
+
+### Material Order Email Delivery (Microsoft 365)
+
+Material order supplier emails are sent server-side through Microsoft Graph with a PDF attachment.
+
+Required setup:
+
+1. In Azure Entra, register an app and create a client secret.
+2. Grant application permission `Mail.Send` for Microsoft Graph.
+3. Click **Grant admin consent** for the tenant.
+4. Set environment variables:
+   - `MS365_TENANT_ID`
+   - `MS365_CLIENT_ID`
+   - `MS365_CLIENT_SECRET`
+   - `MATERIAL_ORDERS_SENDER_EMAIL` (production manager mailbox)
+5. Ensure the sender mailbox exists in Exchange Online and is licensed.
 
 ## Production Dependencies
 
