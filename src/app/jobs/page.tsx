@@ -28,7 +28,6 @@ import {
   type JobRepOption,
   type JobStageOption,
 } from '@/components/jobs/job-types'
-import { createNotifications } from '@/lib/notification-utils'
 import { ARCHIVE_INACTIVITY_DAYS, isArchivedByInactivity } from '@/lib/job-lifecycle'
 import {
   getVisibleStagesForUser,
@@ -141,21 +140,6 @@ function formatCurrency(value: number | null) {
     currency: 'USD',
     maximumFractionDigits: 0,
   }).format(value)
-}
-
-function formatNotificationDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number)
-
-  if (!year || !month || !day) {
-    return value
-  }
-
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(Date.UTC(year, month - 1, day)))
 }
 
 function getHomeowner(
@@ -1154,46 +1138,26 @@ function JobsPageContent() {
     setMovingJobId(job.id)
     setPageMessage('')
 
-    const { error } = await supabase
-      .from('jobs')
-      .update({
+    const response = await authorizedFetch(`/api/jobs/${job.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         stage_id: requestedStage?.id ?? null,
         install_date: nextInstallDate,
-      })
-      .eq('id', job.id)
+      }),
+    })
 
-    if (error) {
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null
+
+    if (!response.ok) {
       setPageMessageTone('error')
-      setPageMessage(error.message)
+      setPageMessage(result?.error || 'Could not update the job stage.')
       setMovingJobId(null)
       return
-    }
-
-    if (job.repIds.length > 0 && requestedStage?.name) {
-      try {
-        const isInstallScheduleNotice =
-          Boolean(nextInstallDate) && isInstallScheduledStage(requestedStage)
-
-        await createNotifications({
-          userIds: job.repIds,
-          actorUserId: currentUserId || null,
-          type: 'stage_change',
-          title: isInstallScheduleNotice ? 'Install scheduled' : 'Job stage changed',
-          message: isInstallScheduleNotice
-            ? `Install scheduled for ${formatNotificationDate(nextInstallDate as string)}.`
-            : `A job was moved to ${requestedStage.name}.`,
-          link: `/jobs/${job.id}`,
-          jobId: job.id,
-          metadata: {
-            event: isInstallScheduleNotice ? 'install_scheduled' : 'stage_change',
-            install_date: nextInstallDate,
-            stage_id: requestedStage.id,
-            stage_name: requestedStage.name,
-          },
-        })
-      } catch (notificationError) {
-        console.error('Could not send kanban stage-change notifications.', notificationError)
-      }
     }
 
     setJobs((current) =>

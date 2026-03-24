@@ -31,6 +31,11 @@ import {
   NOTIFICATIONS_REFRESH_EVENT,
   type NotificationItem,
 } from '@/lib/notifications-client'
+import {
+  getNightlyStatInputMode,
+  parseNightlyStatInputs,
+  type NightlyStatInputValues,
+} from '@/lib/nightly-stat-inputs'
 import { isIncludedInNightlyNumbers } from '@/lib/nightly-numbers'
 import { supabase } from '@/lib/supabase'
 
@@ -46,6 +51,17 @@ type WeeklyNumbersSummary = {
     contracts_with_deposit: number
     revenue_signed: number
   }
+}
+
+type WeeklyNumbersTab = 'totals' | 'quick_submission'
+
+const EMPTY_QUICK_SUBMISSION_FORM: NightlyStatInputValues = {
+  knocks: '',
+  talks: '',
+  inspections: '',
+  contingencies: '',
+  contracts_with_deposit: '',
+  revenue_signed: '',
 }
 
 type HomeContentResponse = {
@@ -128,6 +144,13 @@ function formatCurrency(value: number) {
   }).format(value)
 }
 
+function toNumber(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return 0
+  const num = Number(trimmed)
+  return Number.isFinite(num) ? num : 0
+}
+
 async function loadWeeklyNumbers(profileId: string, todayLocalDate: string) {
   const startDate = getWeekStartLocalDate(todayLocalDate)
   const endDate = addDaysToDateString(startDate, 6)
@@ -193,6 +216,16 @@ function HomePageContent() {
   const [spotlight, setSpotlight] = useState<SpotlightContentRow | null>(null)
   const [unreadNotifications, setUnreadNotifications] = useState<NotificationItem[]>([])
   const [weeklyNumbers, setWeeklyNumbers] = useState<WeeklyNumbersSummary | null>(null)
+  const [weeklyNumbersTab, setWeeklyNumbersTab] = useState<WeeklyNumbersTab>('totals')
+  const [quickSubmissionForm, setQuickSubmissionForm] = useState<NightlyStatInputValues>(
+    EMPTY_QUICK_SUBMISSION_FORM
+  )
+  const [loadingQuickSubmissionEntry, setLoadingQuickSubmissionEntry] = useState(false)
+  const [savingQuickSubmission, setSavingQuickSubmission] = useState(false)
+  const [quickSubmissionMessage, setQuickSubmissionMessage] = useState('')
+  const [quickSubmissionMessageType, setQuickSubmissionMessageType] = useState<
+    'success' | 'error' | ''
+  >('')
 
   const permissions = useMemo(
     () => getPermissions(profile?.role),
@@ -340,6 +373,144 @@ function HomePageContent() {
     }
   }, [])
 
+  useEffect(() => {
+    let isActive = true
+
+    async function loadQuickSubmissionEntry() {
+      if (!profile?.id || !isIncludedInNightlyNumbers(profile)) {
+        setQuickSubmissionForm(EMPTY_QUICK_SUBMISSION_FORM)
+        setQuickSubmissionMessage('')
+        setQuickSubmissionMessageType('')
+        setLoadingQuickSubmissionEntry(false)
+        return
+      }
+
+      setLoadingQuickSubmissionEntry(true)
+      setQuickSubmissionMessage('')
+      setQuickSubmissionMessageType('')
+
+      const todayLocalDate = getTodayLocalDate()
+      const { data, error } = await supabase
+        .from('rep_daily_stats')
+        .select(`
+          knocks,
+          talks,
+          inspections,
+          contingencies,
+          contracts_with_deposit,
+          revenue_signed
+        `)
+        .eq('rep_id', profile.id)
+        .eq('report_date', todayLocalDate)
+        .maybeSingle()
+
+      if (!isActive) {
+        return
+      }
+
+      if (error) {
+        setQuickSubmissionMessage(error.message)
+        setQuickSubmissionMessageType('error')
+        setQuickSubmissionForm(EMPTY_QUICK_SUBMISSION_FORM)
+        setLoadingQuickSubmissionEntry(false)
+        return
+      }
+
+      if (!data) {
+        setQuickSubmissionForm(EMPTY_QUICK_SUBMISSION_FORM)
+        setLoadingQuickSubmissionEntry(false)
+        return
+      }
+
+      setQuickSubmissionForm({
+        knocks: String(data.knocks ?? ''),
+        talks: String(data.talks ?? ''),
+        inspections: String(data.inspections ?? ''),
+        contingencies: String(data.contingencies ?? ''),
+        contracts_with_deposit: String(data.contracts_with_deposit ?? ''),
+        revenue_signed: String(data.revenue_signed ?? ''),
+      })
+      setLoadingQuickSubmissionEntry(false)
+    }
+
+    void loadQuickSubmissionEntry()
+
+    return () => {
+      isActive = false
+    }
+  }, [profile])
+
+  function updateQuickSubmissionField(
+    field: keyof NightlyStatInputValues,
+    value: string
+  ) {
+    setQuickSubmissionForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }))
+  }
+
+  async function handleQuickSubmission(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!profile?.id) {
+      setQuickSubmissionMessage('Could not find your user profile.')
+      setQuickSubmissionMessageType('error')
+      return
+    }
+
+    if (!isIncludedInNightlyNumbers(profile)) {
+      setQuickSubmissionMessage('Nightly numbers are not enabled for your profile.')
+      setQuickSubmissionMessageType('error')
+      return
+    }
+
+    setSavingQuickSubmission(true)
+    setQuickSubmissionMessage('')
+    setQuickSubmissionMessageType('')
+
+    const parsedStats = parseNightlyStatInputs(quickSubmissionForm)
+
+    if (parsedStats.error || !parsedStats.values) {
+      setQuickSubmissionMessage(
+        parsedStats.error ?? 'Enter valid nightly numbers before saving.'
+      )
+      setQuickSubmissionMessageType('error')
+      setSavingQuickSubmission(false)
+      return
+    }
+
+    const todayLocalDate = getTodayLocalDate()
+    const { error } = await supabase.from('rep_daily_stats').upsert(
+      {
+        rep_id: profile.id,
+        report_date: todayLocalDate,
+        ...parsedStats.values,
+      },
+      {
+        onConflict: 'rep_id,report_date',
+      }
+    )
+
+    if (error) {
+      setQuickSubmissionMessage(error.message)
+      setQuickSubmissionMessageType('error')
+      setSavingQuickSubmission(false)
+      return
+    }
+
+    setQuickSubmissionMessage('Nightly numbers saved for today.')
+    setQuickSubmissionMessageType('success')
+    setSavingQuickSubmission(false)
+
+    try {
+      const refreshedWeeklyNumbers = await loadWeeklyNumbers(profile.id, todayLocalDate)
+      setWeeklyNumbers(refreshedWeeklyNumbers)
+    } catch (refreshError) {
+      console.error('Could not refresh weekly totals after quick submission.', refreshError)
+    }
+  }
+
   return (
     <main className="space-y-6">
       <section className="relative overflow-hidden rounded-[2.4rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.09),rgba(255,255,255,0.03))] p-8 shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-2xl md:p-10">
@@ -461,9 +632,34 @@ function HomePageContent() {
                 }
               />
 
-              {loading ? (
+              <div className="mt-6 inline-flex rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+                <button
+                  type="button"
+                  onClick={() => setWeeklyNumbersTab('totals')}
+                  className={`rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
+                    weeklyNumbersTab === 'totals'
+                      ? 'bg-[#d6b37a] text-black'
+                      : 'text-white/65 hover:text-white'
+                  }`}
+                >
+                  Totals
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWeeklyNumbersTab('quick_submission')}
+                  className={`rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
+                    weeklyNumbersTab === 'quick_submission'
+                      ? 'bg-[#d6b37a] text-black'
+                      : 'text-white/65 hover:text-white'
+                  }`}
+                >
+                  Quick Submission
+                </button>
+              </div>
+
+              {loading && weeklyNumbersTab === 'totals' ? (
                 <div className="mt-6 text-sm text-white/55">Loading weekly numbers…</div>
-              ) : (
+              ) : weeklyNumbersTab === 'totals' ? (
                 <div className="mt-6 space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <MetricCard label="Knocks" value={String(weeklyNumbers?.totals.knocks ?? 0)} />
@@ -490,6 +686,124 @@ function HomePageContent() {
                       {weeklyNumbers?.submittedDays ?? 0} day(s) logged this week
                     </div>
                   </div>
+                </div>
+              ) : (
+                <div className="mt-6 space-y-4">
+                  <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.03] p-4 text-sm text-white/62">
+                    Submit today&apos;s nightly numbers without leaving Home. Use{' '}
+                    <span className="font-semibold text-white">.5</span> for split inspections,
+                    contingencies, or contracts.
+                  </div>
+
+                  {quickSubmissionMessage ? (
+                    <div
+                      className={`rounded-2xl border px-4 py-3 text-sm ${
+                        quickSubmissionMessageType === 'error'
+                          ? 'border-red-400/20 bg-red-500/10 text-red-200'
+                          : 'border-emerald-400/20 bg-emerald-500/10 text-emerald-200'
+                      }`}
+                    >
+                      {quickSubmissionMessage}
+                    </div>
+                  ) : null}
+
+                  {loadingQuickSubmissionEntry ? (
+                    <div className="text-sm text-white/55">Loading today&apos;s entry…</div>
+                  ) : (
+                    <form onSubmit={handleQuickSubmission} className="space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <QuickSubmissionInput
+                          label="Knocks"
+                          value={quickSubmissionForm.knocks}
+                          inputMode={getNightlyStatInputMode('knocks')}
+                          onChange={(value) => updateQuickSubmissionField('knocks', value)}
+                        />
+                        <QuickSubmissionInput
+                          label="Talks"
+                          value={quickSubmissionForm.talks}
+                          inputMode={getNightlyStatInputMode('talks')}
+                          onChange={(value) => updateQuickSubmissionField('talks', value)}
+                        />
+                        <QuickSubmissionInput
+                          label="Inspections"
+                          value={quickSubmissionForm.inspections}
+                          inputMode={getNightlyStatInputMode('inspections')}
+                          placeholder=".5"
+                          onChange={(value) => updateQuickSubmissionField('inspections', value)}
+                        />
+                        <QuickSubmissionInput
+                          label="Contingencies"
+                          value={quickSubmissionForm.contingencies}
+                          inputMode={getNightlyStatInputMode('contingencies')}
+                          placeholder=".5"
+                          onChange={(value) =>
+                            updateQuickSubmissionField('contingencies', value)
+                          }
+                        />
+                        <QuickSubmissionInput
+                          label="Contracts"
+                          value={quickSubmissionForm.contracts_with_deposit}
+                          inputMode={getNightlyStatInputMode('contracts_with_deposit')}
+                          placeholder=".5"
+                          onChange={(value) =>
+                            updateQuickSubmissionField('contracts_with_deposit', value)
+                          }
+                        />
+                        <QuickSubmissionInput
+                          label="Revenue"
+                          value={quickSubmissionForm.revenue_signed}
+                          inputMode={getNightlyStatInputMode('revenue_signed')}
+                          placeholder="0.00"
+                          onChange={(value) => updateQuickSubmissionField('revenue_signed', value)}
+                        />
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <MetricCard
+                          label="Activity Total"
+                          value={(
+                            toNumber(quickSubmissionForm.knocks) +
+                            toNumber(quickSubmissionForm.talks) +
+                            toNumber(quickSubmissionForm.inspections)
+                          ).toLocaleString()}
+                        />
+                        <MetricCard
+                          label="Closing Actions"
+                          value={(
+                            toNumber(quickSubmissionForm.contingencies) +
+                            toNumber(quickSubmissionForm.contracts_with_deposit)
+                          ).toLocaleString()}
+                        />
+                        <MetricCard
+                          label="Revenue Entered"
+                          value={`$${toNumber(quickSubmissionForm.revenue_signed).toLocaleString()}`}
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="submit"
+                          disabled={savingQuickSubmission}
+                          className="rounded-2xl bg-[#d6b37a] px-4 py-2.5 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {savingQuickSubmission ? 'Saving…' : 'Save Numbers'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setQuickSubmissionForm(EMPTY_QUICK_SUBMISSION_FORM)}
+                          className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/[0.10]"
+                        >
+                          Clear
+                        </button>
+                        <Link
+                          href="/stats/submit"
+                          className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/[0.10]"
+                        >
+                          Open Full Page
+                        </Link>
+                      </div>
+                    </form>
+                  )}
                 </div>
               )}
             </section>
@@ -703,6 +1017,35 @@ function MetricCard({
       </div>
       <div className="mt-2 text-2xl font-semibold text-white">{value}</div>
     </div>
+  )
+}
+
+function QuickSubmissionInput({
+  label,
+  value,
+  onChange,
+  inputMode = 'numeric',
+  placeholder = '0',
+}: {
+  label: string
+  value: string
+  onChange: (next: string) => void
+  inputMode?: 'numeric' | 'decimal'
+  placeholder?: string
+}) {
+  return (
+    <label className="block rounded-[1.3rem] border border-white/10 bg-white/[0.04] p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/46">
+        {label}
+      </div>
+      <input
+        value={value}
+        inputMode={inputMode}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-base font-semibold text-white outline-none transition placeholder:text-white/22 focus:border-[#d6b37a]/40 focus:bg-black/30"
+      />
+    </label>
   )
 }
 

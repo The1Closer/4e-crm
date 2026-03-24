@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { slugifyFileName } from '@/lib/file-utils'
 import { calculateJobPaymentSummary } from '@/lib/job-payments'
 import {
   isMissingJobPaymentsTableError,
@@ -18,6 +19,7 @@ import {
   requireJobAccess,
   requireManager,
 } from '@/lib/server-auth'
+import { loadMaterialOrders } from '@/lib/material-orders-server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 
 type RouteContext = {
@@ -62,6 +64,10 @@ type JobFileRow = {
 
 type PaymentProofRow = {
   proof_file_path: string | null
+}
+
+type ExistingDocumentNameRow = {
+  file_name: string | null
 }
 
 function formatNotificationDate(value: string) {
@@ -247,6 +253,143 @@ async function removeStoragePaths(
 
   if (error) {
     console.error(`Could not remove ${bucketName} files for deleted job.`, error)
+  }
+}
+
+function isPaidInFullStage(name: string | null | undefined) {
+  const normalized = (name ?? '').trim().toLowerCase()
+  return normalized === 'paid' || normalized.includes('paid in full')
+}
+
+function formatMaterialOrderValue(value: string | null | undefined) {
+  return value && value.trim().length > 0 ? value : '-'
+}
+
+function formatMaterialOrderArchiveText(order: Awaited<ReturnType<typeof loadMaterialOrders>>[number]) {
+  const lines: string[] = []
+
+  lines.push(`Material Order Archive`)
+  lines.push(`Order Number: ${order.order_number}`)
+  lines.push(`Status: ${order.status}`)
+  lines.push(`Archived At (UTC): ${new Date().toISOString()}`)
+  lines.push('')
+  lines.push('Vendor')
+  lines.push(`Name: ${formatMaterialOrderValue(order.vendor_name)}`)
+  lines.push(`Contact: ${formatMaterialOrderValue(order.vendor_contact_name)}`)
+  lines.push(`Phone: ${formatMaterialOrderValue(order.vendor_phone)}`)
+  lines.push(`Email: ${formatMaterialOrderValue(order.vendor_email)}`)
+  lines.push('')
+  lines.push('Shipping')
+  lines.push(`Ship To Name: ${formatMaterialOrderValue(order.ship_to_name)}`)
+  lines.push(`Ship To Address: ${formatMaterialOrderValue(order.ship_to_address)}`)
+  lines.push(`Needed By: ${formatMaterialOrderValue(order.needed_by)}`)
+  lines.push(`Ordered At: ${formatMaterialOrderValue(order.ordered_at)}`)
+  lines.push('')
+  lines.push('Notes')
+  lines.push(`Internal Notes: ${formatMaterialOrderValue(order.internal_notes)}`)
+  lines.push(`Supplier Notes: ${formatMaterialOrderValue(order.supplier_notes)}`)
+  lines.push('')
+  lines.push('Items')
+
+  if (order.items.length === 0) {
+    lines.push('- No line items were captured.')
+  } else {
+    order.items.forEach((item, index) => {
+      lines.push(
+        `${index + 1}. ${item.item_name} | Qty: ${item.quantity} | Unit: ${formatMaterialOrderValue(item.unit)}`
+      )
+
+      const selectedOptions = item.options
+        .filter((option) => option.is_selected)
+        .map((option) => `${option.option_group}: ${option.option_value}`)
+
+      lines.push(
+        `   Selected Options: ${
+          selectedOptions.length > 0 ? selectedOptions.join(', ') : '-'
+        }`
+      )
+      lines.push(`   Notes: ${formatMaterialOrderValue(item.notes)}`)
+    })
+  }
+
+  return `${lines.join('\n')}\n`
+}
+
+async function archiveAndClearMaterialOrdersForPaidJob(jobId: string) {
+  const materialOrders = await loadMaterialOrders({ jobId })
+
+  if (materialOrders.length === 0) {
+    return
+  }
+
+  const archiveFileNames = materialOrders.map(
+    (order) =>
+      `material-order-${slugifyFileName(order.order_number || order.id)}-archive.txt`
+  )
+
+  const { data: existingDocuments, error: existingDocumentsError } = await supabaseAdmin
+    .from('documents')
+    .select('file_name')
+    .eq('job_id', jobId)
+    .in('file_name', archiveFileNames)
+
+  if (existingDocumentsError) {
+    throw new Error(existingDocumentsError.message)
+  }
+
+  const existingNames = new Set(
+    ((existingDocuments ?? []) as ExistingDocumentNameRow[])
+      .map((row) => row.file_name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0)
+  )
+
+  for (const order of materialOrders) {
+    const archiveFileName = `material-order-${slugifyFileName(
+      order.order_number || order.id
+    )}-archive.txt`
+
+    if (existingNames.has(archiveFileName)) {
+      continue
+    }
+
+    const filePath = `${jobId}/${Date.now()}-${slugifyFileName(archiveFileName)}`
+    const archiveText = formatMaterialOrderArchiveText(order)
+
+    const uploadRes = await supabaseAdmin.storage
+      .from('job-files')
+      .upload(filePath, archiveText, {
+        contentType: 'text/plain; charset=utf-8',
+        upsert: false,
+      })
+
+    if (uploadRes.error) {
+      throw new Error(uploadRes.error.message)
+    }
+
+    const { error: documentInsertError } = await supabaseAdmin
+      .from('documents')
+      .insert({
+        job_id: jobId,
+        file_name: archiveFileName,
+        file_path: filePath,
+        file_type: 'document',
+      })
+
+    if (documentInsertError) {
+      await supabaseAdmin.storage.from('job-files').remove([filePath])
+      throw new Error(documentInsertError.message)
+    }
+
+    existingNames.add(archiveFileName)
+  }
+
+  const { error: deleteOrdersError } = await supabaseAdmin
+    .from('material_orders')
+    .delete()
+    .eq('job_id', jobId)
+
+  if (deleteOrdersError) {
+    throw new Error(deleteOrdersError.message)
   }
 }
 
@@ -601,6 +744,15 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       if (insertAssignmentError) {
         throw new Error(insertAssignmentError.message)
       }
+    }
+
+    const movedIntoPaidInFull =
+      Boolean(targetStage) &&
+      isPaidInFullStage(targetStage?.name) &&
+      existingJob.stage_id !== stageId
+
+    if (movedIntoPaidInFull) {
+      await archiveAndClearMaterialOrdersForPaidJob(jobId)
     }
 
     const newlyAddedRepIds = repIds.filter((repId) => !currentRepIds.includes(repId))

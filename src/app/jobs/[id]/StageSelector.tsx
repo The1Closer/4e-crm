@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '../../../lib/supabase'
-import { createNotifications } from '../../../lib/notification-utils'
+import { authorizedFetch } from '@/lib/api-client'
 import { getCurrentUserProfile, getPermissions } from '@/lib/auth-helpers'
 import {
   getVisibleStagesForUser,
@@ -17,25 +16,6 @@ type Stage = {
   id: number
   name: string
   sort_order?: number | null
-}
-
-type JobAssignment = {
-  profile_id: string
-}
-
-function formatNotificationDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number)
-
-  if (!year || !month || !day) {
-    return value
-  }
-
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(Date.UTC(year, month - 1, day)))
 }
 
 export default function StageSelector({
@@ -115,62 +95,27 @@ export default function StageSelector({
     setValue(nextValue)
     setSaving(true)
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
     const nextInstallDate = nextStage && isPreProductionPrepStage(nextStage) ? null : installDate
 
-    const { error } = await supabase
-      .from('jobs')
-      .update({
+    const response = await authorizedFetch(`/api/jobs/${jobId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         stage_id: nextValue ? Number(nextValue) : null,
         install_date: nextInstallDate,
       })
-      .eq('id', jobId)
+    })
 
-    if (error) {
-      setMessage(error.message)
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null
+
+    if (!response.ok) {
+      setMessage(result?.error || 'Could not update the stage.')
       setSaving(false)
       return
-    }
-
-    const selectedStage = stages.find((stage) => String(stage.id) === nextValue)
-
-    const { data: assignments } = await supabase
-      .from('job_reps')
-      .select('profile_id')
-      .eq('job_id', jobId)
-
-    const assignedUserIds = ((assignments ?? []) as JobAssignment[]).map(
-      (assignment) => assignment.profile_id
-    )
-
-    if (assignedUserIds.length > 0 && selectedStage) {
-      try {
-        const isInstallScheduledChange =
-          isInstallScheduledStage(selectedStage) && Boolean(nextInstallDate)
-
-        await createNotifications({
-          userIds: assignedUserIds,
-          actorUserId: user?.id ?? null,
-          type: 'stage_change',
-          title: isInstallScheduledChange ? 'Install scheduled' : 'Job stage changed',
-          message: isInstallScheduledChange
-            ? `Install scheduled for ${formatNotificationDate(nextInstallDate as string)}.`
-            : `A job was moved to ${selectedStage.name}.`,
-          link: `/jobs/${jobId}`,
-          jobId,
-          metadata: {
-            event: isInstallScheduledChange ? 'install_scheduled' : 'stage_change',
-            install_date: nextInstallDate,
-            stage_id: selectedStage.id,
-            stage_name: selectedStage.name,
-          },
-        })
-      } catch (notificationError) {
-        console.error('Could not send stage-change notifications.', notificationError)
-      }
     }
 
     window.dispatchEvent(

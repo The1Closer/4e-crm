@@ -20,9 +20,7 @@ import TaskEditorDialog, {
   type TaskEditorValue,
 } from '@/components/tasks/TaskEditorDialog'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
-import {
-  createNotifications,
-} from '@/lib/notification-utils'
+import { authorizedFetch } from '@/lib/api-client'
 import {
   findInstallScheduledStage,
   findPreProductionPrepStage,
@@ -164,27 +162,6 @@ function getRepNames(jobReps: JobRow['job_reps']): string[] {
       return profile?.full_name ?? null
     })
     .filter((name): name is string => Boolean(name))
-}
-
-function getRepIds(jobReps: JobRow['job_reps']): string[] {
-  if (!jobReps || jobReps.length === 0) return []
-
-  return [...new Set(jobReps.map((rep) => rep.profile_id).filter(Boolean))]
-}
-
-function formatNotificationDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number)
-
-  if (!year || !month || !day) {
-    return value
-  }
-
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(Date.UTC(year, month - 1, day)))
 }
 
 function formatDateKey(date: Date) {
@@ -594,45 +571,22 @@ function InstallCalendarContent() {
       updates.stage_id = nextStage.id
     }
 
-    const { error } = await supabase.from('jobs').update(updates).eq('id', jobId)
+    const response = await authorizedFetch(`/api/jobs/${jobId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    })
 
-    if (error) {
-      setMessage(error.message)
+    const result = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null
+
+    if (!response.ok) {
+      setMessage(result?.error || 'Could not update install scheduling.')
       setSavingKey(null)
       return
-    }
-
-    const assignedRepIds = getRepIds(targetJob.job_reps)
-
-    if (assignedRepIds.length > 0 && nextStage?.name) {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      try {
-        const isInstallScheduleNotice =
-          Boolean(nextDate) && Boolean(nextStage) && isInstallScheduledStage(nextStage)
-
-        await createNotifications({
-          userIds: assignedRepIds,
-          actorUserId: user?.id ?? null,
-          type: 'stage_change',
-          title: isInstallScheduleNotice ? 'Install scheduled' : 'Job stage changed',
-          message: isInstallScheduleNotice
-            ? `Install scheduled for ${formatNotificationDate(nextDate as string)}.`
-            : `A job was moved to ${nextStage.name}.`,
-          link: `/jobs/${jobId}`,
-          jobId,
-          metadata: {
-            event: isInstallScheduleNotice ? 'install_scheduled' : 'stage_change',
-            install_date: nextDate,
-            stage_id: nextStage.id ?? null,
-            stage_name: nextStage.name,
-          },
-        })
-      } catch (notificationError) {
-        console.error('Could not send calendar stage-change notifications.', notificationError)
-      }
     }
 
     setJobs((prev) =>
