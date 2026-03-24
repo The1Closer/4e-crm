@@ -70,8 +70,27 @@ function NewJobPageContent() {
         return
       }
 
-      setStages((stagesRes.data ?? []) as JobStageOption[])
-      setReps((profilesRes.data ?? []) as JobRepOption[])
+      const nextStages = (stagesRes.data ?? []) as JobStageOption[]
+      const nextReps = (profilesRes.data ?? []) as JobRepOption[]
+
+      setStages(nextStages)
+      setReps(nextReps)
+      setValues((current) => {
+        if (current.rep_ids.length > 0 || !currentProfile?.id) {
+          return current
+        }
+
+        const creatorIsAssignable = nextReps.some((rep) => rep.id === currentProfile.id)
+
+        if (!creatorIsAssignable) {
+          return current
+        }
+
+        return {
+          ...current,
+          rep_ids: [currentProfile.id],
+        }
+      })
       setLoading(false)
     }
 

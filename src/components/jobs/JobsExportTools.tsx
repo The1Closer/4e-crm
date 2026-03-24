@@ -28,7 +28,7 @@ export default function JobsExportTools({
                 'Claim Number',
                 'Install Date',
                 'Contract Amount',
-                'Deposit Collected',
+                'Total Paid',
                 'Remaining Balance',
                 'Assigned Team',
             ],

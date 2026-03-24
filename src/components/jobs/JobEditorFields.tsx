@@ -154,20 +154,12 @@ export default function JobEditorFields({
             onChange={(value) => onChange({ contract_amount: value })}
           />
           <Field
-            label="Deposit Collected"
-            value={values.deposit_collected}
+            label="Supplemented Amount"
+            value={values.supplemented_amount}
             disabled={disabled}
             placeholder="0"
             inputMode="decimal"
-            onChange={(value) => onChange({ deposit_collected: value })}
-          />
-          <Field
-            label="Remaining Balance"
-            value={values.remaining_balance}
-            disabled={disabled}
-            placeholder="0"
-            inputMode="decimal"
-            onChange={(value) => onChange({ remaining_balance: value })}
+            onChange={(value) => onChange({ supplemented_amount: value })}
           />
         </div>
       </section>

@@ -44,8 +44,6 @@ type FormData = {
   install_date: string
   contract_signed_date: string
   contract_amount: string
-  deposit_collected: string
-  remaining_balance: string
   supplemented_amount: string
   shingle_name: string
 }
@@ -510,28 +508,6 @@ export default function EditJobForm({
                       />
                     </FormField>
 
-                    <FormField label="Deposit Collected">
-                      <input
-                        className={INPUT_CLASS_NAME}
-                        placeholder="Deposit collected"
-                        value={form.deposit_collected}
-                        onChange={(event) =>
-                          updateField('deposit_collected', event.target.value)
-                        }
-                      />
-                    </FormField>
-
-                    <FormField label="Remaining Balance">
-                      <input
-                        className={INPUT_CLASS_NAME}
-                        placeholder="Remaining balance"
-                        value={form.remaining_balance}
-                        onChange={(event) =>
-                          updateField('remaining_balance', event.target.value)
-                        }
-                      />
-                    </FormField>
-
                     <FormField label="Supplemented Amount">
                       <input
                         className={INPUT_CLASS_NAME}
@@ -651,6 +627,10 @@ export default function EditJobForm({
                     <p>
                       New rep assignments trigger notifications automatically through the job
                       update route.
+                    </p>
+                    <p>
+                      Payments, proof uploads, total paid, and remaining balance now live in
+                      the Payments tab on the job detail page.
                     </p>
                   </div>
                 </SurfacePanel>

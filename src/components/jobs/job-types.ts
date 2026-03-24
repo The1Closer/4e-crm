@@ -14,6 +14,7 @@ export type JobListRow = {
   contractAmount: number | null
   depositCollected: number | null
   remainingBalance: number | null
+  supplementedAmount: number | null
 }
 
 export type JobStageOption = {
@@ -37,8 +38,7 @@ export type JobEditorValues = {
   claim_number: string
   install_date: string
   contract_amount: string
-  deposit_collected: string
-  remaining_balance: string
+  supplemented_amount: string
   rep_ids: string[]
 }
 
@@ -57,8 +57,7 @@ export function buildJobEditorValues(job?: JobListRow | null): JobEditorValues {
     claim_number: job?.claimNumber === '-' ? '' : job?.claimNumber ?? '',
     install_date: job?.installDate ?? '',
     contract_amount: toValue(job?.contractAmount ?? null),
-    deposit_collected: toValue(job?.depositCollected ?? null),
-    remaining_balance: toValue(job?.remainingBalance ?? null),
+    supplemented_amount: toValue(job?.supplementedAmount ?? null),
     rep_ids: job?.repIds ?? [],
   }
 }

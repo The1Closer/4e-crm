@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { calculateJobPaymentSummary } from '@/lib/job-payments'
+import {
+  isMissingJobPaymentsTableError,
+  loadJobPaymentsData,
+} from '@/lib/job-payments-server'
 import {
   findInstallScheduledStage,
   isInstallScheduledStage,
@@ -53,6 +58,10 @@ type StageRow = {
 
 type JobFileRow = {
   file_path: string | null
+}
+
+type PaymentProofRow = {
+  proof_file_path: string | null
 }
 
 function formatNotificationDate(value: string) {
@@ -241,6 +250,26 @@ async function removeStoragePaths(
   }
 }
 
+function getHomeownerRow(
+  homeowners:
+    | {
+        name: string | null
+        phone: string | null
+        address: string | null
+        email: string | null
+      }[]
+    | {
+        name: string | null
+        phone: string | null
+        address: string | null
+        email: string | null
+      }
+    | null
+) {
+  if (!homeowners) return null
+  return Array.isArray(homeowners) ? homeowners[0] ?? null : homeowners
+}
+
 export async function GET(req: NextRequest, context: RouteContext) {
   const authResult = await getRouteRequester(req)
 
@@ -374,7 +403,30 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     const body = (await req.json()) as JobMutationBody
     const { data: existingJob, error: existingJobError } = await supabaseAdmin
       .from('jobs')
-      .select('id, homeowner_id, stage_id, install_date')
+      .select(`
+        id,
+        homeowner_id,
+        stage_id,
+        insurance_carrier,
+        deductible,
+        claim_number,
+        adjuster_name,
+        adjuster_phone,
+        adjuster_email,
+        date_of_loss,
+        type_of_loss,
+        install_date,
+        contract_signed_date,
+        contract_amount,
+        supplemented_amount,
+        shingle_name,
+        homeowners (
+          name,
+          phone,
+          address,
+          email
+        )
+      `)
       .eq('id', jobId)
       .single()
 
@@ -391,7 +443,6 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     const installDate = bodyIncludesInstallDate
       ? normalizeDate(body.install_date)
       : existingJob.install_date
-    const repIds = normalizeRepIds(body.rep_ids)
 
     const requestedStage =
       requestedStageId === null
@@ -443,14 +494,40 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     const currentRepIds = (currentAssignments ?? []).map(
       (row: { profile_id: string }) => row.profile_id
     )
+    const bodyIncludesRepIds = Object.prototype.hasOwnProperty.call(body, 'rep_ids')
+    const repIds = bodyIncludesRepIds ? normalizeRepIds(body.rep_ids) : currentRepIds
+    const existingHomeowner = getHomeownerRow(existingJob.homeowners)
+    const contractAmount = Object.prototype.hasOwnProperty.call(body, 'contract_amount')
+      ? normalizeNumber(body.contract_amount)
+      : existingJob.contract_amount
+    const supplementedAmount = Object.prototype.hasOwnProperty.call(
+      body,
+      'supplemented_amount'
+    )
+      ? normalizeNumber(body.supplemented_amount, true)
+      : existingJob.supplemented_amount
+    const paymentData = await loadJobPaymentsData(jobId)
+    const financialSummary = calculateJobPaymentSummary({
+      contractAmount,
+      supplementedAmount,
+      totalPaid: paymentData.summary.totalPaid,
+    })
 
     const { error: homeownerError } = await supabaseAdmin
       .from('homeowners')
       .update({
-        name: normalizeText(body.homeowner_name),
-        phone: normalizeText(body.phone),
-        address: normalizeText(body.address),
-        email: normalizeText(body.email),
+        name: Object.prototype.hasOwnProperty.call(body, 'homeowner_name')
+          ? normalizeText(body.homeowner_name)
+          : existingHomeowner?.name ?? null,
+        phone: Object.prototype.hasOwnProperty.call(body, 'phone')
+          ? normalizeText(body.phone)
+          : existingHomeowner?.phone ?? null,
+        address: Object.prototype.hasOwnProperty.call(body, 'address')
+          ? normalizeText(body.address)
+          : existingHomeowner?.address ?? null,
+        email: Object.prototype.hasOwnProperty.call(body, 'email')
+          ? normalizeText(body.email)
+          : existingHomeowner?.email ?? null,
       })
       .eq('id', existingJob.homeowner_id)
 
@@ -462,21 +539,44 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       .from('jobs')
       .update({
         stage_id: stageId,
-        insurance_carrier: normalizeText(body.insurance_carrier),
-        deductible: normalizeNumber(body.deductible),
-        claim_number: normalizeText(body.claim_number),
-        adjuster_name: normalizeText(body.adjuster_name),
-        adjuster_phone: normalizeText(body.adjuster_phone),
-        adjuster_email: normalizeText(body.adjuster_email),
-        date_of_loss: normalizeDate(body.date_of_loss),
-        type_of_loss: normalizeText(body.type_of_loss),
+        insurance_carrier: Object.prototype.hasOwnProperty.call(body, 'insurance_carrier')
+          ? normalizeText(body.insurance_carrier)
+          : existingJob.insurance_carrier,
+        deductible: Object.prototype.hasOwnProperty.call(body, 'deductible')
+          ? normalizeNumber(body.deductible)
+          : existingJob.deductible,
+        claim_number: Object.prototype.hasOwnProperty.call(body, 'claim_number')
+          ? normalizeText(body.claim_number)
+          : existingJob.claim_number,
+        adjuster_name: Object.prototype.hasOwnProperty.call(body, 'adjuster_name')
+          ? normalizeText(body.adjuster_name)
+          : existingJob.adjuster_name,
+        adjuster_phone: Object.prototype.hasOwnProperty.call(body, 'adjuster_phone')
+          ? normalizeText(body.adjuster_phone)
+          : existingJob.adjuster_phone,
+        adjuster_email: Object.prototype.hasOwnProperty.call(body, 'adjuster_email')
+          ? normalizeText(body.adjuster_email)
+          : existingJob.adjuster_email,
+        date_of_loss: Object.prototype.hasOwnProperty.call(body, 'date_of_loss')
+          ? normalizeDate(body.date_of_loss)
+          : existingJob.date_of_loss,
+        type_of_loss: Object.prototype.hasOwnProperty.call(body, 'type_of_loss')
+          ? normalizeText(body.type_of_loss)
+          : existingJob.type_of_loss,
         install_date: installDate,
-        contract_signed_date: normalizeDate(body.contract_signed_date),
-        contract_amount: normalizeNumber(body.contract_amount),
-        deposit_collected: normalizeNumber(body.deposit_collected, true),
-        remaining_balance: normalizeNumber(body.remaining_balance, true),
-        supplemented_amount: normalizeNumber(body.supplemented_amount, true),
-        shingle_name: normalizeText(body.shingle_name),
+        contract_signed_date: Object.prototype.hasOwnProperty.call(
+          body,
+          'contract_signed_date'
+        )
+          ? normalizeDate(body.contract_signed_date)
+          : existingJob.contract_signed_date,
+        contract_amount: contractAmount,
+        deposit_collected: financialSummary.totalPaid,
+        remaining_balance: financialSummary.remainingBalance,
+        supplemented_amount: supplementedAmount,
+        shingle_name: Object.prototype.hasOwnProperty.call(body, 'shingle_name')
+          ? normalizeText(body.shingle_name)
+          : existingJob.shingle_name,
       })
       .eq('id', jobId)
 
@@ -576,7 +676,7 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
   }
 
   try {
-    const [jobRes, signedDocsRes, uploadedDocsRes] = await Promise.all([
+    const [jobRes, signedDocsRes, uploadedDocsRes, paymentProofsRes] = await Promise.all([
       supabaseAdmin
         .from('jobs')
         .select('id, homeowner_id')
@@ -589,6 +689,10 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
       supabaseAdmin
         .from('documents')
         .select('file_path')
+        .eq('job_id', jobId),
+      supabaseAdmin
+        .from('job_payments')
+        .select('proof_file_path')
         .eq('job_id', jobId),
     ])
 
@@ -604,8 +708,16 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
       throw new Error(uploadedDocsRes.error.message)
     }
 
+    if (
+      paymentProofsRes.error &&
+      !isMissingJobPaymentsTableError(paymentProofsRes.error)
+    ) {
+      throw new Error(paymentProofsRes.error.message)
+    }
+
     const signedFilePaths = (signedDocsRes.data ?? []) as JobFileRow[]
     const uploadedFilePaths = (uploadedDocsRes.data ?? []) as JobFileRow[]
+    const paymentProofFilePaths = (paymentProofsRes.data ?? []) as PaymentProofRow[]
 
     const { error: notificationsError } = await supabaseAdmin
       .from('notifications')
@@ -632,6 +744,17 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
 
     if (repsError) {
       throw new Error(repsError.message)
+    }
+
+    if (!isMissingJobPaymentsTableError(paymentProofsRes.error)) {
+      const { error: paymentsError } = await supabaseAdmin
+        .from('job_payments')
+        .delete()
+        .eq('job_id', jobId)
+
+      if (paymentsError) {
+        throw new Error(paymentsError.message)
+      }
     }
 
     const { error: commissionsError } = await supabaseAdmin
@@ -701,7 +824,10 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
       ),
       removeStoragePaths(
         'job-files',
-        uploadedFilePaths.map((file) => file.file_path)
+        [
+          ...uploadedFilePaths.map((file) => file.file_path),
+          ...paymentProofFilePaths.map((file) => file.proof_file_path),
+        ]
       ),
     ])
 

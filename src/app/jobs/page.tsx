@@ -59,6 +59,7 @@ type JobRow = {
   contract_amount: number | null
   deposit_collected: number | null
   remaining_balance: number | null
+  supplemented_amount: number | null
   install_date: string | null
   updated_at: string | null
   homeowners:
@@ -257,6 +258,7 @@ function JobsPageContent() {
         contract_amount,
         deposit_collected,
         remaining_balance,
+        supplemented_amount,
         install_date,
         updated_at,
         homeowners (
@@ -528,6 +530,7 @@ function JobsPageContent() {
           contractAmount: job.contract_amount,
           depositCollected: job.deposit_collected,
           remainingBalance: job.remaining_balance,
+          supplementedAmount: job.supplemented_amount,
         }
       }),
     [filteredJobs]
@@ -898,11 +901,11 @@ function JobsPageContent() {
             value={formatCurrency(totalContractAmount)}
           />
           <MetricCard
-            label="Deposits Collected"
+            label="Total Paid"
             value={formatCurrency(totalDepositCollected)}
           />
           <MetricCard
-            label="Remaining / Unassigned"
+            label="Remaining Balance"
             value={formatCurrency(totalRemainingBalance)}
             sub={`${unassignedCount} unassigned job(s)`}
           />

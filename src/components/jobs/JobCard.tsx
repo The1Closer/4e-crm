@@ -99,7 +99,7 @@ export default function JobCard({
         <InfoBlock label="Install Date" value={formatDate(job.installDate)} />
         <InfoBlock label="Contract Amount" value={formatCurrency(job.contractAmount)} />
         <InfoBlock
-          label="Deposit Collected"
+          label="Total Paid"
           value={formatCurrency(job.depositCollected)}
         />
         <InfoBlock

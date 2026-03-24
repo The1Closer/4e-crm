@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { calculateJobPaymentSummary } from '@/lib/job-payments'
 import {
   findInstallScheduledStage,
   isInstallScheduledStage,
@@ -17,8 +18,7 @@ type JobCreateBody = {
   claim_number?: string
   install_date?: string | null
   contract_amount?: string | number | null
-  deposit_collected?: string | number | null
-  remaining_balance?: string | number | null
+  supplemented_amount?: string | number | null
   rep_ids?: string[]
 }
 
@@ -175,7 +175,19 @@ export async function POST(req: NextRequest) {
     const stages = await loadStageRows()
     const requestedStageId = normalizeStageId(body.stage_id)
     const installDate = normalizeDate(body.install_date)
-    const repIds = normalizeRepIds(body.rep_ids)
+    const repIds = [
+      ...new Set([
+        authResult.requester.profile.id,
+        ...normalizeRepIds(body.rep_ids),
+      ]),
+    ]
+    const contractAmount = normalizeNumber(body.contract_amount)
+    const supplementedAmount = normalizeNumber(body.supplemented_amount, true)
+    const financialSummary = calculateJobPaymentSummary({
+      contractAmount,
+      supplementedAmount,
+      totalPaid: 0,
+    })
     const homeownerName = normalizeText(body.homeowner_name)
 
     if (!homeownerName) {
@@ -228,9 +240,10 @@ export async function POST(req: NextRequest) {
         insurance_carrier: normalizeText(body.insurance_carrier),
         claim_number: normalizeText(body.claim_number),
         install_date: installDate,
-        contract_amount: normalizeNumber(body.contract_amount),
-        deposit_collected: normalizeNumber(body.deposit_collected, true),
-        remaining_balance: normalizeNumber(body.remaining_balance, true),
+        contract_amount: contractAmount,
+        deposit_collected: financialSummary.totalPaid,
+        remaining_balance: financialSummary.remainingBalance,
+        supplemented_amount: supplementedAmount,
       })
       .select('id')
       .single()

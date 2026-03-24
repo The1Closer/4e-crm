@@ -13,6 +13,7 @@ import TasksPanel from '@/components/tasks/TasksPanel'
 import MaterialOrdersJobPanel from '@/components/material-orders/MaterialOrdersJobPanel'
 import { authorizedFetch } from '@/lib/api-client'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
+import { calculateJobPaymentSummary } from '@/lib/job-payments'
 import { getStageColor } from '@/lib/job-stage-access'
 
 type JobResponse = {
@@ -126,8 +127,6 @@ type FormData = {
   install_date: string
   contract_signed_date: string
   contract_amount: string
-  deposit_collected: string
-  remaining_balance: string
   supplemented_amount: string
   shingle_name: string
 }
@@ -206,8 +205,6 @@ function buildInitialData(
     install_date: job.install_date ?? '',
     contract_signed_date: job.contract_signed_date ?? '',
     contract_amount: job.contract_amount ? String(job.contract_amount) : '',
-    deposit_collected: job.deposit_collected ? String(job.deposit_collected) : '',
-    remaining_balance: job.remaining_balance ? String(job.remaining_balance) : '',
     supplemented_amount: job.supplemented_amount
       ? String(job.supplemented_amount)
       : '',
@@ -351,6 +348,17 @@ export default function JobDetailPageClient({
   const initialData = useMemo(
     () => (payload ? buildInitialData(payload.job, homeowner) : null),
     [homeowner, payload]
+  )
+  const financialSummary = useMemo(
+    () =>
+      payload
+        ? calculateJobPaymentSummary({
+            contractAmount: payload.job.contract_amount,
+            supplementedAmount: payload.job.supplemented_amount,
+            totalPaid: payload.job.deposit_collected,
+          })
+        : null,
+    [payload]
   )
   const canDeleteJob = isManagerLike(viewerRole)
 
@@ -589,16 +597,20 @@ export default function JobDetailPageClient({
                     value={formatMoney(payload.job.contract_amount)}
                   />
                   <MetricTile
-                    label="Deposit Collected"
+                    label="Supplemented Amount"
+                    value={formatMoney(payload.job.supplemented_amount)}
+                  />
+                  <MetricTile
+                    label="Total Job Value"
+                    value={formatMoney(financialSummary?.totalDue ?? null)}
+                  />
+                  <MetricTile
+                    label="Total Paid"
                     value={formatMoney(payload.job.deposit_collected)}
                   />
                   <MetricTile
                     label="Remaining Balance"
                     value={formatMoney(payload.job.remaining_balance)}
-                  />
-                  <MetricTile
-                    label="Supplemented Amount"
-                    value={formatMoney(payload.job.supplemented_amount)}
                   />
                 </div>
               </div>

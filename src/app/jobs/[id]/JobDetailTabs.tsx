@@ -3,8 +3,9 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import PhotosSection from './PhotosSection'
 import JobDocumentsPanel from './JobDocumentsPanel'
+import JobPaymentsPanel from './JobPaymentsPanel'
 
-export type JobDetailTabKey = 'documents' | 'photos'
+export type JobDetailTabKey = 'documents' | 'photos' | 'payments'
 
 const TABS: Array<{
   key: JobDetailTabKey
@@ -12,10 +13,11 @@ const TABS: Array<{
 }> = [
   { key: 'documents', label: 'Documents' },
   { key: 'photos', label: 'Photos' },
+  { key: 'payments', label: 'Payments' },
 ]
 
 function isJobDetailTabKey(value: string | null): value is JobDetailTabKey {
-  return value === 'documents' || value === 'photos'
+  return value === 'documents' || value === 'photos' || value === 'payments'
 }
 
 export default function JobDetailTabs({
@@ -69,6 +71,7 @@ export default function JobDetailTabs({
 
       {activeTab === 'documents' ? <JobDocumentsPanel jobId={jobId} /> : null}
       {activeTab === 'photos' ? <PhotosSection jobId={jobId} /> : null}
+      {activeTab === 'payments' ? <JobPaymentsPanel jobId={jobId} /> : null}
     </section>
   )
 }
