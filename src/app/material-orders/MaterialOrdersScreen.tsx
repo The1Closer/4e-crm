@@ -197,6 +197,11 @@ function toDisplayNumber(value: number) {
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
+function getFirstNonEmptyOptionValue(values: Array<{ value: string }>) {
+  const firstNonEmpty = values.find((entry) => entry.value.trim().length > 0)
+  return firstNonEmpty?.value ?? values[0]?.value ?? ''
+}
+
 function buildEmptyTemplateDraft(): TemplateDraft {
   return {
     id: null,
@@ -350,10 +355,10 @@ function buildOrderItemDraftsFromTemplate(template: MaterialTemplate) {
     const optionGroups = buildTemplateOptionGroups(item).map((group) => ({
       id: createLocalId(),
       name: group.name,
-      selectedValue:
-        group.values.find((value) => value.isDefault)?.value ??
-        group.values[0]?.value ??
-        '',
+      selectedValue: (() => {
+        const defaultValue = group.values.find((value) => value.isDefault)?.value ?? ''
+        return defaultValue || getFirstNonEmptyOptionValue(group.values)
+      })(),
       values: group.values.map((value) => ({
         id: createLocalId(),
         value: value.value,
@@ -375,10 +380,10 @@ function buildOrderItemDraftFromPresetItem(presetItem: MaterialPresetItem): Orde
   const optionGroups = buildPresetOptionGroups(presetItem).map((group) => ({
     id: createLocalId(),
     name: group.name,
-    selectedValue:
-      group.values.find((value) => value.isDefault)?.value ??
-      group.values[0]?.value ??
-      '',
+    selectedValue: (() => {
+      const defaultValue = group.values.find((value) => value.isDefault)?.value ?? ''
+      return defaultValue || getFirstNonEmptyOptionValue(group.values)
+    })(),
     values: group.values.map((value) => ({
       id: createLocalId(),
       value: value.value,
@@ -981,7 +986,8 @@ export default function MaterialOrdersScreen() {
                   : {
                       ...group,
                       values: [...group.values, { id: createLocalId(), value: '' }],
-                      selectedValue: group.selectedValue || '',
+                      selectedValue:
+                        group.selectedValue || getFirstNonEmptyOptionValue(group.values),
                     }
               ),
             }
@@ -1014,11 +1020,14 @@ export default function MaterialOrdersScreen() {
                 const matchesCurrentSelection =
                   typeof previousValue === 'string' &&
                   group.selectedValue === previousValue
+                const firstAvailableValue = getFirstNonEmptyOptionValue(nextValues)
 
                 return {
                   ...group,
                   values: nextValues,
-                  selectedValue: matchesCurrentSelection ? value : group.selectedValue,
+                  selectedValue: matchesCurrentSelection
+                    ? value || firstAvailableValue
+                    : group.selectedValue,
                 }
               }),
             }
@@ -1041,7 +1050,7 @@ export default function MaterialOrdersScreen() {
 
                 const removedValue = group.values.find((entry) => entry.id === valueId)?.value
                 const nextValues = group.values.filter((entry) => entry.id !== valueId)
-                const fallbackValue = nextValues[0]?.value ?? ''
+                const fallbackValue = getFirstNonEmptyOptionValue(nextValues)
                 const removedCurrentSelection =
                   typeof removedValue === 'string' &&
                   group.selectedValue === removedValue
@@ -2320,6 +2329,14 @@ export default function MaterialOrdersScreen() {
                           ) : (
                             <div className="mt-3 grid gap-3">
                               {item.optionGroups.map((group) => (
+                                (() => {
+                                  const values = group.values
+                                  const selectedValue =
+                                    values.some((entry) => entry.value === group.selectedValue)
+                                      ? group.selectedValue
+                                      : getFirstNonEmptyOptionValue(values)
+
+                                  return (
                                 <div
                                   key={group.id}
                                   className="rounded-[1.4rem] border border-white/10 bg-black/20 p-4"
@@ -2337,7 +2354,7 @@ export default function MaterialOrdersScreen() {
                                     />
                                     <select
                                       className={FIELD_CLASS_NAME}
-                                      value={group.selectedValue}
+                                      value={selectedValue}
                                       onChange={(event) =>
                                         updateOrderItemGroupSelection(
                                           item.id,
@@ -2414,6 +2431,8 @@ export default function MaterialOrdersScreen() {
                                     Add Value
                                   </button>
                                 </div>
+                                  )
+                                })()
                               ))}
                             </div>
                           )}
