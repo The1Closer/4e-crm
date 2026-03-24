@@ -197,6 +197,26 @@ function toDisplayNumber(value: number) {
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
+function buildMaterialOrderMailtoUrl(params: {
+  to: string
+  subject: string
+  message: string
+}) {
+  const searchParams = new URLSearchParams()
+
+  if (params.subject.trim()) {
+    searchParams.set('subject', params.subject.trim())
+  }
+
+  if (params.message.trim()) {
+    searchParams.set('body', params.message.trim())
+  }
+
+  const query = searchParams.toString()
+
+  return `mailto:${encodeURIComponent(params.to.trim())}${query ? `?${query}` : ''}`
+}
+
 function getFirstNonEmptyOptionValue(values: Array<{ value: string }>) {
   const firstNonEmpty = values.find((entry) => entry.value.trim().length > 0)
   return firstNonEmpty?.value ?? values[0]?.value ?? ''
@@ -659,6 +679,9 @@ export default function MaterialOrdersScreen() {
 
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [search, setSearch] = useState('')
+  const [sendStatusByOrderId, setSendStatusByOrderId] = useState<Record<string, string>>(
+    {}
+  )
 
   const requestedJob = useMemo(
     () => jobs.find((job) => job.id === requestedJobId) ?? null,
@@ -911,158 +934,6 @@ export default function MaterialOrdersScreen() {
               optionGroups: item.optionGroups.map((group) =>
                 group.id === groupId ? { ...group, selectedValue } : group
               ),
-            }
-      ),
-    }))
-  }
-
-  function addOrderOptionGroup(itemId: string) {
-    setOrderDraft((current) => ({
-      ...current,
-      items: current.items.map((item) =>
-        item.id !== itemId
-          ? item
-          : {
-              ...item,
-              optionGroups: [
-                ...item.optionGroups,
-                {
-                  id: createLocalId(),
-                  name: '',
-                  selectedValue: '',
-                  values: [],
-                },
-              ],
-            }
-      ),
-    }))
-  }
-
-  function updateOrderOptionGroup(
-    itemId: string,
-    groupId: string,
-    patch: Partial<OrderOptionGroupDraft>
-  ) {
-    setOrderDraft((current) => ({
-      ...current,
-      items: current.items.map((item) =>
-        item.id !== itemId
-          ? item
-          : {
-              ...item,
-              optionGroups: item.optionGroups.map((group) =>
-                group.id === groupId ? { ...group, ...patch } : group
-              ),
-            }
-      ),
-    }))
-  }
-
-  function removeOrderOptionGroup(itemId: string, groupId: string) {
-    setOrderDraft((current) => ({
-      ...current,
-      items: current.items.map((item) =>
-        item.id !== itemId
-          ? item
-          : {
-              ...item,
-              optionGroups: item.optionGroups.filter((group) => group.id !== groupId),
-            }
-      ),
-    }))
-  }
-
-  function addOrderOptionValue(itemId: string, groupId: string) {
-    setOrderDraft((current) => ({
-      ...current,
-      items: current.items.map((item) =>
-        item.id !== itemId
-          ? item
-          : {
-              ...item,
-              optionGroups: item.optionGroups.map((group) =>
-                group.id !== groupId
-                  ? group
-                  : {
-                      ...group,
-                      values: [...group.values, { id: createLocalId(), value: '' }],
-                      selectedValue:
-                        group.selectedValue || getFirstNonEmptyOptionValue(group.values),
-                    }
-              ),
-            }
-      ),
-    }))
-  }
-
-  function updateOrderOptionValue(
-    itemId: string,
-    groupId: string,
-    valueId: string,
-    value: string
-  ) {
-    setOrderDraft((current) => ({
-      ...current,
-      items: current.items.map((item) =>
-        item.id !== itemId
-          ? item
-          : {
-              ...item,
-              optionGroups: item.optionGroups.map((group) => {
-                if (group.id !== groupId) {
-                  return group
-                }
-
-                const previousValue = group.values.find((entry) => entry.id === valueId)?.value
-                const nextValues = group.values.map((entry) =>
-                  entry.id === valueId ? { ...entry, value } : entry
-                )
-                const matchesCurrentSelection =
-                  typeof previousValue === 'string' &&
-                  group.selectedValue === previousValue
-                const firstAvailableValue = getFirstNonEmptyOptionValue(nextValues)
-
-                return {
-                  ...group,
-                  values: nextValues,
-                  selectedValue: matchesCurrentSelection
-                    ? value || firstAvailableValue
-                    : group.selectedValue,
-                }
-              }),
-            }
-      ),
-    }))
-  }
-
-  function removeOrderOptionValue(itemId: string, groupId: string, valueId: string) {
-    setOrderDraft((current) => ({
-      ...current,
-      items: current.items.map((item) =>
-        item.id !== itemId
-          ? item
-          : {
-              ...item,
-              optionGroups: item.optionGroups.map((group) => {
-                if (group.id !== groupId) {
-                  return group
-                }
-
-                const removedValue = group.values.find((entry) => entry.id === valueId)?.value
-                const nextValues = group.values.filter((entry) => entry.id !== valueId)
-                const fallbackValue = getFirstNonEmptyOptionValue(nextValues)
-                const removedCurrentSelection =
-                  typeof removedValue === 'string' &&
-                  group.selectedValue === removedValue
-
-                return {
-                  ...group,
-                  values: nextValues,
-                  selectedValue: removedCurrentSelection
-                    ? fallbackValue
-                    : group.selectedValue,
-                }
-              }),
             }
       ),
     }))
@@ -1915,6 +1786,39 @@ export default function MaterialOrdersScreen() {
     await deleteOrderById(orderDraft.id)
   }
 
+  function handleSendOrder(order: MaterialOrder) {
+    if (!order.vendor_email?.trim()) {
+      setSendStatusByOrderId((current) => ({
+        ...current,
+        [order.id]: 'Add vendor email before sending.',
+      }))
+      return
+    }
+
+    const homeownerName = order.job?.homeowner_name?.trim() || ''
+    const subject = homeownerName
+      ? `Material Order(${homeownerName})`
+      : 'Material Order'
+    const supplierPath = `/material-orders/${order.id}/supplier`
+    const supplierUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${supplierPath}`
+        : supplierPath
+    const message = `Please review this material order.\n\nSupplier document:\n${supplierUrl}`
+
+    setSendStatusByOrderId((current) => {
+      const next = { ...current }
+      delete next[order.id]
+      return next
+    })
+
+    window.location.href = buildMaterialOrderMailtoUrl({
+      to: order.vendor_email,
+      subject,
+      message,
+    })
+  }
+
   const orderCountLabel = `${orders.length} order${orders.length === 1 ? '' : 's'}`
 
   return (
@@ -2252,22 +2156,22 @@ export default function MaterialOrdersScreen() {
                     {orderDraft.items.map((item, index) => (
                       <div
                         key={item.id}
-                        className="rounded-[1.6rem] border border-white/10 bg-white/[0.04] p-5"
+                        className="rounded-[1.1rem] border border-white/10 bg-white/[0.04] p-3"
                       >
-                        <div className="flex flex-wrap items-start justify-between gap-4">
-                          <div className="text-sm font-semibold uppercase tracking-[0.16em] text-[#d6b37a]">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#d6b37a]">
                             Item {index + 1}
                           </div>
                           <button
                             type="button"
                             onClick={() => removeOrderItem(item.id)}
-                            className={DANGER_BUTTON_CLASS_NAME}
+                            className="rounded-xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 transition hover:bg-red-500/18"
                           >
                             Remove
                           </button>
                         </div>
 
-                        <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.45fr_0.45fr]">
+                        <div className="grid gap-2 lg:grid-cols-[1.25fr_130px_110px]">
                           <LabeledField label="Item Name">
                             <input
                               className={FIELD_CLASS_NAME}
@@ -2308,147 +2212,56 @@ export default function MaterialOrdersScreen() {
                           </LabeledField>
                         </div>
 
-                        <div className="mt-4">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="text-sm font-semibold text-white">
-                              Variants (grade, color, style)
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => addOrderOptionGroup(item.id)}
-                              className={SECONDARY_BUTTON_CLASS_NAME}
-                            >
-                              Add Variant Group
-                            </button>
-                          </div>
+                        {item.optionGroups.length > 0 ? (
+                          <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                            {item.optionGroups.map((group) => {
+                              const values = group.values
+                              const selectedValue = values.some(
+                                (entry) => entry.value === group.selectedValue
+                              )
+                                ? group.selectedValue
+                                : getFirstNonEmptyOptionValue(values)
 
-                          {item.optionGroups.length === 0 ? (
-                            <div className="mt-3 rounded-[1.4rem] border border-dashed border-white/14 bg-black/20 p-4 text-sm text-white/55">
-                              No variant groups yet. Add groups like Grade or Color if this item needs selectable options.
-                            </div>
-                          ) : (
-                            <div className="mt-3 grid gap-3">
-                              {item.optionGroups.map((group) => (
-                                (() => {
-                                  const values = group.values
-                                  const selectedValue =
-                                    values.some((entry) => entry.value === group.selectedValue)
-                                      ? group.selectedValue
-                                      : getFirstNonEmptyOptionValue(values)
-
-                                  return (
-                                <div
-                                  key={group.id}
-                                  className="rounded-[1.4rem] border border-white/10 bg-black/20 p-4"
-                                >
-                                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                                    <input
-                                      className={FIELD_CLASS_NAME}
-                                      value={group.name}
-                                      onChange={(event) =>
-                                        updateOrderOptionGroup(item.id, group.id, {
-                                          name: event.target.value,
-                                        })
-                                      }
-                                      placeholder="Group name (Grade, Color)"
-                                    />
-                                    <select
-                                      className={FIELD_CLASS_NAME}
-                                      value={selectedValue}
-                                      onChange={(event) =>
-                                        updateOrderItemGroupSelection(
-                                          item.id,
-                                          group.id,
-                                          event.target.value
-                                        )
-                                      }
-                                    >
-                                      {group.values.length === 0 ? (
-                                        <option value="">No values added yet</option>
-                                      ) : null}
-                                      {group.values.map((value) => (
-                                        <option key={value.id} value={value.value}>
-                                          {value.value || 'Untitled option'}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <button
-                                      type="button"
-                                      onClick={() => removeOrderOptionGroup(item.id, group.id)}
-                                      className={DANGER_BUTTON_CLASS_NAME}
-                                    >
-                                      Remove Group
-                                    </button>
-                                  </div>
-
-                                  {group.values.length === 0 ? (
-                                    <div className="mt-3 rounded-[1.2rem] border border-dashed border-white/14 p-4 text-sm text-white/55">
-                                      Add option values for this group.
-                                    </div>
-                                  ) : (
-                                    <div className="mt-3 grid gap-2">
-                                      {group.values.map((value) => (
-                                        <div
-                                          key={value.id}
-                                          className="grid gap-2 rounded-[1.2rem] border border-white/10 bg-white/[0.04] p-3 md:grid-cols-[minmax(0,1fr)_auto]"
-                                        >
-                                          <input
-                                            className={FIELD_CLASS_NAME}
-                                            value={value.value}
-                                            onChange={(event) =>
-                                              updateOrderOptionValue(
-                                                item.id,
-                                                group.id,
-                                                value.id,
-                                                event.target.value
-                                              )
-                                            }
-                                            placeholder="Option value"
-                                          />
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              removeOrderOptionValue(
-                                                item.id,
-                                                group.id,
-                                                value.id
-                                              )
-                                            }
-                                            className={DANGER_BUTTON_CLASS_NAME}
-                                          >
-                                            Remove
-                                          </button>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  <button
-                                    type="button"
-                                    onClick={() => addOrderOptionValue(item.id, group.id)}
-                                    className={`${SECONDARY_BUTTON_CLASS_NAME} mt-3`}
+                              return (
+                                <LabeledField key={group.id} label={group.name || 'Option'}>
+                                  <select
+                                    className={FIELD_CLASS_NAME}
+                                    value={selectedValue}
+                                    onChange={(event) =>
+                                      updateOrderItemGroupSelection(
+                                        item.id,
+                                        group.id,
+                                        event.target.value
+                                      )
+                                    }
                                   >
-                                    Add Value
-                                  </button>
-                                </div>
-                                  )
-                                })()
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                                    {group.values.length === 0 ? (
+                                      <option value="">No values available</option>
+                                    ) : null}
+                                    {group.values.map((value) => (
+                                      <option key={value.id} value={value.value}>
+                                        {value.value || 'Untitled option'}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </LabeledField>
+                              )
+                            })}
+                          </div>
+                        ) : null}
 
-                        <div className="mt-4">
+                        <div className="mt-2">
                           <LabeledField label="Notes">
                             <textarea
-                              className={TEXTAREA_CLASS_NAME}
+                              className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35"
                               value={item.notes}
                               onChange={(event) =>
                                 updateOrderItem(item.id, {
                                   notes: event.target.value,
                                 })
                               }
-                              placeholder="Optional notes for this line item."
+                              placeholder="Optional notes"
+                              rows={2}
                             />
                           </LabeledField>
                         </div>
@@ -2585,6 +2398,16 @@ export default function MaterialOrdersScreen() {
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation()
+                        handleSendOrder(order)
+                      }}
+                      className={SECONDARY_BUTTON_CLASS_NAME}
+                    >
+                      Send
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
                         void deleteOrderById(order.id)
                       }}
                       disabled={savingOrder}
@@ -2593,6 +2416,12 @@ export default function MaterialOrdersScreen() {
                       Delete
                     </button>
                   </div>
+
+                  {sendStatusByOrderId[order.id] ? (
+                    <div className="mt-3 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100">
+                      {sendStatusByOrderId[order.id]}
+                    </div>
+                  ) : null}
                 </div>
               ))
             )}
