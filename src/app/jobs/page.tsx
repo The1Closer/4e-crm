@@ -61,6 +61,7 @@ type JobRow = {
   remaining_balance: number | null
   supplemented_amount: number | null
   install_date: string | null
+  created_at: string | null
   updated_at: string | null
   homeowners:
     | {
@@ -100,6 +101,30 @@ type ProfileOption = {
 
 type AssignedJobRef = {
   job_id: string
+}
+
+type TaskSignalRow = {
+  job_id: string | null
+  title: string | null
+  due_at: string | null
+  scheduled_for: string | null
+  created_at: string | null
+}
+
+type NotificationSignalRow = {
+  job_id: string | null
+  type: string | null
+  created_at: string | null
+}
+
+type JobTaskSignal = {
+  overdueOpenCount: number
+  overdueFollowUpCount: number
+}
+
+type JobNotificationSignal = {
+  recentUnreadCount: number
+  recentMentionCount: number
 }
 
 const PAGE_SIZE_BY_VIEW: Record<JobsViewMode, number> = {
@@ -154,6 +179,226 @@ function getStageName(stage: JobRow['pipeline_stages']) {
   return getStage(stage)?.name ?? 'No Stage'
 }
 
+function toTime(value: string | null | undefined, fallback: number) {
+  if (!value) return fallback
+  const parsed = new Date(value).getTime()
+  return Number.isNaN(parsed) ? fallback : parsed
+}
+
+function normalizeStageLabel(value: string | null | undefined) {
+  return (value ?? '').trim().toLowerCase()
+}
+
+function isFinanciallyClosedStage(stageName: string) {
+  const normalized = normalizeStageLabel(stageName)
+  return normalized.includes('paid in full') || normalized === 'paid'
+}
+
+function isInstallCompletedStage(stageName: string) {
+  const normalized = normalizeStageLabel(stageName)
+  return (
+    normalized.includes('install complete') ||
+    normalized.includes('installed') ||
+    normalized.includes('final qc') ||
+    normalized.includes('complete')
+  )
+}
+
+function getStageSortOrder(
+  job: JobRow,
+  stageOrderById: Map<number, number>
+) {
+  const stage = getStage(job.pipeline_stages)
+  if (!stage) return Number.MAX_SAFE_INTEGER
+  if (typeof stage.sort_order === 'number') return stage.sort_order
+  if (typeof stage.id === 'number') {
+    return stageOrderById.get(stage.id) ?? Number.MAX_SAFE_INTEGER
+  }
+  return Number.MAX_SAFE_INTEGER
+}
+
+function getFirstAssignedRep(job: JobRow) {
+  const repNames = getRepNames(job.job_reps)
+  return repNames[0] ?? ''
+}
+
+function getSmartPriorityScore(params: {
+  job: JobRow
+  now: Date
+  stageOrderById: Map<number, number>
+  taskSignal: JobTaskSignal
+  notificationSignal: JobNotificationSignal
+}) {
+  const { job, now, taskSignal, notificationSignal } = params
+  const stageName = getStageName(job.pipeline_stages)
+  const normalizedStage = normalizeStageLabel(stageName)
+  const updatedAtMs = toTime(job.updated_at, 0)
+  const ageDays = updatedAtMs > 0 ? (now.getTime() - updatedAtMs) / 86_400_000 : 999
+  const installAtMs = job.install_date
+    ? new Date(`${job.install_date}T00:00:00`).getTime()
+    : Number.NaN
+  const hasInstallDate = Number.isFinite(installAtMs)
+  const installDaysAway = hasInstallDate
+    ? (installAtMs - now.getTime()) / 86_400_000
+    : Number.POSITIVE_INFINITY
+  const outstanding = Number(job.remaining_balance ?? 0)
+  const hasUnassignedTeam = (job.job_reps ?? []).length === 0
+
+  let score = 0
+
+  if (taskSignal.overdueOpenCount > 0) {
+    score += 40 + Math.min(20, (taskSignal.overdueOpenCount - 1) * 5)
+  }
+
+  if (taskSignal.overdueFollowUpCount > 0) {
+    score += 20 + Math.min(10, (taskSignal.overdueFollowUpCount - 1) * 3)
+  }
+
+  if (hasInstallDate && installDaysAway < 0) {
+    score += 40
+  } else if (hasInstallDate && installDaysAway <= 3) {
+    score += 35
+  } else if (hasInstallDate && installDaysAway <= 7) {
+    score += 20
+  }
+
+  const activeMidStages = new Set([
+    'contingency',
+    'adjuster meeting',
+    'partial approval',
+    'approved',
+    'contracted',
+    'contracted awaiting deposit',
+    'contracted awaiting manager approval',
+    'pre-production prep',
+  ])
+
+  if (activeMidStages.has(normalizedStage) && ageDays >= 7) {
+    score += 25
+  }
+
+  if (isInstallCompletedStage(stageName) && outstanding > 0) {
+    score += 30
+  }
+
+  if (
+    (normalizedStage.includes('coc') || normalizedStage.includes('certificate')) &&
+    outstanding > 0
+  ) {
+    score += 20
+  }
+
+  if (hasUnassignedTeam) {
+    score += 15
+  }
+
+  if (notificationSignal.recentUnreadCount > 0) {
+    score += 10
+  }
+
+  if (notificationSignal.recentMentionCount > 0) {
+    score += 5
+  }
+
+  if (activeMidStages.has(normalizedStage) && ageDays <= 2) {
+    score += 10
+  }
+
+  if (!isFinanciallyClosedStage(stageName) && outstanding > 0 && hasInstallDate) {
+    score += 10
+  }
+
+  if (
+    !isFinanciallyClosedStage(stageName) &&
+    getStageSortOrder(job, params.stageOrderById) < Number.MAX_SAFE_INTEGER
+  ) {
+    score += 5
+  }
+
+  return score
+}
+
+function compareWithRecentUpdateFallback(
+  a: JobRow,
+  b: JobRow,
+  primary: number
+) {
+  if (primary !== 0) return primary
+  return toTime(b.updated_at, 0) - toTime(a.updated_at, 0)
+}
+
+function buildTaskSignalsByJob(rows: TaskSignalRow[], nowMs: number) {
+  const map: Record<string, JobTaskSignal> = {}
+
+  rows.forEach((row) => {
+    if (!row.job_id) return
+
+    const jobId = row.job_id
+    if (!map[jobId]) {
+      map[jobId] = {
+        overdueOpenCount: 0,
+        overdueFollowUpCount: 0,
+      }
+    }
+
+    const dueMs = toTime(
+      row.due_at ?? row.scheduled_for ?? row.created_at,
+      Number.NaN
+    )
+
+    if (!Number.isFinite(dueMs) || dueMs >= nowMs) {
+      return
+    }
+
+    map[jobId].overdueOpenCount += 1
+
+    const normalizedTitle = (row.title ?? '').trim().toLowerCase()
+    if (
+      normalizedTitle.includes('follow up') ||
+      normalizedTitle.includes('follow-up')
+    ) {
+      map[jobId].overdueFollowUpCount += 1
+    }
+  })
+
+  return map
+}
+
+function buildNotificationSignalsByJob(
+  rows: NotificationSignalRow[],
+  nowMs: number
+) {
+  const map: Record<string, JobNotificationSignal> = {}
+  const recentThresholdMs = 7 * 24 * 60 * 60 * 1000
+
+  rows.forEach((row) => {
+    if (!row.job_id) return
+
+    const createdAtMs = toTime(row.created_at, Number.NaN)
+    if (!Number.isFinite(createdAtMs)) return
+
+    const ageMs = nowMs - createdAtMs
+    if (ageMs < 0 || ageMs > recentThresholdMs) return
+
+    const jobId = row.job_id
+    if (!map[jobId]) {
+      map[jobId] = {
+        recentUnreadCount: 0,
+        recentMentionCount: 0,
+      }
+    }
+
+    map[jobId].recentUnreadCount += 1
+
+    const type = (row.type ?? '').trim().toLowerCase()
+    if (type.includes('mention')) {
+      map[jobId].recentMentionCount += 1
+    }
+  })
+
+  return map
+}
+
 function getRepNames(jobReps: JobRep[] | null): string[] {
   if (!jobReps || jobReps.length === 0) return []
 
@@ -197,10 +442,67 @@ function JobsPageContent() {
   const [managerFilter, setManagerFilter] = useState('')
   const [repFilter, setRepFilter] = useState('')
   const [viewMode, setViewMode] = useState<JobsViewMode>('cards')
-  const [sortKey, setSortKey] = useState<JobsSortKey>('newest')
+  const [sortKey, setSortKey] = useState<JobsSortKey>('smart_priority')
   const [quickFilter, setQuickFilter] = useState<JobsQuickFilter>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [editingJob, setEditingJob] = useState<JobListRow | null>(null)
+  const [taskSignalsByJobId, setTaskSignalsByJobId] = useState<
+    Record<string, JobTaskSignal>
+  >({})
+  const [notificationSignalsByJobId, setNotificationSignalsByJobId] = useState<
+    Record<string, JobNotificationSignal>
+  >({})
+
+  const loadPrioritySignals = useCallback(
+    async (params: { userId: string; jobIds: string[] }) => {
+      if (params.jobIds.length === 0) {
+        setTaskSignalsByJobId({})
+        setNotificationSignalsByJobId({})
+        return
+      }
+
+      const [tasksRes, notificationsRes] = await Promise.all([
+        supabase
+          .from('tasks')
+          .select('job_id, title, due_at, scheduled_for, created_at')
+          .eq('status', 'open')
+          .in('job_id', params.jobIds),
+        supabase
+          .from('notifications')
+          .select('job_id, type, created_at')
+          .eq('user_id', params.userId)
+          .eq('is_read', false)
+          .in('job_id', params.jobIds),
+      ])
+
+      const nowMs = Date.now()
+
+      if (tasksRes.error) {
+        console.error('Could not load task urgency signals.', tasksRes.error)
+        setTaskSignalsByJobId({})
+      } else {
+        setTaskSignalsByJobId(
+          buildTaskSignalsByJob((tasksRes.data ?? []) as TaskSignalRow[], nowMs)
+        )
+      }
+
+      if (notificationsRes.error) {
+        console.error(
+          'Could not load notification urgency signals.',
+          notificationsRes.error
+        )
+        setNotificationSignalsByJobId({})
+      } else {
+        setNotificationSignalsByJobId(
+          buildNotificationSignalsByJob(
+            (notificationsRes.data ?? []) as NotificationSignalRow[],
+            nowMs
+          )
+        )
+      }
+    },
+    []
+  )
 
   const loadPageData = useCallback(async () => {
     setLoading(true)
@@ -212,6 +514,8 @@ function JobsPageContent() {
       setRole(null)
       setCurrentUserId('')
       setJobs([])
+      setTaskSignalsByJobId({})
+      setNotificationSignalsByJobId({})
       setLoading(false)
       return
     }
@@ -260,6 +564,7 @@ function JobsPageContent() {
         remaining_balance,
         supplemented_amount,
         install_date,
+        created_at,
         updated_at,
         homeowners (
           name,
@@ -282,6 +587,8 @@ function JobsPageContent() {
       `)
       .order('created_at', { ascending: false })
 
+    let nextJobs: JobRow[] = []
+
     if (isManagerLike(currentProfile.role)) {
       const { data, error } = await baseQuery
 
@@ -291,43 +598,53 @@ function JobsPageContent() {
         return
       }
 
-      setJobs((data ?? []) as JobRow[])
-      setLoading(false)
-      return
+      nextJobs = (data ?? []) as JobRow[]
+    } else {
+      const { data: assignedRows, error: assignedError } = await supabase
+        .from('job_reps')
+        .select('job_id')
+        .eq('profile_id', currentProfile.id)
+
+      if (assignedError) {
+        setErrorMessage(assignedError.message)
+        setLoading(false)
+        return
+      }
+
+      const jobIds = [
+        ...new Set(
+          ((assignedRows ?? []) as AssignedJobRef[]).map((row) => row.job_id)
+        ),
+      ]
+
+      if (jobIds.length > 0) {
+        const { data, error } = await baseQuery.in('id', jobIds)
+
+        if (error) {
+          setErrorMessage(error.message)
+          setLoading(false)
+          return
+        }
+
+        nextJobs = (data ?? []) as JobRow[]
+      }
     }
 
-    const { data: assignedRows, error: assignedError } = await supabase
-      .from('job_reps')
-      .select('job_id')
-      .eq('profile_id', currentProfile.id)
+    setJobs(nextJobs)
 
-    if (assignedError) {
-      setErrorMessage(assignedError.message)
-      setLoading(false)
-      return
+    try {
+      await loadPrioritySignals({
+        userId: currentProfile.id,
+        jobIds: nextJobs.map((job) => job.id),
+      })
+    } catch (signalError) {
+      console.error('Could not build priority signals.', signalError)
+      setTaskSignalsByJobId({})
+      setNotificationSignalsByJobId({})
     }
 
-    const jobIds = [
-      ...new Set(((assignedRows ?? []) as AssignedJobRef[]).map((row) => row.job_id)),
-    ]
-
-    if (jobIds.length === 0) {
-      setJobs([])
-      setLoading(false)
-      return
-    }
-
-    const { data, error } = await baseQuery.in('id', jobIds)
-
-    if (error) {
-      setErrorMessage(error.message)
-      setLoading(false)
-      return
-    }
-
-    setJobs((data ?? []) as JobRow[])
     setLoading(false)
-  }, [])
+  }, [loadPrioritySignals])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -427,9 +744,74 @@ function JobsPageContent() {
           )
         : [...baseFilteredJobs]
 
+    const stageOrderById = new Map<number, number>()
+
+    stageOptions.forEach((stage, index) => {
+      stageOrderById.set(stage.id, stage.sort_order ?? index)
+    })
+
+    const now = new Date()
+
     next.sort((a, b) => {
-      if (sortKey === 'contract_high') {
-        return Number(b.contract_amount ?? 0) - Number(a.contract_amount ?? 0)
+      if (sortKey === 'smart_priority') {
+        const defaultTaskSignal: JobTaskSignal = {
+          overdueOpenCount: 0,
+          overdueFollowUpCount: 0,
+        }
+        const defaultNotificationSignal: JobNotificationSignal = {
+          recentUnreadCount: 0,
+          recentMentionCount: 0,
+        }
+        const aScore = getSmartPriorityScore({
+          job: a,
+          now,
+          stageOrderById,
+          taskSignal: taskSignalsByJobId[a.id] ?? defaultTaskSignal,
+          notificationSignal:
+            notificationSignalsByJobId[a.id] ?? defaultNotificationSignal,
+        })
+        const bScore = getSmartPriorityScore({
+          job: b,
+          now,
+          stageOrderById,
+          taskSignal: taskSignalsByJobId[b.id] ?? defaultTaskSignal,
+          notificationSignal:
+            notificationSignalsByJobId[b.id] ?? defaultNotificationSignal,
+        })
+        return compareWithRecentUpdateFallback(a, b, bScore - aScore)
+      }
+
+      if (sortKey === 'newest_created') {
+        return compareWithRecentUpdateFallback(
+          a,
+          b,
+          toTime(b.created_at, 0) - toTime(a.created_at, 0)
+        )
+      }
+
+      if (sortKey === 'oldest_created') {
+        return compareWithRecentUpdateFallback(
+          a,
+          b,
+          toTime(a.created_at, Number.MAX_SAFE_INTEGER) -
+            toTime(b.created_at, Number.MAX_SAFE_INTEGER)
+        )
+      }
+
+      if (sortKey === 'recently_updated') {
+        return toTime(b.updated_at, 0) - toTime(a.updated_at, 0)
+      }
+
+      if (sortKey === 'least_recently_updated') {
+        return toTime(a.updated_at, Number.MAX_SAFE_INTEGER) - toTime(b.updated_at, Number.MAX_SAFE_INTEGER)
+      }
+
+      if (sortKey === 'pipeline_stage_order') {
+        return compareWithRecentUpdateFallback(
+          a,
+          b,
+          getStageSortOrder(a, stageOrderById) - getStageSortOrder(b, stageOrderById)
+        )
       }
 
       if (sortKey === 'install_soonest') {
@@ -439,23 +821,71 @@ function JobsPageContent() {
         const bTime = b.install_date
           ? new Date(b.install_date).getTime()
           : Number.MAX_SAFE_INTEGER
-        return aTime - bTime
+        return compareWithRecentUpdateFallback(a, b, aTime - bTime)
+      }
+
+      if (sortKey === 'balance_high') {
+        return compareWithRecentUpdateFallback(
+          a,
+          b,
+          Number(b.remaining_balance ?? 0) - Number(a.remaining_balance ?? 0)
+        )
       }
 
       if (sortKey === 'homeowner_az') {
         const aName = getHomeowner(a.homeowners)?.name ?? ''
         const bName = getHomeowner(b.homeowners)?.name ?? ''
-        return aName.localeCompare(bName)
+        return compareWithRecentUpdateFallback(a, b, aName.localeCompare(bName))
       }
 
-      return 0
+      if (sortKey === 'homeowner_za') {
+        const aName = getHomeowner(a.homeowners)?.name ?? ''
+        const bName = getHomeowner(b.homeowners)?.name ?? ''
+        return compareWithRecentUpdateFallback(a, b, bName.localeCompare(aName))
+      }
+
+      if (sortKey === 'address_az') {
+        const aAddress = getHomeowner(a.homeowners)?.address ?? ''
+        const bAddress = getHomeowner(b.homeowners)?.address ?? ''
+        return compareWithRecentUpdateFallback(a, b, aAddress.localeCompare(bAddress))
+      }
+
+      if (sortKey === 'address_za') {
+        const aAddress = getHomeowner(a.homeowners)?.address ?? ''
+        const bAddress = getHomeowner(b.homeowners)?.address ?? ''
+        return compareWithRecentUpdateFallback(a, b, bAddress.localeCompare(aAddress))
+      }
+
+      if (sortKey === 'assigned_rep') {
+        const aRep = getFirstAssignedRep(a)
+        const bRep = getFirstAssignedRep(b)
+
+        if (!aRep && bRep) {
+          return compareWithRecentUpdateFallback(a, b, 1)
+        }
+
+        if (aRep && !bRep) {
+          return compareWithRecentUpdateFallback(a, b, -1)
+        }
+
+        return compareWithRecentUpdateFallback(
+          a,
+          b,
+          aRep.localeCompare(bRep)
+        )
+      }
+
+      return compareWithRecentUpdateFallback(a, b, 0)
     })
 
     return next
   }, [
     baseFilteredJobs,
+    notificationSignalsByJobId,
+    stageOptions,
     stageFilters,
     sortKey,
+    taskSignalsByJobId,
   ])
 
   const managers = useMemo(
@@ -662,7 +1092,7 @@ function JobsPageContent() {
       !isInstallWorkflowStage(currentStage) &&
       !canManageLockedStages
     ) {
-      return 'Only management can move jobs once they reach Contracted or later.'
+      return 'Only management can move jobs once they reach Pre-Production Prep or later.'
     }
 
     return null
@@ -690,7 +1120,7 @@ function JobsPageContent() {
     ) {
       setPageMessageTone('error')
       setPageMessage(
-        'Only management can change the stage once a job reaches Contracted or later.'
+        'Only management can change the stage once a job reaches Pre-Production Prep or later.'
       )
       return
     }
@@ -708,7 +1138,7 @@ function JobsPageContent() {
       !canManageLockedStages
     ) {
       setPageMessageTone('error')
-      setPageMessage('Only management can move jobs into Contracted and later stages.')
+      setPageMessage('Only management can move jobs into Pre-Production Prep and later stages.')
       return
     }
 

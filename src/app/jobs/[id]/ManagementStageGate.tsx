@@ -54,7 +54,7 @@ export default function ManagementStageGate({
     return (
       <main className="space-y-6">
         <section className="rounded-[2rem] border border-red-400/20 bg-red-500/10 p-6 text-red-100 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          This job is in Contracted or a later stage. Management access is required.
+          This job is in Pre-Production Prep or a later stage. Management access is required.
         </section>
       </main>
     )

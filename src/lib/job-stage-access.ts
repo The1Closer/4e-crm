@@ -28,6 +28,8 @@ const INSTALL_SCHEDULED_LABELS = new Set(
 
 const KNOWN_POST_CONTRACTED_LABELS = new Set([
   'contracted',
+  'contracted awaiting deposit',
+  'contracted awaiting manager approval',
   'pre-production prep',
   'pre production prep',
   'production',
@@ -97,15 +99,20 @@ export function findInstallScheduledStage(stages: PipelineStageRecord[]) {
 }
 
 export function getManagementStageThreshold(stages: PipelineStageRecord[]) {
-  const contractedStage = stages.find((stage) => isContractedLabel(stage.name))
+  const preProductionStage = findStageByLabels(stages, PRE_PRODUCTION_PREP_LABELS)
+  const thresholdStage =
+    preProductionStage ?? stages.find((stage) => isContractedLabel(stage.name))
 
-  if (!contractedStage) return null
+  if (!thresholdStage) return null
 
-  if (contractedStage.sort_order !== null && contractedStage.sort_order !== undefined) {
-    return contractedStage.sort_order
+  if (
+    thresholdStage.sort_order !== null &&
+    thresholdStage.sort_order !== undefined
+  ) {
+    return thresholdStage.sort_order
   }
 
-  return stages.findIndex((stage) => stage.id === contractedStage.id)
+  return stages.findIndex((stage) => stage.id === thresholdStage.id)
 }
 
 export function isManagementLockedStage(

@@ -221,7 +221,9 @@ export default function EditJobForm({
       !canManageLockedStages
     ) {
       setMessageTone('error')
-      setMessage('Only management can move jobs into Contracted and later stages.')
+      setMessage(
+        'Only management can move jobs into Pre-Production Prep and later stages.'
+      )
       return
     }
 
@@ -554,8 +556,9 @@ export default function EditJobForm({
 
                     {stageLockedForUser ? (
                       <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
-                        This job is already in Contracted or a later stage. Management can
-                        change the stage, but you can still edit the rest of the file.
+                        This job is already in Pre-Production Prep or a later stage.
+                        Management can change the stage, but you can still edit the rest of the
+                        file.
                       </div>
                     ) : null}
 

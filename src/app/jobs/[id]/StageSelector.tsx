@@ -105,7 +105,9 @@ export default function StageSelector({
       !isInstallWorkflowStage(nextStage) &&
       !canManageLockedStages
     ) {
-      setMessage('Only management can move jobs into Contracted and later stages.')
+      setMessage(
+        'Only management can move jobs into Pre-Production Prep and later stages.'
+      )
       return
     }
 
@@ -207,7 +209,7 @@ export default function StageSelector({
 
       {stageLockedForUser ? (
         <div className="text-xs text-[#f8c38a]">
-          Only management can change the stage once a job reaches Contracted or later.
+          Only management can change the stage once a job reaches Pre-Production Prep or later.
         </div>
       ) : null}
 
