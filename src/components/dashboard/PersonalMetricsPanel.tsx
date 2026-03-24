@@ -9,7 +9,6 @@ export default function PersonalMetricsPanel({
   funnel: {
     knocks: number
     talks: number
-    walks: number
     inspections: number
     contingencies: number
     contracts: number
@@ -24,12 +23,8 @@ export default function PersonalMetricsPanel({
       value: `${safePercent(funnel.talks, funnel.knocks)}%`,
     },
     {
-      label: 'Walk Rate',
-      value: `${safePercent(funnel.walks, funnel.talks)}%`,
-    },
-    {
       label: 'Inspection Rate',
-      value: `${safePercent(funnel.inspections, funnel.walks)}%`,
+      value: `${safePercent(funnel.inspections, funnel.talks)}%`,
     },
     {
       label: 'Contingency Rate',

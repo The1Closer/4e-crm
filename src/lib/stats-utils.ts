@@ -3,7 +3,6 @@ export type RepDailyStat = {
   report_date: string
   knocks: number
   talks: number
-  walks: number
   inspections: number
   contingencies: number
   contracts_with_deposit: number
@@ -15,7 +14,6 @@ export type RepSummary = {
   repName: string
   knocks: number
   talks: number
-  walks: number
   inspections: number
   contingencies: number
   contracts_with_deposit: number
@@ -68,7 +66,6 @@ export function buildRepSummaries(params: {
         repName,
         knocks: 0,
         talks: 0,
-        walks: 0,
         inspections: 0,
         contingencies: 0,
         contracts_with_deposit: 0,
@@ -78,7 +75,6 @@ export function buildRepSummaries(params: {
 
     byRep[row.rep_id].knocks += Number(row.knocks ?? 0)
     byRep[row.rep_id].talks += Number(row.talks ?? 0)
-    byRep[row.rep_id].walks += Number(row.walks ?? 0)
     byRep[row.rep_id].inspections += Number(row.inspections ?? 0)
     byRep[row.rep_id].contingencies += Number(row.contingencies ?? 0)
     byRep[row.rep_id].contracts_with_deposit += Number(row.contracts_with_deposit ?? 0)
@@ -93,7 +89,6 @@ export function buildTotals(repSummaries: RepSummary[]) {
     (acc, rep) => {
       acc.knocks += rep.knocks
       acc.talks += rep.talks
-      acc.walks += rep.walks
       acc.inspections += rep.inspections
       acc.contingencies += rep.contingencies
       acc.contracts_with_deposit += rep.contracts_with_deposit
@@ -103,7 +98,6 @@ export function buildTotals(repSummaries: RepSummary[]) {
     {
       knocks: 0,
       talks: 0,
-      walks: 0,
       inspections: 0,
       contingencies: 0,
       contracts_with_deposit: 0,

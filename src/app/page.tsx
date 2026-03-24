@@ -41,7 +41,6 @@ type WeeklyNumbersSummary = {
   totals: {
     knocks: number
     talks: number
-    walks: number
     inspections: number
     contingencies: number
     contracts_with_deposit: number
@@ -139,7 +138,6 @@ async function loadWeeklyNumbers(profileId: string, todayLocalDate: string) {
       report_date,
       knocks,
       talks,
-      walks,
       inspections,
       contingencies,
       contracts_with_deposit,
@@ -163,7 +161,6 @@ async function loadWeeklyNumbers(profileId: string, todayLocalDate: string) {
 
       accumulator.knocks += Number(row.knocks ?? 0)
       accumulator.talks += Number(row.talks ?? 0)
-      accumulator.walks += Number(row.walks ?? 0)
       accumulator.inspections += Number(row.inspections ?? 0)
       accumulator.contingencies += Number(row.contingencies ?? 0)
       accumulator.contracts_with_deposit += Number(row.contracts_with_deposit ?? 0)
@@ -173,7 +170,6 @@ async function loadWeeklyNumbers(profileId: string, todayLocalDate: string) {
     {
       knocks: 0,
       talks: 0,
-      walks: 0,
       inspections: 0,
       contingencies: 0,
       contracts_with_deposit: 0,
@@ -472,7 +468,6 @@ function HomePageContent() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     <MetricCard label="Knocks" value={String(weeklyNumbers?.totals.knocks ?? 0)} />
                     <MetricCard label="Talks" value={String(weeklyNumbers?.totals.talks ?? 0)} />
-                    <MetricCard label="Walks" value={String(weeklyNumbers?.totals.walks ?? 0)} />
                     <MetricCard label="Inspections" value={String(weeklyNumbers?.totals.inspections ?? 0)} />
                     <MetricCard
                       label="Contingencies"

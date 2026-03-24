@@ -8,6 +8,11 @@ import {
   ROSTER_PROFILE_SELECT_FIELDS,
   ROSTER_PROFILE_SELECT_WITH_NIGHTLY_FIELDS,
 } from '@/lib/nightly-numbers'
+import {
+  getNightlyStatInputMode,
+  parseNightlyStatInputs,
+  type NightlyStatInputValues,
+} from '@/lib/nightly-stat-inputs'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUserProfile } from '@/lib/auth-helpers'
 
@@ -25,29 +30,20 @@ type StatRow = {
   report_date: string
   knocks: number
   talks: number
-  walks: number
   inspections: number
   contingencies: number
   contracts_with_deposit: number
   revenue_signed: number
 }
 
-type EditableRow = {
+type EditableRow = NightlyStatInputValues & {
   rep_id: string
   rep_name: string
-  knocks: string
-  talks: string
-  walks: string
-  inspections: string
-  contingencies: string
-  contracts_with_deposit: string
-  revenue_signed: string
 }
 
 type Totals = {
   knocks: number
   talks: number
-  walks: number
   inspections: number
   contingencies: number
   contracts_with_deposit: number
@@ -62,7 +58,6 @@ type MonthlySummary = Totals & {
 const EMPTY_TOTALS: Totals = {
   knocks: 0,
   talks: 0,
-  walks: 0,
   inspections: 0,
   contingencies: 0,
   contracts_with_deposit: 0,
@@ -141,7 +136,6 @@ function emptyRow(rep: Profile): EditableRow {
     rep_name: rep.full_name,
     knocks: '',
     talks: '',
-    walks: '',
     inspections: '',
     contingencies: '',
     contracts_with_deposit: '',
@@ -154,7 +148,6 @@ function buildTotalsFromStats(rows: Array<StatRow | EditableRow>) {
     (acc, row) => {
       acc.knocks += Number(row.knocks || 0)
       acc.talks += Number(row.talks || 0)
-      acc.walks += Number(row.walks || 0)
       acc.inspections += Number(row.inspections || 0)
       acc.contingencies += Number(row.contingencies || 0)
       acc.contracts_with_deposit += Number(row.contracts_with_deposit || 0)
@@ -253,7 +246,6 @@ function ManagerNightlyEntryContent() {
           report_date,
           knocks,
           talks,
-          walks,
           inspections,
           contingencies,
           contracts_with_deposit,
@@ -268,7 +260,6 @@ function ManagerNightlyEntryContent() {
           report_date,
           knocks,
           talks,
-          walks,
           inspections,
           contingencies,
           contracts_with_deposit,
@@ -314,7 +305,6 @@ function ManagerNightlyEntryContent() {
         rep_name: rep.full_name,
         knocks: String(existing.knocks ?? ''),
         talks: String(existing.talks ?? ''),
-        walks: String(existing.walks ?? ''),
         inspections: String(existing.inspections ?? ''),
         contingencies: String(existing.contingencies ?? ''),
         contracts_with_deposit: String(existing.contracts_with_deposit ?? ''),
@@ -361,17 +351,33 @@ function ManagerNightlyEntryContent() {
     setMessageType('')
 
     try {
-      const payload = rows.map((row) => ({
-        rep_id: row.rep_id,
-        report_date: reportDate,
-        knocks: Number(row.knocks || 0),
-        talks: Number(row.talks || 0),
-        walks: Number(row.walks || 0),
-        inspections: Number(row.inspections || 0),
-        contingencies: Number(row.contingencies || 0),
-        contracts_with_deposit: Number(row.contracts_with_deposit || 0),
-        revenue_signed: Number(row.revenue_signed || 0),
-      }))
+      const payload: StatRow[] = []
+
+      for (const row of rows) {
+        const parsedStats = parseNightlyStatInputs({
+          knocks: row.knocks,
+          talks: row.talks,
+          inspections: row.inspections,
+          contingencies: row.contingencies,
+          contracts_with_deposit: row.contracts_with_deposit,
+          revenue_signed: row.revenue_signed,
+        })
+
+        if (parsedStats.error || !parsedStats.values) {
+          setMessageType('error')
+          setMessage(
+            `${row.rep_name}: ${parsedStats.error ?? 'Enter valid nightly numbers before saving.'}`
+          )
+          setSaving(false)
+          return
+        }
+
+        payload.push({
+          rep_id: row.rep_id,
+          report_date: reportDate,
+          ...parsedStats.values,
+        })
+      }
 
       const { error } = await supabase
         .from('rep_daily_stats')
@@ -406,7 +412,6 @@ function ManagerNightlyEntryContent() {
     () => ({
       knocks: projectMonthValue(branchMonthTotals.knocks, reportDate),
       talks: projectMonthValue(branchMonthTotals.talks, reportDate),
-      walks: projectMonthValue(branchMonthTotals.walks, reportDate),
       inspections: projectMonthValue(branchMonthTotals.inspections, reportDate),
       contingencies: projectMonthValue(branchMonthTotals.contingencies, reportDate),
       contracts_with_deposit: projectMonthValue(
@@ -463,7 +468,9 @@ function ManagerNightlyEntryContent() {
             </h1>
 
             <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
-              Enter the full branch sheet in one pass, keep everyone on the nightly roster visible, and track month-to-date plus projected totals without bouncing to another page.
+              Enter the full branch sheet in one pass, keep everyone on the nightly roster visible, and track month-to-date plus projected totals without bouncing to another page. Use{' '}
+              <span className="font-semibold text-white">.5</span> for split inspections,
+              contingencies, or contracts.
             </p>
           </div>
 
@@ -556,7 +563,6 @@ function ManagerNightlyEntryContent() {
                     <th className="px-3 py-3">Rep</th>
                     <th className="px-3 py-3">Knocks</th>
                     <th className="px-3 py-3">Talks</th>
-                    <th className="px-3 py-3">Walks</th>
                     <th className="px-3 py-3">Inspections</th>
                     <th className="px-3 py-3">Contingencies</th>
                     <th className="px-3 py-3">Contracts</th>
@@ -574,42 +580,35 @@ function ManagerNightlyEntryContent() {
                       <td className="px-3 py-3">
                         <ManagerInput
                           value={row.knocks}
-                          inputMode="numeric"
+                          inputMode={getNightlyStatInputMode('knocks')}
                           onChange={(value) => updateCell(row.rep_id, 'knocks', value)}
                         />
                       </td>
                       <td className="px-3 py-3">
                         <ManagerInput
                           value={row.talks}
-                          inputMode="numeric"
+                          inputMode={getNightlyStatInputMode('talks')}
                           onChange={(value) => updateCell(row.rep_id, 'talks', value)}
                         />
                       </td>
                       <td className="px-3 py-3">
                         <ManagerInput
-                          value={row.walks}
-                          inputMode="numeric"
-                          onChange={(value) => updateCell(row.rep_id, 'walks', value)}
-                        />
-                      </td>
-                      <td className="px-3 py-3">
-                        <ManagerInput
                           value={row.inspections}
-                          inputMode="numeric"
+                          inputMode={getNightlyStatInputMode('inspections')}
                           onChange={(value) => updateCell(row.rep_id, 'inspections', value)}
                         />
                       </td>
                       <td className="px-3 py-3">
                         <ManagerInput
                           value={row.contingencies}
-                          inputMode="numeric"
+                          inputMode={getNightlyStatInputMode('contingencies')}
                           onChange={(value) => updateCell(row.rep_id, 'contingencies', value)}
                         />
                       </td>
                       <td className="px-3 py-3">
                         <ManagerInput
                           value={row.contracts_with_deposit}
-                          inputMode="numeric"
+                          inputMode={getNightlyStatInputMode('contracts_with_deposit')}
                           onChange={(value) =>
                             updateCell(row.rep_id, 'contracts_with_deposit', value)
                           }
@@ -618,7 +617,7 @@ function ManagerNightlyEntryContent() {
                       <td className="px-3 py-3">
                         <ManagerInput
                           value={row.revenue_signed}
-                          inputMode="decimal"
+                          inputMode={getNightlyStatInputMode('revenue_signed')}
                           onChange={(value) =>
                             updateCell(row.rep_id, 'revenue_signed', value)
                           }
@@ -633,7 +632,6 @@ function ManagerNightlyEntryContent() {
                     <td className="px-3 py-3">Totals</td>
                     <td className="px-3 py-3">{totals.knocks}</td>
                     <td className="px-3 py-3">{totals.talks}</td>
-                    <td className="px-3 py-3">{totals.walks}</td>
                     <td className="px-3 py-3">{totals.inspections}</td>
                     <td className="px-3 py-3">{totals.contingencies}</td>
                     <td className="px-3 py-3">{totals.contracts_with_deposit}</td>
@@ -661,7 +659,6 @@ function ManagerNightlyEntryContent() {
                     <th className="px-3 py-3">Rep</th>
                     <th className="px-3 py-3">Knocks</th>
                     <th className="px-3 py-3">Talks</th>
-                    <th className="px-3 py-3">Walks</th>
                     <th className="px-3 py-3">Inspections</th>
                     <th className="px-3 py-3">Contingencies</th>
                     <th className="px-3 py-3">Contracts</th>
@@ -677,7 +674,6 @@ function ManagerNightlyEntryContent() {
                       <td className="px-3 py-3 font-medium text-white">{row.rep_name}</td>
                       <td className="px-3 py-3 text-white/75">{row.knocks}</td>
                       <td className="px-3 py-3 text-white/75">{row.talks}</td>
-                      <td className="px-3 py-3 text-white/75">{row.walks}</td>
                       <td className="px-3 py-3 text-white/75">{row.inspections}</td>
                       <td className="px-3 py-3 text-white/75">{row.contingencies}</td>
                       <td className="px-3 py-3 text-white/75">{row.contracts_with_deposit}</td>
@@ -734,7 +730,6 @@ function TotalsPanel({
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <TotalsMetric label="Knocks" value={totals.knocks.toLocaleString()} projected={projected} />
         <TotalsMetric label="Talks" value={totals.talks.toLocaleString()} projected={projected} />
-        <TotalsMetric label="Walks" value={totals.walks.toLocaleString()} projected={projected} />
         <TotalsMetric
           label="Inspections"
           value={totals.inspections.toLocaleString()}
@@ -791,7 +786,7 @@ function ManagerInput({
   onChange,
 }: {
   value: string
-  inputMode: React.HTMLAttributes<HTMLInputElement>['inputMode']
+  inputMode: 'numeric' | 'decimal'
   onChange: (value: string) => void
 }) {
   return (

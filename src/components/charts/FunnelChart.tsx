@@ -8,7 +8,6 @@ export default function FunnelChart({
   funnel: {
     knocks: number
     talks: number
-    walks: number
     inspections: number
     contingencies: number
     contracts: number
@@ -17,10 +16,9 @@ export default function FunnelChart({
   const rows = [
     { label: 'Knocks', value: funnel.knocks, width: 100 },
     { label: 'Talks', value: funnel.talks, width: 84 },
-    { label: 'Walks', value: funnel.walks, width: 70 },
-    { label: 'Inspections', value: funnel.inspections, width: 56 },
-    { label: 'Contingencies', value: funnel.contingencies, width: 42 },
-    { label: 'Contracts', value: funnel.contracts, width: 30 },
+    { label: 'Inspections', value: funnel.inspections, width: 68 },
+    { label: 'Contingencies', value: funnel.contingencies, width: 52 },
+    { label: 'Contracts', value: funnel.contracts, width: 36 },
   ]
 
   return (

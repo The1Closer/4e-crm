@@ -95,7 +95,7 @@ export default function IndividualDashboard({
                   ['Metric', 'Value'],
                   ['Knocks', dataset.totals.knocks],
                   ['Talks', dataset.totals.talks],
-                  ['Walks', dataset.totals.walks],
+                  ['Inspections', dataset.totals.inspections],
                   ['Contingencies', dataset.totals.contingencies],
                   ['Contracts', dataset.totals.contracts_with_deposit],
                   ['Revenue', dataset.totals.revenue_signed],

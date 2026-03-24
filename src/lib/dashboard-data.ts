@@ -92,7 +92,6 @@ export type DashboardDataset = {
   funnel: {
     knocks: number
     talks: number
-    walks: number
     inspections: number
     contingencies: number
     contracts: number
@@ -275,7 +274,6 @@ export async function loadDashboardDataset({
       report_date,
       knocks,
       talks,
-      walks,
       inspections,
       contingencies,
       contracts_with_deposit,
@@ -368,7 +366,6 @@ export async function loadDashboardDataset({
   const funnel = {
     knocks: sumField(stats, 'knocks'),
     talks: sumField(stats, 'talks'),
-    walks: sumField(stats, 'walks'),
     inspections: sumField(stats, 'inspections'),
     contingencies: sumField(stats, 'contingencies'),
     contracts: sumField(stats, 'contracts_with_deposit'),
@@ -457,20 +454,15 @@ export function buildSmartInsights(dataset: DashboardDataset) {
   const insights: string[] = []
 
   const talkRate = safePercent(dataset.funnel.talks, dataset.funnel.knocks)
-  const walkRate = safePercent(dataset.funnel.walks, dataset.funnel.talks)
-  const inspectionRate = safePercent(dataset.funnel.inspections, dataset.funnel.walks)
+  const inspectionRate = safePercent(dataset.funnel.inspections, dataset.funnel.talks)
   const closeRate = safePercent(dataset.funnel.contracts, dataset.funnel.contingencies)
 
   if (dataset.funnel.knocks > 0 && talkRate < 25) {
     insights.push('Talk rate is low. Focus on opening stronger and stopping fewer doors from brushing you off.')
   }
 
-  if (dataset.funnel.talks > 0 && walkRate < 35) {
-    insights.push('Walk rate is light. Work on turning conversations into physical inspections more consistently.')
-  }
-
-  if (dataset.funnel.walks > 0 && inspectionRate < 35) {
-    insights.push('Inspection conversion is soft. Tighten the transition from walk to inspection.')
+  if (dataset.funnel.talks > 0 && inspectionRate < 35) {
+    insights.push('Inspection conversion is soft. Tighten the transition from conversation to inspection.')
   }
 
   if (dataset.funnel.contingencies > 0 && closeRate < 45) {

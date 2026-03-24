@@ -8,21 +8,17 @@ import {
   type UserProfile,
 } from '@/lib/auth-helpers'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import {
+  getNightlyStatInputMode,
+  parseNightlyStatInputs,
+  type NightlyStatInputValues,
+} from '@/lib/nightly-stat-inputs'
 
-type FormState = {
-  knocks: string
-  talks: string
-  walks: string
-  inspections: string
-  contingencies: string
-  contracts_with_deposit: string
-  revenue_signed: string
-}
+type FormState = NightlyStatInputValues
 
 const EMPTY_FORM: FormState = {
   knocks: '',
   talks: '',
-  walks: '',
   inspections: '',
   contingencies: '',
   contracts_with_deposit: '',
@@ -118,7 +114,6 @@ function SubmitNumbersPageContent() {
         .select(`
           knocks,
           talks,
-          walks,
           inspections,
           contingencies,
           contracts_with_deposit,
@@ -145,7 +140,6 @@ function SubmitNumbersPageContent() {
       setForm({
         knocks: String(data.knocks ?? ''),
         talks: String(data.talks ?? ''),
-        walks: String(data.walks ?? ''),
         inspections: String(data.inspections ?? ''),
         contingencies: String(data.contingencies ?? ''),
         contracts_with_deposit: String(data.contracts_with_deposit ?? ''),
@@ -186,16 +180,19 @@ function SubmitNumbersPageContent() {
     setMessage('')
     setMessageType('')
 
+    const parsedStats = parseNightlyStatInputs(form)
+
+    if (parsedStats.error || !parsedStats.values) {
+      setMessage(parsedStats.error ?? 'Enter valid nightly numbers before saving.')
+      setMessageType('error')
+      setSaving(false)
+      return
+    }
+
     const payload = {
       rep_id: profile.id,
       report_date: effectiveReportDate,
-      knocks: toNumber(form.knocks),
-      talks: toNumber(form.talks),
-      walks: toNumber(form.walks),
-      inspections: toNumber(form.inspections),
-      contingencies: toNumber(form.contingencies),
-      contracts_with_deposit: toNumber(form.contracts_with_deposit),
-      revenue_signed: toNumber(form.revenue_signed),
+      ...parsedStats.values,
     }
 
     const { error } = await supabase
@@ -240,7 +237,9 @@ function SubmitNumbersPageContent() {
               Nightly Numbers
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/62">
-              Log your activity for the day so dashboards, reports, projections, and coaching stay current.
+              Log your activity for the day so dashboards, reports, projections, and coaching stay current. Use{' '}
+              <span className="font-semibold text-white">.5</span> for split inspections,
+              contingencies, or contracts.
             </p>
           </div>
 
@@ -299,37 +298,40 @@ function SubmitNumbersPageContent() {
             label="Knocks"
             value={form.knocks}
             onChange={(next) => updateField('knocks', next)}
+            inputMode={getNightlyStatInputMode('knocks')}
           />
           <MetricInput
             label="Talks"
             value={form.talks}
             onChange={(next) => updateField('talks', next)}
-          />
-          <MetricInput
-            label="Walks"
-            value={form.walks}
-            onChange={(next) => updateField('walks', next)}
+            inputMode={getNightlyStatInputMode('talks')}
           />
           <MetricInput
             label="Inspections"
             value={form.inspections}
             onChange={(next) => updateField('inspections', next)}
+            inputMode={getNightlyStatInputMode('inspections')}
+            placeholder=".5"
           />
           <MetricInput
             label="Contingencies"
             value={form.contingencies}
             onChange={(next) => updateField('contingencies', next)}
+            inputMode={getNightlyStatInputMode('contingencies')}
+            placeholder=".5"
           />
           <MetricInput
             label="Contracts"
             value={form.contracts_with_deposit}
             onChange={(next) => updateField('contracts_with_deposit', next)}
+            inputMode={getNightlyStatInputMode('contracts_with_deposit')}
+            placeholder=".5"
           />
           <MetricInput
             label="Revenue"
             value={form.revenue_signed}
             onChange={(next) => updateField('revenue_signed', next)}
-            inputMode="decimal"
+            inputMode={getNightlyStatInputMode('revenue_signed')}
             placeholder="0.00"
           />
         </section>
@@ -344,12 +346,11 @@ function SubmitNumbersPageContent() {
                 {(
                   toNumber(form.knocks) +
                   toNumber(form.talks) +
-                  toNumber(form.walks) +
                   toNumber(form.inspections)
                 ).toLocaleString()}
               </div>
               <div className="mt-2 text-sm text-white/55">
-                Knocks + talks + walks + inspections
+                Knocks + talks + inspections
               </div>
             </div>
 
