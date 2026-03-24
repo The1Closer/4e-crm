@@ -210,13 +210,6 @@ export default function MaterialOrdersJobPanel({
                   Manage Order
                 </Link>
                 <Link
-                  href={`/material-orders/${order.id}/internal`}
-                  target="_blank"
-                  className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1]"
-                >
-                  Internal Doc
-                </Link>
-                <Link
                   href={`/material-orders/${order.id}/supplier`}
                   target="_blank"
                   className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1]"

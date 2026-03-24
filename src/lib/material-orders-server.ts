@@ -7,6 +7,8 @@ import type {
   MaterialOrderItem,
   MaterialOrderItemOption,
   MaterialOrdersDashboardPayload,
+  MaterialPresetItem,
+  MaterialPresetItemOption,
   MaterialTemplate,
   MaterialTemplateItem,
   MaterialTemplateItemOption,
@@ -94,6 +96,16 @@ function mapJobRow(row: LooseRow): MaterialJobOption {
 }
 
 function mapTemplateOptionRow(row: LooseRow): MaterialTemplateItemOption {
+  return {
+    id: toStringValue(row.id),
+    option_group: toStringValue(row.option_group),
+    option_value: toStringValue(row.option_value),
+    sort_order: toNumber(row.sort_order),
+    is_default: Boolean(row.is_default),
+  }
+}
+
+function mapPresetItemOptionRow(row: LooseRow): MaterialPresetItemOption {
   return {
     id: toStringValue(row.id),
     option_group: toStringValue(row.option_group),
@@ -305,6 +317,58 @@ export async function loadMaterialTemplates() {
     .sort((left, right) => left.name.localeCompare(right.name))
 }
 
+export async function loadMaterialPresetItems() {
+  const { data, error } = await supabaseAdmin.from('material_preset_items').select(`
+      id,
+      name,
+      unit,
+      default_quantity,
+      description,
+      is_active,
+      created_at,
+      updated_at,
+      material_preset_item_options (
+        id,
+        option_group,
+        option_value,
+        sort_order,
+        is_default
+      )
+    `)
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return asLooseRows(data)
+    .map(
+      (row): MaterialPresetItem => ({
+        id: toStringValue(row.id),
+        name: toStringValue(row.name),
+        unit: toStringOrNull(row.unit),
+        default_quantity: toNumber(row.default_quantity),
+        description: toStringOrNull(row.description),
+        is_active: Boolean(row.is_active),
+        created_at: toStringValue(row.created_at),
+        updated_at: toStringValue(row.updated_at),
+        options: asLooseRows(row.material_preset_item_options)
+          .map(mapPresetItemOptionRow)
+          .sort((left, right) => {
+            if (left.option_group !== right.option_group) {
+              return left.option_group.localeCompare(right.option_group)
+            }
+
+            if (left.sort_order !== right.sort_order) {
+              return left.sort_order - right.sort_order
+            }
+
+            return left.option_value.localeCompare(right.option_value)
+          }),
+      })
+    )
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
 export async function loadMaterialOrders(params?: { jobId?: string | null }) {
   let query = supabaseAdmin.from('material_orders').select(`
       id,
@@ -369,11 +433,12 @@ export async function loadMaterialOrders(params?: { jobId?: string | null }) {
 export async function loadMaterialOrdersDashboard(params?: {
   jobId?: string | null
 }): Promise<MaterialOrdersDashboardPayload> {
-  const [orders, templates, vendors, jobs] = await Promise.all([
+  const [orders, templates, vendors, jobs, presetItems] = await Promise.all([
     loadMaterialOrders(params),
     loadMaterialTemplates(),
     loadMaterialVendors(),
     loadMaterialJobs(),
+    loadMaterialPresetItems(),
   ])
 
   return {
@@ -381,6 +446,7 @@ export async function loadMaterialOrdersDashboard(params?: {
     templates,
     vendors,
     jobs,
+    presetItems,
   }
 }
 

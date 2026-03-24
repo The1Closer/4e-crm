@@ -17,6 +17,7 @@ import {
   type MaterialOrder,
   type MaterialOrderStatus,
   type MaterialOrdersDashboardPayload,
+  type MaterialPresetItem,
   type MaterialTemplate,
   type MaterialTemplateItem,
   type MaterialVendor,
@@ -105,6 +106,28 @@ type VendorDraft = {
   email: string
   orderingNotes: string
   isActive: boolean
+}
+
+type PresetItemOptionValueDraft = {
+  id: string
+  value: string
+  isDefault: boolean
+}
+
+type PresetItemOptionGroupDraft = {
+  id: string
+  name: string
+  values: PresetItemOptionValueDraft[]
+}
+
+type PresetItemDraft = {
+  id: string | null
+  name: string
+  unit: string
+  defaultQuantity: string
+  description: string
+  isActive: boolean
+  optionGroups: PresetItemOptionGroupDraft[]
 }
 
 const PANEL_CLASS_NAME =
@@ -197,6 +220,18 @@ function buildEmptyVendorDraft(): VendorDraft {
   }
 }
 
+function buildEmptyPresetItemDraft(): PresetItemDraft {
+  return {
+    id: null,
+    name: '',
+    unit: '',
+    defaultQuantity: '',
+    description: '',
+    isActive: true,
+    optionGroups: [],
+  }
+}
+
 function buildEmptyOrderItemDraft(): OrderItemDraft {
   return {
     id: createLocalId(),
@@ -231,6 +266,30 @@ function buildEmptyOrderDraft(job?: MaterialJobOption | null): OrderDraft {
 
 function buildTemplateOptionGroups(item: MaterialTemplateItem) {
   const groups = new Map<string, TemplateOptionGroupDraft>()
+
+  item.options.forEach((option) => {
+    const existing =
+      groups.get(option.option_group) ??
+      {
+        id: createLocalId(),
+        name: option.option_group,
+        values: [],
+      }
+
+    existing.values.push({
+      id: createLocalId(),
+      value: option.option_value,
+      isDefault: option.is_default,
+    })
+
+    groups.set(option.option_group, existing)
+  })
+
+  return [...groups.values()]
+}
+
+function buildPresetOptionGroups(item: MaterialPresetItem): PresetItemOptionGroupDraft[] {
+  const groups = new Map<string, PresetItemOptionGroupDraft>()
 
   item.options.forEach((option) => {
     const existing =
@@ -312,6 +371,30 @@ function buildOrderItemDraftsFromTemplate(template: MaterialTemplate) {
   })
 }
 
+function buildOrderItemDraftFromPresetItem(presetItem: MaterialPresetItem): OrderItemDraft {
+  const optionGroups = buildPresetOptionGroups(presetItem).map((group) => ({
+    id: createLocalId(),
+    name: group.name,
+    selectedValue:
+      group.values.find((value) => value.isDefault)?.value ??
+      group.values[0]?.value ??
+      '',
+    values: group.values.map((value) => ({
+      id: createLocalId(),
+      value: value.value,
+    })),
+  }))
+
+  return {
+    id: createLocalId(),
+    itemName: presetItem.name,
+    unit: presetItem.unit ?? '',
+    quantity: toDisplayNumber(presetItem.default_quantity),
+    notes: presetItem.description ?? '',
+    optionGroups,
+  }
+}
+
 function buildTemplateDraftFromTemplate(template: MaterialTemplate): TemplateDraft {
   return {
     id: template.id,
@@ -339,6 +422,18 @@ function buildVendorDraftFromVendor(vendor: MaterialVendor): VendorDraft {
     email: vendor.email ?? '',
     orderingNotes: vendor.ordering_notes ?? '',
     isActive: vendor.is_active,
+  }
+}
+
+function buildPresetItemDraftFromPresetItem(item: MaterialPresetItem): PresetItemDraft {
+  return {
+    id: item.id,
+    name: item.name,
+    unit: item.unit ?? '',
+    defaultQuantity: toDisplayNumber(item.default_quantity),
+    description: item.description ?? '',
+    isActive: item.is_active,
+    optionGroups: buildPresetOptionGroups(item),
   }
 }
 
@@ -402,6 +497,24 @@ function serializeVendorDraft(vendorDraft: VendorDraft) {
     email: vendorDraft.email,
     orderingNotes: vendorDraft.orderingNotes,
     isActive: vendorDraft.isActive,
+  }
+}
+
+function serializePresetItemDraft(presetItemDraft: PresetItemDraft) {
+  return {
+    name: presetItemDraft.name,
+    unit: presetItemDraft.unit,
+    defaultQuantity: presetItemDraft.defaultQuantity,
+    description: presetItemDraft.description,
+    isActive: presetItemDraft.isActive,
+    options: presetItemDraft.optionGroups.flatMap((group) =>
+      group.values.map((value, valueIndex) => ({
+        optionGroup: group.name,
+        optionValue: value.value,
+        sortOrder: valueIndex,
+        isDefault: value.isDefault,
+      }))
+    ),
   }
 }
 
@@ -509,6 +622,7 @@ export default function MaterialOrdersScreen() {
   const [orders, setOrders] = useState<MaterialOrder[]>([])
   const [templates, setTemplates] = useState<MaterialTemplate[]>([])
   const [vendors, setVendors] = useState<MaterialVendor[]>([])
+  const [presetItems, setPresetItems] = useState<MaterialPresetItem[]>([])
   const [jobs, setJobs] = useState<MaterialJobOption[]>([])
 
   const [loading, setLoading] = useState(true)
@@ -519,16 +633,24 @@ export default function MaterialOrdersScreen() {
   const [savingOrder, setSavingOrder] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [savingVendor, setSavingVendor] = useState(false)
+  const [savingPresetItem, setSavingPresetItem] = useState(false)
 
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null)
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null)
   const [activeVendorId, setActiveVendorId] = useState<string | null>(null)
+  const [activePresetItemId, setActivePresetItemId] = useState<string | null>(null)
+  const [showTemplatePanel, setShowTemplatePanel] = useState(false)
+  const [showPresetItemsPanel, setShowPresetItemsPanel] = useState(false)
+  const [showVendorsPanel, setShowVendorsPanel] = useState(false)
 
   const [orderDraft, setOrderDraft] = useState<OrderDraft>(buildEmptyOrderDraft())
   const [templateDraft, setTemplateDraft] = useState<TemplateDraft>(
     buildEmptyTemplateDraft()
   )
   const [vendorDraft, setVendorDraft] = useState<VendorDraft>(buildEmptyVendorDraft())
+  const [presetItemDraft, setPresetItemDraft] = useState<PresetItemDraft>(
+    buildEmptyPresetItemDraft()
+  )
 
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [search, setSearch] = useState('')
@@ -579,17 +701,21 @@ export default function MaterialOrdersScreen() {
       selectOrderId?: string | null
       selectTemplateId?: string | null
       selectVendorId?: string | null
+      selectPresetItemId?: string | null
     }
   ) {
     setOrders(payload.orders)
     setTemplates(payload.templates)
     setVendors(payload.vendors)
+    setPresetItems(payload.presetItems)
     setJobs(payload.jobs)
 
     const nextSelectedOrderId =
       (options?.selectOrderId ?? requestedOrderId) || activeOrderId
     const nextSelectedTemplateId = options?.selectTemplateId ?? activeTemplateId
     const nextSelectedVendorId = options?.selectVendorId ?? activeVendorId
+    const nextSelectedPresetItemId =
+      options?.selectPresetItemId ?? activePresetItemId
     const nextRequestedJob =
       payload.jobs.find((job) => job.id === requestedJobId) ?? null
 
@@ -639,6 +765,23 @@ export default function MaterialOrdersScreen() {
       setActiveVendorId(null)
       setVendorDraft(buildEmptyVendorDraft())
     }
+
+    if (nextSelectedPresetItemId) {
+      const matchedPresetItem =
+        payload.presetItems.find((item) => item.id === nextSelectedPresetItemId) ??
+        null
+
+      if (matchedPresetItem) {
+        setActivePresetItemId(matchedPresetItem.id)
+        setPresetItemDraft(buildPresetItemDraftFromPresetItem(matchedPresetItem))
+      } else {
+        setActivePresetItemId(null)
+        setPresetItemDraft(buildEmptyPresetItemDraft())
+      }
+    } else {
+      setActivePresetItemId(null)
+      setPresetItemDraft(buildEmptyPresetItemDraft())
+    }
   }
 
   const applyDashboardDataRef = useRef(applyDashboardData)
@@ -662,6 +805,7 @@ export default function MaterialOrdersScreen() {
       templates: result?.templates ?? [],
       vendors: result?.vendors ?? [],
       jobs: result?.jobs ?? [],
+      presetItems: result?.presetItems ?? [],
     } satisfies MaterialOrdersDashboardPayload
   }
 
@@ -669,6 +813,7 @@ export default function MaterialOrdersScreen() {
     selectOrderId?: string | null
     selectTemplateId?: string | null
     selectVendorId?: string | null
+    selectPresetItemId?: string | null
   }) {
     setLoading(true)
 
@@ -679,6 +824,7 @@ export default function MaterialOrdersScreen() {
         selectOrderId: options?.selectOrderId ?? activeOrderId,
         selectTemplateId: options?.selectTemplateId ?? activeTemplateId,
         selectVendorId: options?.selectVendorId ?? activeVendorId,
+        selectPresetItemId: options?.selectPresetItemId ?? activePresetItemId,
       })
     } catch (error) {
       setPageMessageTone('error')
@@ -760,6 +906,154 @@ export default function MaterialOrdersScreen() {
               optionGroups: item.optionGroups.map((group) =>
                 group.id === groupId ? { ...group, selectedValue } : group
               ),
+            }
+      ),
+    }))
+  }
+
+  function addOrderOptionGroup(itemId: string) {
+    setOrderDraft((current) => ({
+      ...current,
+      items: current.items.map((item) =>
+        item.id !== itemId
+          ? item
+          : {
+              ...item,
+              optionGroups: [
+                ...item.optionGroups,
+                {
+                  id: createLocalId(),
+                  name: '',
+                  selectedValue: '',
+                  values: [],
+                },
+              ],
+            }
+      ),
+    }))
+  }
+
+  function updateOrderOptionGroup(
+    itemId: string,
+    groupId: string,
+    patch: Partial<OrderOptionGroupDraft>
+  ) {
+    setOrderDraft((current) => ({
+      ...current,
+      items: current.items.map((item) =>
+        item.id !== itemId
+          ? item
+          : {
+              ...item,
+              optionGroups: item.optionGroups.map((group) =>
+                group.id === groupId ? { ...group, ...patch } : group
+              ),
+            }
+      ),
+    }))
+  }
+
+  function removeOrderOptionGroup(itemId: string, groupId: string) {
+    setOrderDraft((current) => ({
+      ...current,
+      items: current.items.map((item) =>
+        item.id !== itemId
+          ? item
+          : {
+              ...item,
+              optionGroups: item.optionGroups.filter((group) => group.id !== groupId),
+            }
+      ),
+    }))
+  }
+
+  function addOrderOptionValue(itemId: string, groupId: string) {
+    setOrderDraft((current) => ({
+      ...current,
+      items: current.items.map((item) =>
+        item.id !== itemId
+          ? item
+          : {
+              ...item,
+              optionGroups: item.optionGroups.map((group) =>
+                group.id !== groupId
+                  ? group
+                  : {
+                      ...group,
+                      values: [...group.values, { id: createLocalId(), value: '' }],
+                      selectedValue: group.selectedValue || '',
+                    }
+              ),
+            }
+      ),
+    }))
+  }
+
+  function updateOrderOptionValue(
+    itemId: string,
+    groupId: string,
+    valueId: string,
+    value: string
+  ) {
+    setOrderDraft((current) => ({
+      ...current,
+      items: current.items.map((item) =>
+        item.id !== itemId
+          ? item
+          : {
+              ...item,
+              optionGroups: item.optionGroups.map((group) => {
+                if (group.id !== groupId) {
+                  return group
+                }
+
+                const previousValue = group.values.find((entry) => entry.id === valueId)?.value
+                const nextValues = group.values.map((entry) =>
+                  entry.id === valueId ? { ...entry, value } : entry
+                )
+                const matchesCurrentSelection =
+                  typeof previousValue === 'string' &&
+                  group.selectedValue === previousValue
+
+                return {
+                  ...group,
+                  values: nextValues,
+                  selectedValue: matchesCurrentSelection ? value : group.selectedValue,
+                }
+              }),
+            }
+      ),
+    }))
+  }
+
+  function removeOrderOptionValue(itemId: string, groupId: string, valueId: string) {
+    setOrderDraft((current) => ({
+      ...current,
+      items: current.items.map((item) =>
+        item.id !== itemId
+          ? item
+          : {
+              ...item,
+              optionGroups: item.optionGroups.map((group) => {
+                if (group.id !== groupId) {
+                  return group
+                }
+
+                const removedValue = group.values.find((entry) => entry.id === valueId)?.value
+                const nextValues = group.values.filter((entry) => entry.id !== valueId)
+                const fallbackValue = nextValues[0]?.value ?? ''
+                const removedCurrentSelection =
+                  typeof removedValue === 'string' &&
+                  group.selectedValue === removedValue
+
+                return {
+                  ...group,
+                  values: nextValues,
+                  selectedValue: removedCurrentSelection
+                    ? fallbackValue
+                    : group.selectedValue,
+                }
+              }),
             }
       ),
     }))
@@ -890,6 +1184,37 @@ export default function MaterialOrdersScreen() {
               ],
             }
       ),
+    }))
+  }
+
+  function addTemplateNamedOptionGroup(itemId: string, groupName: string) {
+    setTemplateDraft((current) => ({
+      ...current,
+      items: current.items.map((item) => {
+        if (item.id !== itemId) {
+          return item
+        }
+
+        const alreadyExists = item.optionGroups.some(
+          (group) => group.name.trim().toLowerCase() === groupName.trim().toLowerCase()
+        )
+
+        if (alreadyExists) {
+          return item
+        }
+
+        return {
+          ...item,
+          optionGroups: [
+            ...item.optionGroups,
+            {
+              id: createLocalId(),
+              name: groupName,
+              values: [],
+            },
+          ],
+        }
+      }),
     }))
   }
 
@@ -1026,6 +1351,113 @@ export default function MaterialOrdersScreen() {
     }))
   }
 
+  function addPresetOptionGroup() {
+    setPresetItemDraft((current) => ({
+      ...current,
+      optionGroups: [
+        ...current.optionGroups,
+        {
+          id: createLocalId(),
+          name: '',
+          values: [],
+        },
+      ],
+    }))
+  }
+
+  function updatePresetOptionGroup(groupId: string, patch: Partial<PresetItemOptionGroupDraft>) {
+    setPresetItemDraft((current) => ({
+      ...current,
+      optionGroups: current.optionGroups.map((group) =>
+        group.id === groupId ? { ...group, ...patch } : group
+      ),
+    }))
+  }
+
+  function removePresetOptionGroup(groupId: string) {
+    setPresetItemDraft((current) => ({
+      ...current,
+      optionGroups: current.optionGroups.filter((group) => group.id !== groupId),
+    }))
+  }
+
+  function addPresetOptionValue(groupId: string) {
+    setPresetItemDraft((current) => ({
+      ...current,
+      optionGroups: current.optionGroups.map((group) =>
+        group.id !== groupId
+          ? group
+          : {
+              ...group,
+              values: [
+                ...group.values,
+                {
+                  id: createLocalId(),
+                  value: '',
+                  isDefault: group.values.length === 0,
+                },
+              ],
+            }
+      ),
+    }))
+  }
+
+  function updatePresetOptionValue(
+    groupId: string,
+    valueId: string,
+    patch: Partial<PresetItemOptionValueDraft>
+  ) {
+    setPresetItemDraft((current) => ({
+      ...current,
+      optionGroups: current.optionGroups.map((group) => {
+        if (group.id !== groupId) {
+          return group
+        }
+
+        if (patch.isDefault) {
+          return {
+            ...group,
+            values: group.values.map((value) =>
+              value.id === valueId
+                ? { ...value, ...patch, isDefault: true }
+                : { ...value, isDefault: false }
+            ),
+          }
+        }
+
+        return {
+          ...group,
+          values: group.values.map((value) =>
+            value.id === valueId ? { ...value, ...patch } : value
+          ),
+        }
+      }),
+    }))
+  }
+
+  function removePresetOptionValue(groupId: string, valueId: string) {
+    setPresetItemDraft((current) => ({
+      ...current,
+      optionGroups: current.optionGroups.map((group) => {
+        if (group.id !== groupId) {
+          return group
+        }
+
+        const nextValues = group.values.filter((value) => value.id !== valueId)
+
+        return {
+          ...group,
+          values: nextValues.map((value, index) => ({
+            ...value,
+            isDefault: nextValues.some((entry) => entry.isDefault)
+              ? value.isDefault
+              : index === 0,
+          })),
+        }
+      }),
+    }))
+  }
+
   function selectTemplateForEditing(template: MaterialTemplate | null) {
     if (!template) {
       setActiveTemplateId(null)
@@ -1046,6 +1478,55 @@ export default function MaterialOrdersScreen() {
 
     setActiveVendorId(vendor.id)
     setVendorDraft(buildVendorDraftFromVendor(vendor))
+  }
+
+  function selectPresetItemForEditing(item: MaterialPresetItem | null) {
+    if (!item) {
+      setActivePresetItemId(null)
+      setPresetItemDraft(buildEmptyPresetItemDraft())
+      return
+    }
+
+    setActivePresetItemId(item.id)
+    setPresetItemDraft(buildPresetItemDraftFromPresetItem(item))
+  }
+
+  function addPresetItemToTemplate(presetItem: MaterialPresetItem) {
+    setTemplateDraft((current) => ({
+      ...current,
+      items: [
+        ...current.items,
+        {
+          id: createLocalId(),
+          itemName: presetItem.name,
+          unit: presetItem.unit ?? '',
+          defaultQuantity: toDisplayNumber(presetItem.default_quantity),
+          notes: presetItem.description ?? '',
+          optionGroups: buildPresetOptionGroups(presetItem).map((group) => ({
+            id: createLocalId(),
+            name: group.name,
+            values: group.values.map((value) => ({
+              id: createLocalId(),
+              value: value.value,
+              isDefault: value.isDefault,
+            })),
+          })),
+        },
+      ],
+    }))
+
+    setPageMessageTone('success')
+    setPageMessage(`Added ${presetItem.name} to template items.`)
+  }
+
+  function addPresetItemToOrder(presetItem: MaterialPresetItem) {
+    setOrderDraft((current) => ({
+      ...current,
+      items: [...current.items, buildOrderItemDraftFromPresetItem(presetItem)],
+    }))
+
+    setPageMessageTone('success')
+    setPageMessage(`Added ${presetItem.name} to order items.`)
   }
 
   async function saveTemplate() {
@@ -1210,10 +1691,90 @@ export default function MaterialOrdersScreen() {
     }
   }
 
+  async function savePresetItem() {
+    setSavingPresetItem(true)
+    setPageMessage('')
+
+    try {
+      const response = await authorizedFetch(
+        presetItemDraft.id
+          ? `/api/material-orders/preset-items/${presetItemDraft.id}`
+          : '/api/material-orders/preset-items',
+        {
+          method: presetItemDraft.id ? 'PATCH' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(serializePresetItemDraft(presetItemDraft)),
+        }
+      )
+      const result = (await response.json().catch(() => null)) as
+        | { presetItemId?: string; error?: string }
+        | null
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Could not save the preset item.')
+      }
+
+      setPageMessageTone('success')
+      setPageMessage('Preset item saved.')
+      await reloadDashboard({
+        selectPresetItemId: result?.presetItemId ?? presetItemDraft.id,
+      })
+    } catch (error) {
+      setPageMessageTone('error')
+      setPageMessage(
+        error instanceof Error ? error.message : 'Could not save the preset item.'
+      )
+    } finally {
+      setSavingPresetItem(false)
+    }
+  }
+
+  async function deletePresetItem() {
+    if (!presetItemDraft.id) {
+      selectPresetItemForEditing(null)
+      return
+    }
+
+    if (!window.confirm(`Delete ${presetItemDraft.name || 'this preset item'}?`)) {
+      return
+    }
+
+    setSavingPresetItem(true)
+    setPageMessage('')
+
+    try {
+      const response = await authorizedFetch(
+        `/api/material-orders/preset-items/${presetItemDraft.id}`,
+        {
+          method: 'DELETE',
+        }
+      )
+      const result = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Could not delete the preset item.')
+      }
+
+      setPageMessageTone('success')
+      setPageMessage('Preset item deleted.')
+      await reloadDashboard()
+    } catch (error) {
+      setPageMessageTone('error')
+      setPageMessage(
+        error instanceof Error ? error.message : 'Could not delete the preset item.'
+      )
+    } finally {
+      setSavingPresetItem(false)
+    }
+  }
+
   async function saveOrder(options?: {
-    markGeneratedInternal?: boolean
     markGeneratedSupplier?: boolean
-    openDocument?: 'internal' | 'supplier'
+    openDocument?: 'supplier'
   }) {
     setSavingOrder(true)
     setPageMessage('')
@@ -1234,7 +1795,6 @@ export default function MaterialOrdersScreen() {
           },
           body: JSON.stringify(
             serializeOrderDraft(orderDraft, {
-              markGeneratedInternal: options?.markGeneratedInternal,
               markGeneratedSupplier: options?.markGeneratedSupplier,
             })
           ),
@@ -1342,8 +1902,8 @@ export default function MaterialOrdersScreen() {
 
             <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
               Build order-ready material lists from jobs, load reusable templates,
-              manage vendor presets, and generate internal or supplier documents
-              without leaving the CRM.
+              manage vendor presets, and generate supplier documents without leaving
+              the CRM.
             </p>
           </div>
 
@@ -1396,19 +1956,6 @@ export default function MaterialOrdersScreen() {
                 className={PRIMARY_BUTTON_CLASS_NAME}
               >
                 {savingOrder ? 'Saving...' : 'Save Order'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void saveOrder({
-                    markGeneratedInternal: true,
-                    openDocument: 'internal',
-                  })
-                }}
-                disabled={savingOrder}
-                className={SECONDARY_BUTTON_CLASS_NAME}
-              >
-                Internal Doc
               </button>
               <button
                 type="button"
@@ -1604,18 +2151,7 @@ export default function MaterialOrdersScreen() {
                 </LabeledField>
               </div>
 
-              <div className="mt-6 grid gap-4 xl:grid-cols-2">
-                <LabeledField label="Internal Notes">
-                  <textarea
-                    className={TEXTAREA_CLASS_NAME}
-                    value={orderDraft.internalNotes}
-                    onChange={(event) =>
-                      updateOrderDraft({ internalNotes: event.target.value })
-                    }
-                    placeholder="Crew notes, yard instructions, or internal coordination."
-                  />
-                </LabeledField>
-
+              <div className="mt-6 grid gap-4">
                 <LabeledField label="Supplier Notes">
                   <textarea
                     className={TEXTAREA_CLASS_NAME}
@@ -1646,6 +2182,32 @@ export default function MaterialOrdersScreen() {
                   >
                     Add Line Item
                   </button>
+                </div>
+
+                <div className="mt-4 rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-white/48">
+                    Add from preset library
+                  </div>
+                  {presetItems.filter((item) => item.is_active).length === 0 ? (
+                    <div className="mt-2 text-sm text-white/55">
+                      No active preset items yet. Build one in the Preset Items panel below.
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {presetItems
+                        .filter((item) => item.is_active)
+                        .map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => addPresetItemToOrder(item)}
+                            className="rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
+                          >
+                            {item.name}
+                          </button>
+                        ))}
+                    </div>
+                  )}
                 </div>
 
                 {orderDraft.items.length === 0 ? (
@@ -1713,31 +2275,125 @@ export default function MaterialOrdersScreen() {
                           </LabeledField>
                         </div>
 
-                        {item.optionGroups.length > 0 ? (
-                          <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                            {item.optionGroups.map((group) => (
-                              <LabeledField key={group.id} label={group.name}>
-                                <select
-                                  className={FIELD_CLASS_NAME}
-                                  value={group.selectedValue}
-                                  onChange={(event) =>
-                                    updateOrderItemGroupSelection(
-                                      item.id,
-                                      group.id,
-                                      event.target.value
-                                    )
-                                  }
-                                >
-                                  {group.values.map((value) => (
-                                    <option key={value.id} value={value.value}>
-                                      {value.value}
-                                    </option>
-                                  ))}
-                                </select>
-                              </LabeledField>
-                            ))}
+                        <div className="mt-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="text-sm font-semibold text-white">
+                              Variants (grade, color, style)
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => addOrderOptionGroup(item.id)}
+                              className={SECONDARY_BUTTON_CLASS_NAME}
+                            >
+                              Add Variant Group
+                            </button>
                           </div>
-                        ) : null}
+
+                          {item.optionGroups.length === 0 ? (
+                            <div className="mt-3 rounded-[1.4rem] border border-dashed border-white/14 bg-black/20 p-4 text-sm text-white/55">
+                              No variant groups yet. Add groups like Grade or Color if this item needs selectable options.
+                            </div>
+                          ) : (
+                            <div className="mt-3 grid gap-3">
+                              {item.optionGroups.map((group) => (
+                                <div
+                                  key={group.id}
+                                  className="rounded-[1.4rem] border border-white/10 bg-black/20 p-4"
+                                >
+                                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                                    <input
+                                      className={FIELD_CLASS_NAME}
+                                      value={group.name}
+                                      onChange={(event) =>
+                                        updateOrderOptionGroup(item.id, group.id, {
+                                          name: event.target.value,
+                                        })
+                                      }
+                                      placeholder="Group name (Grade, Color)"
+                                    />
+                                    <select
+                                      className={FIELD_CLASS_NAME}
+                                      value={group.selectedValue}
+                                      onChange={(event) =>
+                                        updateOrderItemGroupSelection(
+                                          item.id,
+                                          group.id,
+                                          event.target.value
+                                        )
+                                      }
+                                    >
+                                      {group.values.length === 0 ? (
+                                        <option value="">No values added yet</option>
+                                      ) : null}
+                                      {group.values.map((value) => (
+                                        <option key={value.id} value={value.value}>
+                                          {value.value || 'Untitled option'}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeOrderOptionGroup(item.id, group.id)}
+                                      className={DANGER_BUTTON_CLASS_NAME}
+                                    >
+                                      Remove Group
+                                    </button>
+                                  </div>
+
+                                  {group.values.length === 0 ? (
+                                    <div className="mt-3 rounded-[1.2rem] border border-dashed border-white/14 p-4 text-sm text-white/55">
+                                      Add option values for this group.
+                                    </div>
+                                  ) : (
+                                    <div className="mt-3 grid gap-2">
+                                      {group.values.map((value) => (
+                                        <div
+                                          key={value.id}
+                                          className="grid gap-2 rounded-[1.2rem] border border-white/10 bg-white/[0.04] p-3 md:grid-cols-[minmax(0,1fr)_auto]"
+                                        >
+                                          <input
+                                            className={FIELD_CLASS_NAME}
+                                            value={value.value}
+                                            onChange={(event) =>
+                                              updateOrderOptionValue(
+                                                item.id,
+                                                group.id,
+                                                value.id,
+                                                event.target.value
+                                              )
+                                            }
+                                            placeholder="Option value"
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              removeOrderOptionValue(
+                                                item.id,
+                                                group.id,
+                                                value.id
+                                              )
+                                            }
+                                            className={DANGER_BUTTON_CLASS_NAME}
+                                          >
+                                            Remove
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => addOrderOptionValue(item.id, group.id)}
+                                    className={`${SECONDARY_BUTTON_CLASS_NAME} mt-3`}
+                                  >
+                                    Add Value
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
 
                         <div className="mt-4">
                           <LabeledField label="Notes">
@@ -1875,14 +2531,6 @@ export default function MaterialOrdersScreen() {
 
                   <div className="mt-4 flex flex-wrap gap-3">
                     <Link
-                      href={`/material-orders/${order.id}/internal`}
-                      target="_blank"
-                      onClick={(event) => event.stopPropagation()}
-                      className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1]"
-                    >
-                      Internal Doc
-                    </Link>
-                    <Link
                       href={`/material-orders/${order.id}/supplier`}
                       target="_blank"
                       onClick={(event) => event.stopPropagation()}
@@ -1909,7 +2557,308 @@ export default function MaterialOrdersScreen() {
         </section>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-2">
+      <section className={PANEL_CLASS_NAME}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#d6b37a]">
+              Workspace Tools
+            </div>
+            <div className="mt-1 text-sm text-white/60">
+              Open only the sections you want to work in.
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setShowTemplatePanel((current) => !current)}
+              className={SECONDARY_BUTTON_CLASS_NAME}
+            >
+              {showTemplatePanel ? 'Hide Template Builder' : 'Open Template Builder'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPresetItemsPanel((current) => !current)}
+              className={SECONDARY_BUTTON_CLASS_NAME}
+            >
+              {showPresetItemsPanel ? 'Hide Item Library' : 'Open Item Library'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowVendorsPanel((current) => !current)}
+              className={SECONDARY_BUTTON_CLASS_NAME}
+            >
+              {showVendorsPanel ? 'Hide Vendor Directory' : 'Open Vendor Directory'}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {showTemplatePanel || showPresetItemsPanel || showVendorsPanel ? (
+      <section
+        className={`grid gap-6 ${
+          showTemplatePanel && showPresetItemsPanel && showVendorsPanel
+            ? 'xl:grid-cols-3'
+            : (showTemplatePanel && showPresetItemsPanel) ||
+                (showTemplatePanel && showVendorsPanel) ||
+                (showPresetItemsPanel && showVendorsPanel)
+              ? 'xl:grid-cols-2'
+              : 'xl:grid-cols-1'
+        }`}
+      >
+        {showPresetItemsPanel ? (
+        <section className={PANEL_CLASS_NAME}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+                Preset Items
+              </div>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
+                Reusable item library
+              </h2>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => selectPresetItemForEditing(null)}
+                className={SECONDARY_BUTTON_CLASS_NAME}
+              >
+                New Preset
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void savePresetItem()
+                }}
+                disabled={savingPresetItem}
+                className={PRIMARY_BUTTON_CLASS_NAME}
+              >
+                {savingPresetItem ? 'Saving...' : 'Save Preset'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void deletePresetItem()
+                }}
+                disabled={savingPresetItem}
+                className={DANGER_BUTTON_CLASS_NAME}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-6 xl:grid-cols-[0.44fr_0.56fr]">
+            <div className="space-y-3">
+              {presetItems.length === 0 ? (
+                <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-5 text-sm text-white/55">
+                  No preset items saved yet.
+                </div>
+              ) : (
+                presetItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => selectPresetItemForEditing(item)}
+                    className={`w-full rounded-[1.5rem] border p-4 text-left transition ${
+                      activePresetItemId === item.id
+                        ? 'border-[#d6b37a]/40 bg-[#d6b37a]/10'
+                        : 'border-white/10 bg-white/[0.04] hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    <div className="text-sm font-semibold text-white">{item.name}</div>
+                    <div className="mt-2 text-xs uppercase tracking-[0.16em] text-white/45">
+                      {item.is_active ? 'Active' : 'Inactive'}
+                    </div>
+                    {item.description ? (
+                      <div className="mt-2 text-sm text-white/60">{item.description}</div>
+                    ) : null}
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid gap-4">
+                <LabeledField label="Preset Item Name">
+                  <input
+                    className={FIELD_CLASS_NAME}
+                    value={presetItemDraft.name}
+                    onChange={(event) =>
+                      setPresetItemDraft((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                    placeholder="Shingles"
+                  />
+                </LabeledField>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <LabeledField label="Unit">
+                    <input
+                      className={FIELD_CLASS_NAME}
+                      value={presetItemDraft.unit}
+                      onChange={(event) =>
+                        setPresetItemDraft((current) => ({
+                          ...current,
+                          unit: event.target.value,
+                        }))
+                      }
+                      placeholder="Bundle"
+                    />
+                  </LabeledField>
+
+                  <LabeledField label="Default Qty">
+                    <input
+                      className={FIELD_CLASS_NAME}
+                      value={presetItemDraft.defaultQuantity}
+                      onChange={(event) =>
+                        setPresetItemDraft((current) => ({
+                          ...current,
+                          defaultQuantity: event.target.value,
+                        }))
+                      }
+                      placeholder="0"
+                    />
+                  </LabeledField>
+                </div>
+
+                <LabeledField label="Description">
+                  <textarea
+                    className={TEXTAREA_CLASS_NAME}
+                    value={presetItemDraft.description}
+                    onChange={(event) =>
+                      setPresetItemDraft((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                    placeholder="Optional notes for this preset item."
+                  />
+                </LabeledField>
+
+                <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white">
+                  <input
+                    type="checkbox"
+                    checked={presetItemDraft.isActive}
+                    onChange={(event) =>
+                      setPresetItemDraft((current) => ({
+                        ...current,
+                        isActive: event.target.checked,
+                      }))
+                    }
+                  />
+                  Active preset item
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-white">Variant Groups</div>
+                <button
+                  type="button"
+                  onClick={addPresetOptionGroup}
+                  className={SECONDARY_BUTTON_CLASS_NAME}
+                >
+                  Add Group
+                </button>
+              </div>
+
+              {presetItemDraft.optionGroups.length === 0 ? (
+                <div className="rounded-[1.4rem] border border-dashed border-white/14 bg-black/20 p-4 text-sm text-white/55">
+                  Add groups like Grade or Color if this preset item needs options.
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {presetItemDraft.optionGroups.map((group) => (
+                    <div
+                      key={group.id}
+                      className="rounded-[1.4rem] border border-white/10 bg-black/20 p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <input
+                          className={`${FIELD_CLASS_NAME} max-w-sm`}
+                          value={group.name}
+                          onChange={(event) =>
+                            updatePresetOptionGroup(group.id, {
+                              name: event.target.value,
+                            })
+                          }
+                          placeholder="Group name (Grade, Color)"
+                        />
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            onClick={() => addPresetOptionValue(group.id)}
+                            className={SECONDARY_BUTTON_CLASS_NAME}
+                          >
+                            Add Value
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removePresetOptionGroup(group.id)}
+                            className={DANGER_BUTTON_CLASS_NAME}
+                          >
+                            Remove Group
+                          </button>
+                        </div>
+                      </div>
+
+                      {group.values.length === 0 ? (
+                        <div className="mt-3 rounded-[1.2rem] border border-dashed border-white/14 p-4 text-sm text-white/55">
+                          Add values for this group.
+                        </div>
+                      ) : (
+                        <div className="mt-3 grid gap-3">
+                          {group.values.map((value) => (
+                            <div
+                              key={value.id}
+                              className="grid gap-3 rounded-[1.2rem] border border-white/10 bg-white/[0.04] p-3 md:grid-cols-[minmax(0,1fr)_auto_auto]"
+                            >
+                              <input
+                                className={FIELD_CLASS_NAME}
+                                value={value.value}
+                                onChange={(event) =>
+                                  updatePresetOptionValue(group.id, value.id, {
+                                    value: event.target.value,
+                                  })
+                                }
+                                placeholder="Option value"
+                              />
+                              <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white">
+                                <input
+                                  type="checkbox"
+                                  checked={value.isDefault}
+                                  onChange={(event) =>
+                                    updatePresetOptionValue(group.id, value.id, {
+                                      isDefault: event.target.checked,
+                                    })
+                                  }
+                                />
+                                Default
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => removePresetOptionValue(group.id, value.id)}
+                                className={DANGER_BUTTON_CLASS_NAME}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+        ) : null}
+
+        {showTemplatePanel ? (
         <section className={PANEL_CLASS_NAME}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -1984,6 +2933,11 @@ export default function MaterialOrdersScreen() {
             </div>
 
             <div className="space-y-4">
+              <div className="rounded-[1.4rem] border border-white/10 bg-black/20 p-4 text-sm text-white/62">
+                Keep templates simple: add your base items, then optional variant groups
+                like Grade and Color where needed.
+              </div>
+
               <div className="grid gap-4">
                 <LabeledField label="Template Name">
                   <input
@@ -1996,20 +2950,6 @@ export default function MaterialOrdersScreen() {
                       }))
                     }
                     placeholder="Asphalt Roof - Standard"
-                  />
-                </LabeledField>
-
-                <LabeledField label="Category">
-                  <input
-                    className={FIELD_CLASS_NAME}
-                    value={templateDraft.category}
-                    onChange={(event) =>
-                      setTemplateDraft((current) => ({
-                        ...current,
-                        category: event.target.value,
-                      }))
-                    }
-                    placeholder="Roofing, Siding, Gutters"
                   />
                 </LabeledField>
 
@@ -2051,6 +2991,32 @@ export default function MaterialOrdersScreen() {
                 >
                   Add Template Item
                 </button>
+              </div>
+
+              <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-white/48">
+                  Add from preset library
+                </div>
+                {presetItems.filter((item) => item.is_active).length === 0 ? (
+                  <div className="mt-2 text-sm text-white/55">
+                    No active preset items yet. Build one in the Preset Items panel.
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {presetItems
+                      .filter((item) => item.is_active)
+                      .map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => addPresetItemToTemplate(item)}
+                          className="rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
+                        >
+                          {item.name}
+                        </button>
+                      ))}
+                  </div>
+                )}
               </div>
 
               {templateDraft.items.length === 0 ? (
@@ -2138,13 +3104,29 @@ export default function MaterialOrdersScreen() {
                           <div className="text-sm font-semibold text-white">
                             Option Groups
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => addTemplateOptionGroup(item.id)}
-                            className={SECONDARY_BUTTON_CLASS_NAME}
-                          >
-                            Add Option Group
-                          </button>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => addTemplateNamedOptionGroup(item.id, 'Grade')}
+                              className={SECONDARY_BUTTON_CLASS_NAME}
+                            >
+                              Add Grade
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => addTemplateNamedOptionGroup(item.id, 'Color')}
+                              className={SECONDARY_BUTTON_CLASS_NAME}
+                            >
+                              Add Color
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => addTemplateOptionGroup(item.id)}
+                              className={SECONDARY_BUTTON_CLASS_NAME}
+                            >
+                              Add Custom Group
+                            </button>
+                          </div>
                         </div>
 
                         {item.optionGroups.length === 0 ? (
@@ -2263,7 +3245,9 @@ export default function MaterialOrdersScreen() {
             </div>
           </div>
         </section>
+        ) : null}
 
+        {showVendorsPanel ? (
         <section className={PANEL_CLASS_NAME}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -2425,7 +3409,9 @@ export default function MaterialOrdersScreen() {
             </div>
           </div>
         </section>
+        ) : null}
       </section>
+      ) : null}
     </div>
   )
 }

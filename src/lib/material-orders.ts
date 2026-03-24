@@ -5,6 +5,26 @@ export type MaterialOrderStatus =
   | 'received'
   | 'cancelled'
 
+export type MaterialPresetItemOption = {
+  id: string
+  option_group: string
+  option_value: string
+  sort_order: number
+  is_default: boolean
+}
+
+export type MaterialPresetItem = {
+  id: string
+  name: string
+  unit: string | null
+  default_quantity: number
+  description: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  options: MaterialPresetItemOption[]
+}
+
 export type MaterialJobOption = {
   id: string
   homeowner_name: string
@@ -102,6 +122,7 @@ export type MaterialOrdersDashboardPayload = {
   templates: MaterialTemplate[]
   vendors: MaterialVendor[]
   jobs: MaterialJobOption[]
+  presetItems: MaterialPresetItem[]
 }
 
 export const MATERIAL_ORDER_STATUS_OPTIONS: MaterialOrderStatus[] = [
@@ -153,4 +174,3 @@ export function getMaterialOrderStatusTone(status: MaterialOrderStatus) {
       return 'border-white/12 bg-white/[0.05] text-white/80'
   }
 }
-

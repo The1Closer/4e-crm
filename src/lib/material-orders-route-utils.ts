@@ -60,6 +60,20 @@ export type MaterialTemplateMutationInput = {
   items: MaterialTemplateItemWriteInput[]
 }
 
+export type MaterialPresetItemMutationInput = {
+  name: string
+  unit: string | null
+  defaultQuantity: number
+  description: string | null
+  isActive: boolean
+  options: Array<{
+    option_group: string
+    option_value: string
+    sort_order: number
+    is_default: boolean
+  }>
+}
+
 export type VendorMutationInput = {
   name: string
   contactName: string | null
@@ -351,3 +365,25 @@ export function normalizeVendorMutationBody(
   }
 }
 
+export function normalizeMaterialPresetItemMutationBody(
+  body: Record<string, unknown>
+): MaterialPresetItemMutationInput {
+  const name = normalizeText(body.name)
+
+  if (!name) {
+    throw new Error('Preset item name is required.')
+  }
+
+  return {
+    name,
+    unit: normalizeText(body.unit),
+    defaultQuantity: normalizeNumber(
+      body.defaultQuantity ?? body.default_quantity,
+      'Default quantity',
+      0
+    ),
+    description: normalizeText(body.description),
+    isActive: normalizeBoolean(body.isActive ?? body.is_active, true),
+    options: normalizeTemplateItemOptions(body.options),
+  }
+}
