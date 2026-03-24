@@ -1,13 +1,15 @@
 'use client'
 
+import { useMemo } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import PhotosSection from './PhotosSection'
 import JobDocumentsPanel from './JobDocumentsPanel'
 import JobPaymentsPanel from './JobPaymentsPanel'
+import MaterialOrdersJobPanel from '@/components/material-orders/MaterialOrdersJobPanel'
 
-export type JobDetailTabKey = 'documents' | 'photos' | 'payments'
+export type JobDetailTabKey = 'documents' | 'photos' | 'payments' | 'materials'
 
-const TABS: Array<{
+const BASE_TABS: Array<{
   key: JobDetailTabKey
   label: string
 }> = [
@@ -16,20 +18,28 @@ const TABS: Array<{
   { key: 'payments', label: 'Payments' },
 ]
 
-function isJobDetailTabKey(value: string | null): value is JobDetailTabKey {
-  return value === 'documents' || value === 'photos' || value === 'payments'
-}
-
 export default function JobDetailTabs({
   jobId,
+  homeownerName,
+  canViewMaterialOrders = false,
 }: {
   jobId: string
+  homeownerName: string
+  canViewMaterialOrders?: boolean
 }) {
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const tabs = useMemo(
+    () =>
+      canViewMaterialOrders
+        ? [...BASE_TABS, { key: 'materials' as const, label: 'Materials' }]
+        : BASE_TABS,
+    [canViewMaterialOrders]
+  )
   const requestedTab = searchParams.get('tab')
-  const activeTab = isJobDetailTabKey(requestedTab) ? requestedTab : 'documents'
+  const activeTab =
+    tabs.find((tab) => tab.key === requestedTab)?.key ?? 'documents'
 
   function handleTabChange(nextTab: JobDetailTabKey) {
     const nextParams = new URLSearchParams(searchParams.toString())
@@ -49,7 +59,7 @@ export default function JobDetailTabs({
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap gap-2 rounded-[1.6rem] border border-white/10 bg-[#0b0f16]/95 p-3 shadow-[0_18px_45px_rgba(0,0,0,0.2)]">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const isActive = activeTab === tab.key
 
           return (
@@ -72,6 +82,9 @@ export default function JobDetailTabs({
       {activeTab === 'documents' ? <JobDocumentsPanel jobId={jobId} /> : null}
       {activeTab === 'photos' ? <PhotosSection jobId={jobId} /> : null}
       {activeTab === 'payments' ? <JobPaymentsPanel jobId={jobId} /> : null}
+      {activeTab === 'materials' && canViewMaterialOrders ? (
+        <MaterialOrdersJobPanel jobId={jobId} homeownerName={homeownerName} />
+      ) : null}
     </section>
   )
 }

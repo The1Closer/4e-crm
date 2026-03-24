@@ -10,7 +10,6 @@ import QuickUploadSection from './QuickUploadSection'
 import JobDetailTabs from './JobDetailTabs'
 import NotesSection from './NotesSection'
 import TasksPanel from '@/components/tasks/TasksPanel'
-import MaterialOrdersJobPanel from '@/components/material-orders/MaterialOrdersJobPanel'
 import { authorizedFetch } from '@/lib/api-client'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
 import { calculateJobPaymentSummary } from '@/lib/job-payments'
@@ -655,14 +654,11 @@ export default function JobDetailPageClient({
           />
         </section>
 
-        {canDeleteJob ? (
-          <MaterialOrdersJobPanel
-            jobId={payload.job.id}
-            homeownerName={homeowner?.name ?? 'this job'}
-          />
-        ) : null}
-
-        <JobDetailTabs jobId={payload.job.id} />
+        <JobDetailTabs
+          jobId={payload.job.id}
+          homeownerName={homeowner?.name ?? 'this job'}
+          canViewMaterialOrders={canDeleteJob}
+        />
       </div>
     </main>
   )
