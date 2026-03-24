@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import BranchDashboard from '@/components/dashboard/BranchDashboard'
 import TeamDashboard from '@/components/dashboard/TeamDashboard'
 import IndividualDashboard from '@/components/dashboard/IndividualDashboard'
-import type { UserProfile } from '@/lib/auth-helpers'
+import { isManagerLike, type UserProfile } from '@/lib/auth-helpers'
 
 function normalizeRole(role?: string | null) {
   return (role ?? '').trim().toLowerCase()
@@ -31,7 +31,7 @@ export default function DashboardTabs({
 }) {
   const normalizedRole = normalizeRole(role)
 
-  const showTeam = normalizedRole === 'sales_manager'
+  const showTeam = isManagerLike(normalizedRole)
 
   const availableTabs = useMemo(() => {
     const tabs: Array<'branch' | 'team' | 'individual'> = ['branch']

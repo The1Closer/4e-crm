@@ -126,7 +126,15 @@ export default function TeamUsersPage() {
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
-  const [roleFilter, setRoleFilter] = useState<'all' | 'rep' | 'manager' | 'sales_manager' | 'admin'>('all')
+  const [roleFilter, setRoleFilter] = useState<
+    | 'all'
+    | 'rep'
+    | 'manager'
+    | 'sales_manager'
+    | 'production_manager'
+    | 'social_media_coordinator'
+    | 'admin'
+  >('all')
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -158,7 +166,13 @@ export default function TeamUsersPage() {
       supabase
         .from('profiles')
         .select('id, full_name, role')
-        .in('role', ['manager', 'sales_manager', 'admin'])
+        .in('role', [
+          'manager',
+          'sales_manager',
+          'production_manager',
+          'social_media_coordinator',
+          'admin',
+        ])
         .eq('is_active', true)
         .order('full_name', { ascending: true }),
 
@@ -678,6 +692,8 @@ export default function TeamUsersPage() {
                     <option value="rep">Rep</option>
                     <option value="manager">Manager</option>
                     <option value="sales_manager">Sales Manager</option>
+                    <option value="production_manager">Production Manager</option>
+                    <option value="social_media_coordinator">Social Media Coordinator</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
@@ -881,6 +897,8 @@ export default function TeamUsersPage() {
                   <option value="rep">Rep</option>
                   <option value="manager">Manager</option>
                   <option value="sales_manager">Sales Manager</option>
+                  <option value="production_manager">Production Manager</option>
+                  <option value="social_media_coordinator">Social Media Coordinator</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
@@ -1094,6 +1112,8 @@ export default function TeamUsersPage() {
                                 <option value="rep">Rep</option>
                                 <option value="manager">Manager</option>
                                 <option value="sales_manager">Sales Manager</option>
+                                <option value="production_manager">Production Manager</option>
+                                <option value="social_media_coordinator">Social Media Coordinator</option>
                                 <option value="admin">Admin</option>
                               </select>
                             </div>

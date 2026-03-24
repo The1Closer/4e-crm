@@ -5,7 +5,14 @@ import {
   PROFILE_SELECT_WITH_NIGHTLY_FIELDS,
 } from '@/lib/nightly-numbers'
 
-export type AppRole = 'admin' | 'manager' | 'sales_manager' | 'rep' | string
+export type AppRole =
+  | 'admin'
+  | 'manager'
+  | 'sales_manager'
+  | 'production_manager'
+  | 'social_media_coordinator'
+  | 'rep'
+  | string
 
 export type UserProfile = {
   id: string
@@ -79,7 +86,13 @@ export async function getCurrentUserProfile(): Promise<UserProfile | null> {
 }
 
 export function isManagerLike(role: AppRole | null | undefined) {
-  return role === 'admin' || role === 'manager' || role === 'sales_manager'
+  return (
+    role === 'admin' ||
+    role === 'manager' ||
+    role === 'sales_manager' ||
+    role === 'production_manager' ||
+    role === 'social_media_coordinator'
+  )
 }
 
 export function getPermissions(role: AppRole | null | undefined): AppPermissions {

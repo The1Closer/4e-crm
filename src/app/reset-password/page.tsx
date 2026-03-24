@@ -124,6 +124,42 @@ export default function ResetPasswordPage() {
     let isActive = true
 
     async function syncMode() {
+      const currentUrl = new URL(window.location.href)
+      const code = currentUrl.searchParams.get('code')
+      const tokenHash = currentUrl.searchParams.get('token_hash')
+      const type = currentUrl.searchParams.get('type')
+
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+
+        if (!isActive) {
+          return
+        }
+
+        if (error) {
+          setMessage(error.message)
+          setMessageTone('error')
+        } else {
+          window.history.replaceState({}, document.title, '/reset-password')
+        }
+      } else if (tokenHash && type === 'recovery') {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: 'recovery',
+        })
+
+        if (!isActive) {
+          return
+        }
+
+        if (error) {
+          setMessage(error.message)
+          setMessageTone('error')
+        } else {
+          window.history.replaceState({}, document.title, '/reset-password')
+        }
+      }
+
       const {
         data: { session },
       } = await supabase.auth.getSession()

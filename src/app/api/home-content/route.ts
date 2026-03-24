@@ -39,8 +39,21 @@ const SPOTLIGHT_SELECT = `
   updated_at
 `
 
-const MANAGER_ROLE_VALUES = new Set(['admin', 'manager', 'sales_manager'])
-const AUDIENCE_ROLE_VALUES = new Set(['admin', 'manager', 'sales_manager', 'rep'])
+const MANAGER_ROLE_VALUES = new Set([
+  'admin',
+  'manager',
+  'sales_manager',
+  'production_manager',
+  'social_media_coordinator',
+])
+const AUDIENCE_ROLE_VALUES = new Set([
+  'admin',
+  'manager',
+  'sales_manager',
+  'production_manager',
+  'social_media_coordinator',
+  'rep',
+])
 
 type ManageContentBody = {
   kind?: 'announcement' | 'spotlight'

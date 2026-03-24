@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { isManagerLike } from '@/lib/auth-helpers'
 import {
   isIncludedInNightlyNumbers,
   isMissingNightlyNumbersColumnError,
@@ -234,7 +235,7 @@ export async function loadDashboardDataset({
   }
 
   if (scope === 'team') {
-    if ((profile?.role ?? '') !== 'sales_manager') {
+    if (!isManagerLike(profile?.role)) {
       repRows = []
     } else {
       const { data } = await fetchNightlyRoster({

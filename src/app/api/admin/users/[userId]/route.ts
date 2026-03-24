@@ -20,7 +20,14 @@ type UpdateUserBody = {
   include_in_nightly_numbers?: boolean
 }
 
-const ALLOWED_ROLES = new Set(['admin', 'manager', 'sales_manager', 'rep'])
+const ALLOWED_ROLES = new Set([
+  'admin',
+  'manager',
+  'sales_manager',
+  'production_manager',
+  'social_media_coordinator',
+  'rep',
+])
 
 function normalizeText(value: unknown) {
   if (typeof value !== 'string') return null

@@ -19,7 +19,14 @@ type CreateUserBody = {
   include_in_nightly_numbers?: boolean
 }
 
-const ALLOWED_ROLES = ['manager', 'sales_manager', 'rep', 'admin']
+const ALLOWED_ROLES = [
+  'manager',
+  'sales_manager',
+  'production_manager',
+  'social_media_coordinator',
+  'rep',
+  'admin',
+]
 
 export async function POST(req: NextRequest) {
   try {
@@ -105,7 +112,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Could not verify requester profile.' }, { status: 403 })
     }
 
-    const managerRoles = new Set(['manager', 'sales_manager', 'admin'])
+    const managerRoles = new Set([
+      'manager',
+      'sales_manager',
+      'production_manager',
+      'social_media_coordinator',
+      'admin',
+    ])
 
     if (!managerRoles.has(requesterProfile.role)) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })

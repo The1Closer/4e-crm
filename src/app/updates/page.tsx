@@ -423,6 +423,8 @@ function UpdatesPageContent() {
                     <option value="rep">Rep</option>
                     <option value="manager">Manager</option>
                     <option value="sales_manager">Sales Manager</option>
+                    <option value="production_manager">Production Manager</option>
+                    <option value="social_media_coordinator">Social Media Coordinator</option>
                     <option value="admin">Admin</option>
                   </select>
                 </LabeledField>
@@ -672,6 +674,8 @@ function UpdatesPageContent() {
                     <option value="rep">Rep</option>
                     <option value="manager">Manager</option>
                     <option value="sales_manager">Sales Manager</option>
+                    <option value="production_manager">Production Manager</option>
+                    <option value="social_media_coordinator">Social Media Coordinator</option>
                     <option value="admin">Admin</option>
                   </select>
                 </LabeledField>

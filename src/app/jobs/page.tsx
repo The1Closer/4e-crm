@@ -874,7 +874,7 @@ function JobsPageContent() {
 
   const managers = useMemo(
     () =>
-      profileOptions.filter((profile) => profile.role === 'sales_manager'),
+      profileOptions.filter((profile) => isManagerLike(profile.role)),
     [profileOptions]
   )
 

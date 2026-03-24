@@ -17,7 +17,13 @@ export type RouteRequester = {
   profile: RouteRequesterProfile
 }
 
-const MANAGER_ROLES = new Set(['admin', 'manager', 'sales_manager'])
+const MANAGER_ROLES = new Set([
+  'admin',
+  'manager',
+  'sales_manager',
+  'production_manager',
+  'social_media_coordinator',
+])
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
