@@ -1365,6 +1365,30 @@ export default function MaterialOrdersScreen() {
     }))
   }
 
+  function addPresetNamedOptionGroup(groupName: string) {
+    setPresetItemDraft((current) => {
+      const alreadyExists = current.optionGroups.some(
+        (group) => group.name.trim().toLowerCase() === groupName.trim().toLowerCase()
+      )
+
+      if (alreadyExists) {
+        return current
+      }
+
+      return {
+        ...current,
+        optionGroups: [
+          ...current.optionGroups,
+          {
+            id: createLocalId(),
+            name: groupName,
+            values: [],
+          },
+        ],
+      }
+    })
+  }
+
   function updatePresetOptionGroup(groupId: string, patch: Partial<PresetItemOptionGroupDraft>) {
     setPresetItemDraft((current) => ({
       ...current,
@@ -2755,19 +2779,35 @@ export default function MaterialOrdersScreen() {
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-white">Variant Groups</div>
-                <button
-                  type="button"
-                  onClick={addPresetOptionGroup}
-                  className={SECONDARY_BUTTON_CLASS_NAME}
-                >
-                  Add Group
-                </button>
+                <div className="text-sm font-semibold text-white">Option Groups</div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => addPresetNamedOptionGroup('Grade')}
+                    className={SECONDARY_BUTTON_CLASS_NAME}
+                  >
+                    Add Grade
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addPresetNamedOptionGroup('Color')}
+                    className={SECONDARY_BUTTON_CLASS_NAME}
+                  >
+                    Add Color
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addPresetOptionGroup}
+                    className={SECONDARY_BUTTON_CLASS_NAME}
+                  >
+                    Add Custom Group
+                  </button>
+                </div>
               </div>
 
               {presetItemDraft.optionGroups.length === 0 ? (
                 <div className="rounded-[1.4rem] border border-dashed border-white/14 bg-black/20 p-4 text-sm text-white/55">
-                  Add groups like Grade or Color if this preset item needs options.
+                  No selections yet. Add groups like Grade or Color.
                 </div>
               ) : (
                 <div className="grid gap-3">
