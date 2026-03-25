@@ -254,7 +254,10 @@ function getSmartPriorityScore(params: {
     'contracted',
     'contracted awaiting deposit',
     'contracted awaiting manager approval',
+    'deposit collected awaiting manager approval',
     'pre-production prep',
+    'contracted/pre-production prep',
+    'contracted / pre-production prep',
   ])
 
   if (activeMidStages.has(normalizedStage) && ageDays >= 7) {

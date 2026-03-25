@@ -154,6 +154,8 @@ const COMMISSION_STAGE_FALLBACK_LABELS = new Set([
   'contract executed',
   'pre-production prep',
   'pre production prep',
+  'contracted/pre-production prep',
+  'contracted / pre-production prep',
   'production',
   'production ready',
   'scheduled',

@@ -17,7 +17,12 @@ const CONTRACTED_LABELS = [
 ]
 
 const PRE_PRODUCTION_PREP_LABELS = new Set(
-  ['pre-production prep', 'pre production prep'].map((label) =>
+  [
+    'pre-production prep',
+    'pre production prep',
+    'contracted/pre-production prep',
+    'contracted / pre-production prep',
+  ].map((label) =>
     normalizeStageName(label)
   )
 )
@@ -30,8 +35,11 @@ const KNOWN_POST_CONTRACTED_LABELS = new Set([
   'contracted',
   'contracted awaiting deposit',
   'contracted awaiting manager approval',
+  'deposit collected awaiting manager approval',
   'pre-production prep',
   'pre production prep',
+  'contracted/pre-production prep',
+  'contracted / pre-production prep',
   'production',
   'production ready',
   'scheduled',
