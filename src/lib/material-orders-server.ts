@@ -85,6 +85,7 @@ function toNumber(value: unknown, fallback = 0) {
 
 function mapJobRow(row: LooseRow): MaterialJobOption {
   const homeowner = pickFirstRow(row.homeowners)
+  const stage = pickFirstRow(row.pipeline_stages)
 
   return {
     id: toStringValue(row.id),
@@ -92,6 +93,7 @@ function mapJobRow(row: LooseRow): MaterialJobOption {
     address: toStringOrNull(homeowner?.address) ?? 'No address on file',
     install_date: toStringOrNull(row.install_date),
     claim_number: toStringOrNull(row.claim_number),
+    stage_name: toStringOrNull(stage?.name),
   }
 }
 
@@ -241,6 +243,9 @@ export async function loadMaterialJobs() {
       id,
       install_date,
       claim_number,
+      pipeline_stages (
+        name
+      ),
       homeowners (
         name,
         address

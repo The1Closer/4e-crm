@@ -74,8 +74,8 @@ export function buildNavigationItems(permissions: AppPermissions): AppNavItem[] 
     },
     {
       href: '/material-orders',
-      label: 'Material Orders',
-      description: 'Build supplier orders, manage material templates, and keep production ordering organized.',
+      label: 'Production',
+      description: 'Run production workflow, track install-stage jobs, and manage supplier ordering.',
       icon: Package,
       show: permissions.canViewMaterialOrders,
       group: 'admin',

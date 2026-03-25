@@ -31,6 +31,7 @@ export type MaterialJobOption = {
   address: string
   install_date: string | null
   claim_number: string | null
+  stage_name: string | null
 }
 
 export type MaterialVendor = {

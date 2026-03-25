@@ -189,6 +189,10 @@ function formatDisplayDateTime(value: string | null | undefined) {
   })
 }
 
+function normalizeKanbanStage(value: string | null | undefined) {
+  return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
 function toDisplayNumber(value: number) {
   if (Number.isInteger(value)) {
     return String(value)
@@ -693,6 +697,58 @@ export default function MaterialOrdersScreen() {
       return haystack.includes(normalizedSearch)
     })
   }, [orders, search, statusFilter])
+
+  const productionKanbanColumns = useMemo(() => {
+    const columnDefs = [
+      {
+        key: 'pre-production',
+        label: 'Contracted/Pre-Production Prep',
+        matches: new Set([
+          'pre-production prep',
+          'pre production prep',
+          'contracted/pre-production prep',
+          'contracted / pre-production prep',
+        ]),
+      },
+      {
+        key: 'install-scheduled',
+        label: 'Install Scheduled',
+        matches: new Set(['install scheduled']),
+      },
+      {
+        key: 'install-complete',
+        label: 'Install Complete',
+        matches: new Set([
+          'install complete',
+          'installed',
+          'final qc',
+          'complete',
+          'completed',
+        ]),
+      },
+    ] as const
+
+    return columnDefs.map((column) => ({
+      key: column.key,
+      label: column.label,
+      jobs: jobs
+        .filter((job) => column.matches.has(normalizeKanbanStage(job.stage_name)))
+        .sort((left, right) => {
+          const leftTime = left.install_date
+            ? new Date(`${left.install_date}T00:00:00`).getTime()
+            : Number.POSITIVE_INFINITY
+          const rightTime = right.install_date
+            ? new Date(`${right.install_date}T00:00:00`).getTime()
+            : Number.POSITIVE_INFINITY
+
+          if (leftTime !== rightTime) {
+            return leftTime - rightTime
+          }
+
+          return left.homeowner_name.localeCompare(right.homeowner_name)
+        }),
+    }))
+  }, [jobs])
 
   const activeOrder = useMemo(
     () => orders.find((order) => order.id === activeOrderId) ?? null,
@@ -1837,7 +1893,7 @@ export default function MaterialOrdersScreen() {
             </div>
 
             <h1 className="mt-4 text-4xl font-bold tracking-tight text-white md:text-5xl">
-              Material Orders Command Center
+              Production Command Center
             </h1>
 
             <p className="mt-3 max-w-3xl text-base leading-7 text-white/68 md:text-lg">
@@ -1871,6 +1927,59 @@ export default function MaterialOrdersScreen() {
       {pageMessage ? (
         <SectionNotice tone={pageMessageTone}>{pageMessage}</SectionNotice>
       ) : null}
+
+      <section className={PANEL_CLASS_NAME}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+              Production Board
+            </div>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
+              Stage Kanban
+            </h2>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          {productionKanbanColumns.map((column) => (
+            <div
+              key={column.key}
+              className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-white/55">
+                  {column.label}
+                </div>
+                <div className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold text-white/70">
+                  {column.jobs.length}
+                </div>
+              </div>
+
+              {column.jobs.length === 0 ? (
+                <div className="mt-3 rounded-xl border border-dashed border-white/14 p-3 text-xs text-white/50">
+                  No jobs in this stage.
+                </div>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {column.jobs.map((job) => (
+                    <Link
+                      key={job.id}
+                      href={`/jobs/${job.id}`}
+                      className="block rounded-xl border border-white/10 bg-white/[0.04] p-3 transition hover:bg-white/[0.08]"
+                    >
+                      <div className="text-sm font-semibold text-white">{job.homeowner_name}</div>
+                      <div className="mt-1 text-xs text-white/60">{job.address}</div>
+                      <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#d6b37a]">
+                        Install {formatDisplayDate(job.install_date)}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <section className={PANEL_CLASS_NAME}>
