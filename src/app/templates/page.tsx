@@ -17,6 +17,8 @@ type TemplateRow = {
   created_at: string
 }
 
+const MAX_TEMPLATE_FILE_SIZE_BYTES = 50 * 1024 * 1024
+
 export default function TemplatesPage() {
   return (
     <ManagerOnlyRoute>
@@ -93,26 +95,82 @@ function TemplatesPageContent() {
       return
     }
 
+    if (file.type !== 'application/pdf') {
+      setMessage('Only PDF uploads are supported.')
+      return
+    }
+
+    if (file.size > MAX_TEMPLATE_FILE_SIZE_BYTES) {
+      setMessage('File is too large. Maximum upload size is 50 MB.')
+      return
+    }
+
     setUploading(true)
     setMessage('')
 
     try {
-      const formData = new FormData()
-      formData.set('name', name.trim())
-      formData.set('category', category.trim())
-      formData.set('file', file, `${slugifyFileName(file.name) || 'template'}.pdf`)
-
-      const response = await authorizedFetch('/api/templates', {
+      const fileNameWithoutPdf = file.name.replace(/\.pdf$/i, '')
+      const normalizedFileName = `${slugifyFileName(fileNameWithoutPdf) || 'template'}.pdf`
+      const createUploadResponse = await authorizedFetch('/api/templates', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'create_signed_upload',
+          fileName: normalizedFileName,
+        }),
       })
 
-      const result = (await response.json().catch(() => null)) as
+      const createUploadResult = (await createUploadResponse.json().catch(() => null)) as
+        | {
+            error?: string
+            upload?: {
+              filePath: string
+              token: string
+            }
+          }
+        | null
+
+      if (!createUploadResponse.ok || !createUploadResult?.upload) {
+        throw new Error(createUploadResult?.error || 'Could not prepare upload.')
+      }
+
+      const storageUploadRes = await supabase.storage
+        .from('documents')
+        .uploadToSignedUrl(
+          createUploadResult.upload.filePath,
+          createUploadResult.upload.token,
+          file,
+          {
+            contentType: 'application/pdf',
+            upsert: false,
+          }
+        )
+
+      if (storageUploadRes.error) {
+        throw new Error(storageUploadRes.error.message)
+      }
+
+      const finalizeResponse = await authorizedFetch('/api/templates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'finalize_signed_upload',
+          name: name.trim(),
+          category: category.trim(),
+          filePath: createUploadResult.upload.filePath,
+        }),
+      })
+
+      const finalizeResult = (await finalizeResponse.json().catch(() => null)) as
         | { error?: string }
         | null
 
-      if (!response.ok) {
-        throw new Error(result?.error || 'Upload failed.')
+      if (!finalizeResponse.ok) {
+        throw new Error(finalizeResult?.error || 'Upload failed.')
       }
 
       setName('')
