@@ -90,7 +90,7 @@ export default function NotificationBell() {
   return (
     <Link
       href="/notifications"
-      className={`relative inline-flex h-12 w-12 items-center justify-center rounded-[1.35rem] border shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:text-white ${
+      className={`relative inline-flex h-10 w-10 items-center justify-center rounded-[1rem] border shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:text-white sm:h-12 sm:w-12 sm:rounded-[1.35rem] ${
         hasUnread
           ? 'border-[#d6b37a]/35 bg-[#d6b37a]/12 text-white hover:border-[#d6b37a]/55 hover:bg-[#d6b37a]/18'
           : 'border-white/10 bg-white/[0.04] text-white/82 hover:border-white/15 hover:bg-white/[0.06]'
@@ -102,7 +102,7 @@ export default function NotificationBell() {
     >
       <BellIcon className={`h-4 w-4 ${hasUnread ? 'text-[#f0ce94]' : 'text-[#d6b37a]'}`} />
       {effectiveCount > 0 ? (
-        <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[22px] items-center justify-center rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-semibold text-white shadow-[0_10px_30px_rgba(239,68,68,0.38)]">
+        <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-[0_10px_30px_rgba(239,68,68,0.38)] sm:min-w-[22px] sm:px-2 sm:text-[11px]">
           {effectiveCount > 99 ? '99+' : effectiveCount}
         </span>
       ) : null}

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   ChevronRight,
+  Menu,
   PlusSquare,
   X,
 } from 'lucide-react'
@@ -35,6 +36,23 @@ function getInitials(name: string | null | undefined) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join('')
+}
+
+const MOBILE_NAV_PRIMARY_HREFS = [
+  '/dashboard',
+  '/jobs',
+  '/calendar/installs',
+  '/notifications',
+]
+
+function isNavItemActive(pathname: string, href: string) {
+  return pathname === href || (href !== '/' && pathname.startsWith(href))
+}
+
+function getMobileNavLabel(item: AppNavItem) {
+  if (item.href === '/calendar/installs') return 'Installs'
+  if (item.href === '/notifications') return 'Alerts'
+  return item.label
 }
 
 export default function AppShell({
@@ -103,6 +121,28 @@ export default function AppShell({
     account: visibleNavItems.filter((item) => item.group === 'account'),
   }
 
+  const mobilePrimaryItems: AppNavItem[] = []
+
+  for (const href of MOBILE_NAV_PRIMARY_HREFS) {
+    const match = visibleNavItems.find((item) => item.href === href)
+
+    if (match) {
+      mobilePrimaryItems.push(match)
+    }
+  }
+
+  if (mobilePrimaryItems.length < 4) {
+    for (const item of visibleNavItems) {
+      if (mobilePrimaryItems.length >= 4) break
+      if (item.href === '/jobs/new') continue
+      if (mobilePrimaryItems.some((entry) => entry.href === item.href)) continue
+      mobilePrimaryItems.push(item)
+    }
+  }
+
+  const hideMobileBottomNav = pathname.startsWith('/contracts/editor')
+  const mainBottomPaddingClass = hideMobileBottomNav ? 'pb-6' : 'pb-28 md:pb-6'
+
   return (
     <div className="min-h-screen bg-[#050505] text-white">
       <LiveNotificationToasts />
@@ -112,11 +152,11 @@ export default function AppShell({
       <header className="sticky top-0 z-50 border-b border-white/10 bg-black/40 backdrop-blur-2xl">
         <div className="mx-auto max-w-[1500px] px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-4">
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="group inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.35rem] border border-white/10 bg-white/[0.04] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition duration-200 hover:border-[#d6b37a]/30 hover:bg-white/[0.08] hover:text-white"
+                className="group inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[1rem] border border-white/10 bg-white/[0.04] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition duration-200 hover:border-[#d6b37a]/30 hover:bg-white/[0.08] hover:text-white sm:h-12 sm:w-12 sm:rounded-[1.35rem]"
                 aria-label="Open navigation"
               >
                 <span className="flex flex-col gap-1.5">
@@ -126,23 +166,23 @@ export default function AppShell({
                 </span>
               </button>
 
-              <Link href="/" className="group flex min-w-0 items-center gap-4">
-                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-[1.8rem] border border-[#d6b37a]/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] ring-1 ring-white/5 sm:h-24 sm:w-24">
+              <Link href="/" className="group flex min-w-0 items-center gap-3 sm:gap-4">
+                <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-[1.2rem] border border-[#d6b37a]/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] ring-1 ring-white/5 sm:h-24 sm:w-24 sm:rounded-[1.8rem]">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(214,179,122,0.18),transparent_55%)]" />
                   <Image
                     src="/4ELogo.png"
                     alt="4 Elements CRM"
                     fill
                     className="object-contain p-2 transition duration-300 group-hover:scale-[1.03]"
-                    sizes="96px"
+                    sizes="(max-width: 639px) 56px, 96px"
                   />
                 </div>
 
                 <div className="min-w-0 leading-none">
-                  <div className="truncate text-[11px] font-semibold uppercase tracking-[0.42em] text-[#d6b37a] sm:text-[12px]">
+                  <div className="truncate text-[10px] font-semibold uppercase tracking-[0.28em] text-[#d6b37a] sm:text-[12px] sm:tracking-[0.42em]">
                     4 Elements
                   </div>
-                  <div className="mt-2 truncate text-[2rem] font-bold tracking-[0.03em] text-white sm:text-[2.35rem]">
+                  <div className="mt-1 truncate text-[1.4rem] font-bold tracking-[0.02em] text-white sm:mt-2 sm:text-[2.35rem] sm:tracking-[0.03em]">
                     CRM
                   </div>
                 </div>
@@ -156,7 +196,7 @@ export default function AppShell({
               />
             </div>
 
-            <div className="flex shrink-0 items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               {permissions.canCreateJob ? (
                 <Link
                   href="/jobs/new"
@@ -195,7 +235,7 @@ export default function AppShell({
       </header>
 
       <aside
-        className={`fixed inset-y-0 left-0 z-[60] w-[360px] transform border-r border-white/10 bg-[#0d0d0d]/95 backdrop-blur-2xl shadow-[0_30px_80px_rgba(0,0,0,0.55)] transition duration-300 ${
+        className={`fixed inset-y-0 left-0 z-[60] w-[min(88vw,360px)] sm:w-[360px] transform border-r border-white/10 bg-[#0d0d0d]/95 backdrop-blur-2xl shadow-[0_30px_80px_rgba(0,0,0,0.55)] transition duration-300 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -294,7 +334,43 @@ export default function AppShell({
         />
       ) : null}
 
-      <main className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      <main className={`mx-auto max-w-[1500px] px-4 pt-6 sm:px-6 lg:px-8 ${mainBottomPaddingClass}`}>{children}</main>
+
+      {!hideMobileBottomNav ? (
+        <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-black/80 px-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] pt-2 backdrop-blur-2xl md:hidden">
+          <div className="mx-auto grid max-w-[1500px] grid-cols-5 gap-1">
+            {mobilePrimaryItems.map((item) => {
+              const Icon = item.icon
+              const active = isNavItemActive(pathname, item.href)
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex min-h-[58px] flex-col items-center justify-center rounded-[1rem] px-1 py-2 text-[10px] font-semibold transition ${
+                    active
+                      ? 'bg-[#d6b37a] text-black shadow-[0_12px_24px_rgba(214,179,122,0.2)]'
+                      : 'text-white/75 hover:bg-white/[0.06] hover:text-white'
+                  }`}
+                >
+                  <Icon className={`h-4 w-4 ${active ? 'text-black' : 'text-[#d6b37a]'}`} />
+                  <span className="mt-1 truncate">{getMobileNavLabel(item)}</span>
+                </Link>
+              )
+            })}
+
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="flex min-h-[58px] flex-col items-center justify-center rounded-[1rem] px-1 py-2 text-[10px] font-semibold text-white/75 transition hover:bg-white/[0.06] hover:text-white"
+              aria-label="Open menu"
+            >
+              <Menu className="h-4 w-4 text-[#d6b37a]" />
+              <span className="mt-1">Menu</span>
+            </button>
+          </div>
+        </nav>
+      ) : null}
     </div>
   )
 }
@@ -320,9 +396,7 @@ function NavGroup({
 
       <div className="space-y-2">
         {items.map((item) => {
-          const active =
-            pathname === item.href ||
-            (item.href !== '/' && pathname.startsWith(item.href))
+          const active = isNavItemActive(pathname, item.href)
 
           const Icon = item.icon
 

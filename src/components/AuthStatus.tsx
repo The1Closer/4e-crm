@@ -124,7 +124,7 @@ export default function AuthStatus() {
     return (
       <Link
         href="/sign-in"
-        className="rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-white/78 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.08] hover:text-white"
+        className="rounded-[1rem] border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-white/78 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.08] hover:text-white sm:rounded-[1.35rem] sm:px-4 sm:py-3"
       >
         Sign In
       </Link>
@@ -136,10 +136,10 @@ export default function AuthStatus() {
   const roleLabel = formatRoleLabel(profile?.role)
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5 sm:gap-2">
       <Link
         href="/profile"
-        className="group flex items-center gap-3 rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-3 py-2.5 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.06]"
+        className="group flex items-center gap-2 rounded-[1rem] border border-white/10 bg-white/[0.04] px-2 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.06] sm:gap-3 sm:rounded-[1.35rem] sm:px-3 sm:py-2.5"
       >
         {profile?.avatar_url ? (
           <Image
@@ -148,10 +148,10 @@ export default function AuthStatus() {
             width={44}
             height={44}
             unoptimized
-            className="h-11 w-11 rounded-[1rem] object-cover"
+            className="h-9 w-9 rounded-[0.75rem] object-cover sm:h-11 sm:w-11 sm:rounded-[1rem]"
           />
         ) : (
-          <div className="flex h-11 w-11 items-center justify-center rounded-[1rem] border border-white/10 bg-black/25 text-xs font-semibold text-[#d6b37a]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-[0.75rem] border border-white/10 bg-black/25 text-xs font-semibold text-[#d6b37a] sm:h-11 sm:w-11 sm:rounded-[1rem]">
             {initials}
           </div>
         )}
@@ -170,7 +170,7 @@ export default function AuthStatus() {
         type="button"
         onClick={handleSignOut}
         disabled={signingOut}
-        className="inline-flex h-12 w-12 items-center justify-center rounded-[1.35rem] border border-white/10 bg-white/[0.04] text-white/75 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white disabled:opacity-60"
+        className="inline-flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-white/[0.04] text-white/75 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white disabled:opacity-60 sm:h-12 sm:w-12 sm:rounded-[1.35rem]"
         aria-label="Sign out"
         title="Sign out"
       >
