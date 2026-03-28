@@ -1,15 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import JobsStageRail from '@/components/jobs/JobsStageRail'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
-import {
-  getStageColor,
-  normalizeStageName,
-} from '@/lib/job-stage-access'
+import { normalizeStageName } from '@/lib/job-stage-access'
 import {
   getGeocodeCache,
   loadGoogleMapsApi,
@@ -76,6 +73,7 @@ type GeocodedLead = {
   claimNumber: string
   insuranceCarrier: string
   stageName: string
+  stageSortOrder: number | null
   installDate: string | null
   repNames: string[]
   position: GoogleLatLngLiteral
@@ -88,6 +86,27 @@ type FailedGeocodeLead = {
 }
 
 const GOOGLE_MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? ''
+const EXTERNAL_INSTALL_MAP_URL = process.env.NEXT_PUBLIC_EXTERNAL_INSTALL_MAP_URL ?? ''
+
+function normalizeExternalMapUrl(value: string): string | null {
+  const trimmedValue = value.trim()
+
+  if (!trimmedValue) {
+    return null
+  }
+
+  try {
+    const parsedUrl = new URL(trimmedValue)
+
+    if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
+      return parsedUrl.toString()
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
 
 function getHomeowner(
   homeowner: JobRow['homeowners']
@@ -103,6 +122,17 @@ function getStageName(stage: JobRow['pipeline_stages']) {
   if (!stage) return 'No Stage'
   const item = Array.isArray(stage) ? stage[0] ?? null : stage
   return item?.name ?? 'No Stage'
+}
+
+function getStageSortOrder(stage: JobRow['pipeline_stages']) {
+  if (!stage) return null
+  const item = Array.isArray(stage) ? stage[0] ?? null : stage
+  return typeof item?.sort_order === 'number' ? item.sort_order : null
+}
+
+function buildDistinctStageColor(index: number) {
+  const hue = (index * 47) % 360
+  return `hsl(${hue} 78% 58%)`
 }
 
 function getRepNames(jobReps: JobRep[] | null): string[] {
@@ -179,6 +209,10 @@ function LeadMapPageContent() {
     resolved: 0,
     total: 0,
   })
+  const externalInstallMapUrl = useMemo(
+    () => normalizeExternalMapUrl(EXTERNAL_INSTALL_MAP_URL),
+    []
+  )
 
   useEffect(() => {
     let isActive = true
@@ -328,6 +362,7 @@ function LeadMapPageContent() {
           claimNumber: job.claim_number ?? '-',
           insuranceCarrier: job.insurance_carrier ?? '-',
           stageName: getStageName(job.pipeline_stages),
+          stageSortOrder: getStageSortOrder(job.pipeline_stages),
           installDate: job.install_date,
           repNames: getRepNames(job.job_reps),
         }
@@ -470,6 +505,58 @@ function LeadMapPageContent() {
     })
   }, [geocodedLeads, search, stageFilters])
 
+  const orderedVisibleStageNames = useMemo(() => {
+    const stageMeta = new Map<
+      string,
+      {
+        sortOrder: number | null
+        firstSeenIndex: number
+      }
+    >()
+
+    geocodedLeads.forEach((lead, index) => {
+      const existing = stageMeta.get(lead.stageName)
+
+      if (!existing) {
+        stageMeta.set(lead.stageName, {
+          sortOrder: lead.stageSortOrder,
+          firstSeenIndex: index,
+        })
+        return
+      }
+
+      if (
+        existing.sortOrder === null &&
+        typeof lead.stageSortOrder === 'number'
+      ) {
+        existing.sortOrder = lead.stageSortOrder
+      }
+    })
+
+    return Array.from(stageMeta.entries())
+      .sort((left, right) => {
+        const leftSortOrder = left[1].sortOrder
+        const rightSortOrder = right[1].sortOrder
+
+        if (leftSortOrder !== null && rightSortOrder !== null) {
+          if (leftSortOrder !== rightSortOrder) {
+            return leftSortOrder - rightSortOrder
+          }
+        } else if (leftSortOrder !== null) {
+          return -1
+        } else if (rightSortOrder !== null) {
+          return 1
+        }
+
+        if (left[0] !== right[0]) {
+          return left[0].localeCompare(right[0])
+        }
+
+        return left[1].firstSeenIndex - right[1].firstSeenIndex
+      })
+      .map(([stageName]) => stageName)
+  }, [geocodedLeads])
+
   const stageCounts = useMemo(() => {
     const counts = new Map<string, number>()
 
@@ -477,8 +564,28 @@ function LeadMapPageContent() {
       counts.set(lead.stageName, (counts.get(lead.stageName) ?? 0) + 1)
     })
 
-    return Array.from(counts.entries()).map(([name, count]) => ({ name, count }))
-  }, [geocodedLeads])
+    return orderedVisibleStageNames
+      .map((name) => ({
+        name,
+        count: counts.get(name) ?? 0,
+      }))
+      .filter((stage) => stage.count > 0)
+  }, [geocodedLeads, orderedVisibleStageNames])
+
+  const stageColorByName = useMemo(() => {
+    const colorMap = new Map<string, string>()
+
+    orderedVisibleStageNames.forEach((stageName, index) => {
+      colorMap.set(stageName, buildDistinctStageColor(index))
+    })
+
+    return colorMap
+  }, [orderedVisibleStageNames])
+
+  const getMapStageColor = useCallback(
+    (stageName: string) => stageColorByName.get(stageName) ?? '#94a3b8',
+    [stageColorByName]
+  )
 
   const selectedLead = useMemo(
     () => filteredLeads.find((lead) => lead.id === selectedLeadId) ?? filteredLeads[0] ?? null,
@@ -502,7 +609,7 @@ function LeadMapPageContent() {
         title: `${lead.homeownerName} - ${lead.stageName}`,
         icon: buildMarkerIcon(
           mapsApi,
-          getStageColor(lead.stageName),
+          getMapStageColor(lead.stageName),
           lead.id === selectedLead?.id
         ),
       })
@@ -522,7 +629,7 @@ function LeadMapPageContent() {
     }
 
     mapInstanceRef.current.fitBounds(bounds)
-  }, [filteredLeads, mapsApi, selectedLead])
+  }, [filteredLeads, getMapStageColor, mapsApi, selectedLead])
 
   const unresolvedAddressCount = addressableJobs.length - geocodedLeads.length
 
@@ -568,6 +675,16 @@ function LeadMapPageContent() {
             >
               Open Calendar
             </Link>
+            {externalInstallMapUrl ? (
+              <a
+                href={externalInstallMapUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-2xl border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/[0.1]"
+              >
+                Install Color Map
+              </a>
+            ) : null}
           </div>
         </div>
       </section>
@@ -600,6 +717,7 @@ function LeadMapPageContent() {
             activeStages={stageFilters}
             onStageToggle={toggleStageFilter}
             onClearStages={() => setStageFilters([])}
+            getStageColorForStage={getMapStageColor}
           />
         </div>
       </section>
@@ -642,149 +760,149 @@ function LeadMapPageContent() {
       ) : null}
 
       <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-        <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-4 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-2 pt-2">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
-                Live Map
-              </div>
-              <div className="mt-1 text-sm text-white/62">
-                Pins reflect currently visible, addressable leads.
-              </div>
-            </div>
-
-            {loading || loadingMap ? (
-              <div className="text-sm text-white/55">Loading map...</div>
-            ) : (
-              <div className="text-sm text-white/55">{filteredLeads.length} visible pins</div>
-            )}
-          </div>
-
-          <div className="h-[620px] overflow-hidden rounded-[1.6rem] border border-white/10 bg-[#0f0f0f]">
-            {!GOOGLE_MAPS_KEY ? (
-              <MapPanelState
-                title="Google Maps key required"
-                description="Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to your active environment before loading the live map."
-              />
-            ) : mapMessage ? (
-              <MapPanelState
-                title="Google Maps is unavailable"
-                description={mapMessage}
-              />
-            ) : (
-              <div
-                ref={mapRef}
-                className="h-full w-full rounded-[1.6rem]"
-              />
-            )}
-          </div>
-        </section>
-
-        <aside className="space-y-6">
-          <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
-              Selected Lead
-            </div>
-
-            {!selectedLead ? (
-              <div className="mt-4 rounded-[1.4rem] border border-dashed border-white/14 p-4 text-sm text-white/55">
-                Select a pin to inspect the homeowner and jump into the job.
-              </div>
-            ) : (
-              <div className="mt-4 space-y-4">
+            <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-4 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-2 pt-2">
                 <div>
-                  <div className="text-xl font-bold tracking-tight text-white">
-                    {selectedLead.homeownerName}
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+                    Live Map
                   </div>
-                  <div className="mt-1 text-sm text-white/55">
-                    {selectedLead.address}
+                  <div className="mt-1 text-sm text-white/62">
+                    Pins reflect currently visible, addressable leads.
                   </div>
                 </div>
 
-                <div
-                  className="inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
-                  style={{
-                    color: getStageColor(selectedLead.stageName),
-                    borderColor: `${getStageColor(selectedLead.stageName)}55`,
-                    backgroundColor: `${getStageColor(selectedLead.stageName)}14`,
-                  }}
-                >
-                  {selectedLead.stageName}
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <LeadFact label="Claim" value={selectedLead.claimNumber} />
-                  <LeadFact label="Carrier" value={selectedLead.insuranceCarrier} />
-                  <LeadFact label="Install" value={formatDate(selectedLead.installDate)} />
-                  <LeadFact
-                    label="Assignees"
-                    value={
-                      selectedLead.repNames.length > 0
-                        ? selectedLead.repNames.join(', ')
-                        : 'No one assigned'
-                    }
-                  />
-                </div>
-
-                <Link
-                  href={`/jobs/${selectedLead.id}`}
-                  className="inline-flex rounded-2xl bg-[#d6b37a] px-4 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85]"
-                >
-                  Open Job
-                </Link>
+                {loading || loadingMap ? (
+                  <div className="text-sm text-white/55">Loading map...</div>
+                ) : (
+                  <div className="text-sm text-white/55">{filteredLeads.length} visible pins</div>
+                )}
               </div>
-            )}
-          </section>
 
-          <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
-              Visible Leads
-            </div>
+              <div className="h-[620px] overflow-hidden rounded-[1.6rem] border border-white/10 bg-[#0f0f0f]">
+                {!GOOGLE_MAPS_KEY ? (
+                  <MapPanelState
+                    title="Google Maps key required"
+                    description="Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to your active environment before loading the live map."
+                  />
+                ) : mapMessage ? (
+                  <MapPanelState
+                    title="Google Maps is unavailable"
+                    description={mapMessage}
+                  />
+                ) : (
+                  <div
+                    ref={mapRef}
+                    className="h-full w-full rounded-[1.6rem]"
+                  />
+                )}
+              </div>
+            </section>
 
-            <div className="mt-4 space-y-3">
-              {filteredLeads.length === 0 ? (
-                <div className="rounded-[1.4rem] border border-dashed border-white/14 p-4 text-sm text-white/55">
-                  No leads match the current filters.
+            <aside className="space-y-6">
+              <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+                  Selected Lead
                 </div>
-              ) : (
-                filteredLeads.slice(0, 10).map((lead) => (
-                  <button
-                    key={lead.id}
-                    type="button"
-                    onClick={() => setSelectedLeadId(lead.id)}
-                    className={`w-full rounded-[1.3rem] border p-4 text-left transition ${
-                      lead.id === selectedLead?.id
-                        ? 'border-[#d6b37a]/35 bg-[#d6b37a]/10'
-                        : 'border-white/10 bg-black/20 hover:bg-white/[0.05]'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-white">
-                          {lead.homeownerName}
-                        </div>
-                        <div className="mt-1 text-xs text-white/48">
-                          {lead.address}
-                        </div>
-                      </div>
 
-                      <div
-                        className="h-3 w-3 shrink-0 rounded-full"
-                        style={{ backgroundColor: getStageColor(lead.stageName) }}
+                {!selectedLead ? (
+                  <div className="mt-4 rounded-[1.4rem] border border-dashed border-white/14 p-4 text-sm text-white/55">
+                    Select a pin to inspect the homeowner and jump into the job.
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <div className="text-xl font-bold tracking-tight text-white">
+                        {selectedLead.homeownerName}
+                      </div>
+                      <div className="mt-1 text-sm text-white/55">
+                        {selectedLead.address}
+                      </div>
+                    </div>
+
+                    <div
+                      className="inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
+                      style={{
+                        color: getMapStageColor(selectedLead.stageName),
+                        borderColor: `${getMapStageColor(selectedLead.stageName)}55`,
+                        backgroundColor: `${getMapStageColor(selectedLead.stageName)}14`,
+                      }}
+                    >
+                      {selectedLead.stageName}
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <LeadFact label="Claim" value={selectedLead.claimNumber} />
+                      <LeadFact label="Carrier" value={selectedLead.insuranceCarrier} />
+                      <LeadFact label="Install" value={formatDate(selectedLead.installDate)} />
+                      <LeadFact
+                        label="Assignees"
+                        value={
+                          selectedLead.repNames.length > 0
+                            ? selectedLead.repNames.join(', ')
+                            : 'No one assigned'
+                        }
                       />
                     </div>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-white/42">
-                      <span>{lead.stageName}</span>
-                      <span className="text-white/18">/</span>
-                      <span>{normalizeStageName(lead.stageName) ? 'Pinned' : 'Queued'}</span>
+                    <Link
+                      href={`/jobs/${selectedLead.id}`}
+                      className="inline-flex rounded-2xl bg-[#d6b37a] px-4 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85]"
+                    >
+                      Open Job
+                    </Link>
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+                  Visible Leads
+                </div>
+
+                <div className="mt-4 max-h-[560px] space-y-3 overflow-y-auto pr-1">
+                  {filteredLeads.length === 0 ? (
+                    <div className="rounded-[1.4rem] border border-dashed border-white/14 p-4 text-sm text-white/55">
+                      No leads match the current filters.
                     </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
-        </aside>
+                  ) : (
+                    filteredLeads.map((lead) => (
+                      <button
+                        key={lead.id}
+                        type="button"
+                        onClick={() => setSelectedLeadId(lead.id)}
+                        className={`w-full rounded-[1.3rem] border p-4 text-left transition ${
+                          lead.id === selectedLead?.id
+                            ? 'border-[#d6b37a]/35 bg-[#d6b37a]/10'
+                            : 'border-white/10 bg-black/20 hover:bg-white/[0.05]'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-white">
+                              {lead.homeownerName}
+                            </div>
+                            <div className="mt-1 text-xs text-white/48">
+                              {lead.address}
+                            </div>
+                          </div>
+
+                          <div
+                            className="h-3 w-3 shrink-0 rounded-full"
+                            style={{ backgroundColor: getMapStageColor(lead.stageName) }}
+                          />
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-white/42">
+                          <span>{lead.stageName}</span>
+                          <span className="text-white/18">/</span>
+                          <span>{normalizeStageName(lead.stageName) ? 'Pinned' : 'Queued'}</span>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </section>
+            </aside>
       </section>
     </div>
   )

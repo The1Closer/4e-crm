@@ -8,12 +8,14 @@ export default function JobsStageRail({
   onStageToggle,
   onClearStages,
   allLabel = 'All Stages',
+  getStageColorForStage,
 }: {
   counts: Array<{ name: string; count: number }>
   activeStages: string[]
   onStageToggle: (stage: string) => void
   onClearStages: () => void
   allLabel?: string
+  getStageColorForStage?: (stageName: string) => string
 }) {
   return (
     <section className="overflow-x-auto rounded-[2rem] border border-white/10 bg-white/[0.04] p-4 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
@@ -32,7 +34,9 @@ export default function JobsStageRail({
 
         {counts.map((stage) => {
           const isActive = activeStages.includes(stage.name)
-          const stageColor = getStageColor(stage.name)
+          const stageColor = getStageColorForStage
+            ? getStageColorForStage(stage.name)
+            : getStageColor(stage.name)
 
           return (
             <button
