@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { Plus, UserRound, X } from 'lucide-react'
+import { useMemo } from 'react'
+import { UserRound, X } from 'lucide-react'
 import AddressAutocompleteInput from '@/components/forms/AddressAutocompleteInput'
 import {
   type JobEditorValues,
@@ -22,8 +22,6 @@ export default function JobEditorFields({
   disabled?: boolean
   onChange: (patch: Partial<JobEditorValues>) => void
 }) {
-  const [repToAdd, setRepToAdd] = useState('')
-
   const selectedReps = useMemo(
     () => reps.filter((rep) => values.rep_ids.includes(rep.id)),
     [reps, values.rep_ids]
@@ -34,16 +32,12 @@ export default function JobEditorFields({
     [reps, values.rep_ids]
   )
 
-  const normalizedRepToAdd =
-    repToAdd && values.rep_ids.includes(repToAdd) ? '' : repToAdd
-
-  function addRep() {
-    if (!normalizedRepToAdd || values.rep_ids.includes(normalizedRepToAdd)) return
+  function addRep(repId: string) {
+    if (!repId || values.rep_ids.includes(repId)) return
 
     onChange({
-      rep_ids: [...values.rep_ids, normalizedRepToAdd],
+      rep_ids: [...values.rep_ids, repId],
     })
-    setRepToAdd('')
   }
 
   function removeRep(repId: string) {
@@ -201,38 +195,26 @@ export default function JobEditorFields({
           </div>
         )}
 
-        <div className="flex flex-col gap-3 md:flex-row">
-          <div className="flex-1">
-            <SelectField
-              label="Add Assignee"
-              value={normalizedRepToAdd}
-              disabled={disabled || availableReps.length === 0}
-              onChange={setRepToAdd}
-              options={[
-                {
-                  value: '',
-                  label:
-                    availableReps.length === 0
-                      ? 'No more assignees available'
-                      : 'Select an assignee',
-                },
-                ...availableReps.map((rep) => ({
-                  value: rep.id,
-                  label: rep.full_name,
-                })),
-              ]}
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={addRep}
-            disabled={disabled || !normalizedRepToAdd}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:opacity-60"
-          >
-            <Plus className="h-4 w-4 text-[#d6b37a]" />
-            Add Assignee
-          </button>
+        <div className="flex-1">
+          <SelectField
+            label="Add Assignee"
+            value=""
+            disabled={disabled || availableReps.length === 0}
+            onChange={addRep}
+            options={[
+              {
+                value: '',
+                label:
+                  availableReps.length === 0
+                    ? 'No more assignees available'
+                    : 'Select an assignee',
+              },
+              ...availableReps.map((rep) => ({
+                value: rep.id,
+                label: rep.full_name,
+              })),
+            ]}
+          />
         </div>
       </section>
     </div>

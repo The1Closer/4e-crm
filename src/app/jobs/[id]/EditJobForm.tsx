@@ -114,7 +114,6 @@ export default function EditJobForm({
   const [isEditing, setIsEditing] = useState(false)
   const [form, setForm] = useState<FormData>(initialData)
   const [selectedRepIds, setSelectedRepIds] = useState<string[]>(initialSelectedRepIds)
-  const [repToAdd, setRepToAdd] = useState('')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [messageTone, setMessageTone] = useState<'success' | 'error' | ''>('')
@@ -178,14 +177,6 @@ export default function EditJobForm({
     setSelectedRepIds((prev) => prev.filter((id) => id !== repId))
   }
 
-  function addRep() {
-    if (!repToAdd) return
-    if (selectedRepIds.includes(repToAdd)) return
-
-    setSelectedRepIds((prev) => [...prev, repToAdd])
-    setRepToAdd('')
-  }
-
   function handleOpenEdit() {
     setMessage('')
     setMessageTone('')
@@ -195,7 +186,6 @@ export default function EditJobForm({
   function handleCancel() {
     setForm(initialData)
     setSelectedRepIds(initialSelectedRepIds)
-    setRepToAdd('')
     setMessage('')
     setMessageTone('')
     setIsEditing(false)
@@ -255,7 +245,6 @@ export default function EditJobForm({
       }
 
       setIsEditing(false)
-      setRepToAdd('')
       window.dispatchEvent(
         new CustomEvent('job-detail:refresh', {
           detail: { jobId },
@@ -597,25 +586,26 @@ export default function EditJobForm({
                       <div className="mt-4 flex flex-col gap-3">
                         <select
                           className={INPUT_CLASS_NAME}
-                          value={repToAdd}
-                          onChange={(event) => setRepToAdd(event.target.value)}
+                          value=""
+                          disabled={availableReps.length === 0}
+                          onChange={(event) => {
+                            const repId = event.target.value
+
+                            if (!repId || selectedRepIds.includes(repId)) return
+                            setSelectedRepIds((prev) => [...prev, repId])
+                          }}
                         >
-                          <option value="">Select assignee to add</option>
+                          <option value="">
+                            {availableReps.length === 0
+                              ? 'No more assignees available'
+                              : 'Select assignee to add'}
+                          </option>
                           {availableReps.map((rep) => (
                             <option key={rep.id} value={rep.id}>
                               {rep.full_name}
                             </option>
                           ))}
                         </select>
-
-                        <button
-                          type="button"
-                          onClick={addRep}
-                          disabled={!repToAdd}
-                          className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:opacity-50"
-                        >
-                          Add Assignee
-                        </button>
                       </div>
                     </div>
                   </div>
