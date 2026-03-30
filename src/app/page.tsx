@@ -541,7 +541,7 @@ function HomePageContent() {
             </div>
           </div>
 
-          <section className="rounded-[2rem] border border-white/10 bg-black/20 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
+          <section className="rounded-[2rem] border border-white/10 bg-[var(--shell-surface-alt)] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
             <div className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[#d6b37a]">
               Today&apos;s Snapshot
             </div>
@@ -571,7 +571,7 @@ function HomePageContent() {
 
       <section className="grid gap-6 xl:grid-cols-2">
         <div className="space-y-6">
-          <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+          <section className="rounded-[2rem] border border-white/10 bg-[var(--shell-panel-bg)] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
             <SectionHeader
               eyebrow="Updates"
               title="Announcements & spotlight"
@@ -621,7 +621,7 @@ function HomePageContent() {
 
         <div className="space-y-6">
           {isIncludedInNightlyNumbers(profile) ? (
-            <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+            <section className="rounded-[2rem] border border-white/10 bg-[var(--shell-panel-bg)] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
               <SectionHeader
                 eyebrow="Weekly Numbers"
                 title="This week’s totals"
@@ -809,7 +809,7 @@ function HomePageContent() {
             </section>
           ) : null}
 
-          <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+          <section className="rounded-[2rem] border border-white/10 bg-[var(--shell-panel-bg)] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
             <SectionHeader
               eyebrow="Notifications"
               title="Unread right now"
@@ -860,7 +860,7 @@ function HomePageContent() {
         </div>
       </section>
 
-      <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+      <section className="rounded-[2rem] border border-white/10 bg-[var(--shell-panel-bg)] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
         <SectionHeader
           eyebrow="Quick Menu"
           title="Everything you can access"
@@ -1043,7 +1043,7 @@ function QuickSubmissionInput({
         inputMode={inputMode}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-base font-semibold text-white outline-none transition placeholder:text-white/22 focus:border-[#d6b37a]/40 focus:bg-black/30"
+        className="mt-2 w-full rounded-xl border border-white/10 bg-[var(--shell-surface-alt)] px-3 py-2.5 text-base font-semibold text-white outline-none transition placeholder:text-white/22 focus:border-[#d6b37a]/40 focus:bg-[var(--shell-surface-hover)]"
       />
     </label>
   )
@@ -1081,7 +1081,7 @@ function SpotlightCard({
 
       {spotlight.content_type === 'quote' ? (
         <div className="mt-5 space-y-4">
-          <blockquote className="rounded-[1.6rem] border border-white/10 bg-black/20 p-5 text-lg leading-8 text-white/78">
+          <blockquote className="rounded-[1.6rem] border border-white/10 bg-[var(--shell-surface-alt)] p-5 text-lg leading-8 text-white/78">
             “{spotlight.body}”
           </blockquote>
           {spotlight.quote_author ? (
@@ -1093,7 +1093,7 @@ function SpotlightCard({
       ) : (
         <div className="mt-5 space-y-4">
           {embedUrl ? (
-            <div className="overflow-hidden rounded-[1.6rem] border border-white/10 bg-black/30">
+            <div className="overflow-hidden rounded-[1.6rem] border border-white/10 bg-[var(--shell-surface-hover)]">
               <iframe
                 src={embedUrl}
                 title={spotlight.title}

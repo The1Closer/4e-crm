@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
 import {
   ChevronRight,
@@ -22,6 +23,10 @@ import {
   getPermissions,
   type UserProfile,
 } from '@/lib/auth-helpers'
+
+const ThemeToggle = dynamic(() => import('@/components/ThemeToggle'), {
+  ssr: false,
+})
 
 function formatRoleLabel(role: string | null | undefined) {
   return role?.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase()) || 'Team Member'
@@ -144,19 +149,19 @@ export default function AppShell({
   const mainBottomPaddingClass = hideMobileBottomNav ? 'pb-6' : 'pb-28 md:pb-6'
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--shell-text)]">
       <LiveNotificationToasts />
-      <div className="fixed inset-0 -z-20 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.07),transparent_24%),radial-gradient(circle_at_top_right,rgba(214,179,122,0.14),transparent_18%),linear-gradient(180deg,#151515_0%,#0b0b0b_46%,#030303_100%)]" />
-      <div className="fixed inset-0 -z-10 bg-[linear-gradient(135deg,rgba(255,255,255,0.02),transparent_35%,rgba(255,255,255,0.01)_62%,transparent)]" />
+      <div className="app-shell-bg-primary fixed inset-0 -z-20" />
+      <div className="app-shell-bg-secondary fixed inset-0 -z-10" />
 
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-black/40 backdrop-blur-2xl">
+      <header className="crm-shell-header sticky top-0 z-50 backdrop-blur-2xl">
         <div className="mx-auto max-w-[1500px] px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="group inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[1rem] border border-white/10 bg-white/[0.04] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition duration-200 hover:border-[#d6b37a]/30 hover:bg-white/[0.08] hover:text-white sm:h-12 sm:w-12 sm:rounded-[1.35rem]"
+                className="crm-glass crm-glass-hover group inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[1rem] text-[var(--shell-text-muted)] transition duration-200 hover:border-[#d6b37a]/30 hover:text-[var(--shell-text)] sm:h-12 sm:w-12 sm:rounded-[1.35rem]"
                 aria-label="Open navigation"
               >
                 <span className="flex flex-col gap-1.5">
@@ -182,7 +187,7 @@ export default function AppShell({
                   <div className="truncate text-[10px] font-semibold uppercase tracking-[0.28em] text-[#d6b37a] sm:text-[12px] sm:tracking-[0.42em]">
                     4 Elements
                   </div>
-                  <div className="mt-1 truncate text-[1.4rem] font-bold tracking-[0.02em] text-white sm:mt-2 sm:text-[2.35rem] sm:tracking-[0.03em]">
+                  <div className="mt-1 truncate text-[1.4rem] font-bold tracking-[0.02em] text-[var(--shell-text)] sm:mt-2 sm:text-[2.35rem] sm:tracking-[0.03em]">
                     CRM
                   </div>
                 </div>
@@ -207,6 +212,7 @@ export default function AppShell({
                 </Link>
               ) : null}
 
+              <ThemeToggle />
               <NotificationBell />
               <AuthStatus />
             </div>
@@ -235,23 +241,23 @@ export default function AppShell({
       </header>
 
       <aside
-        className={`fixed inset-y-0 left-0 z-[60] w-[min(88vw,360px)] sm:w-[360px] transform border-r border-white/10 bg-[#0d0d0d]/95 backdrop-blur-2xl shadow-[0_30px_80px_rgba(0,0,0,0.55)] transition duration-300 ${
+        className={`crm-shell-sidebar fixed inset-y-0 left-0 z-[60] w-[min(88vw,360px)] sm:w-[360px] transform backdrop-blur-2xl transition duration-300 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         <div className="flex h-full flex-col">
-          <div className="relative border-b border-white/10 px-6 py-7">
+          <div className="crm-shell-divider relative border-b px-6 py-7">
             <button
               type="button"
               onClick={() => setSidebarOpen(false)}
-              className="absolute right-5 top-5 inline-flex h-11 w-11 items-center justify-center rounded-[1.2rem] border border-white/10 bg-white/[0.04] text-white/70 transition hover:border-white/15 hover:bg-white/[0.08] hover:text-white"
+              className="crm-glass crm-glass-hover absolute right-5 top-5 inline-flex h-11 w-11 items-center justify-center rounded-[1.2rem] text-[var(--shell-text-soft)] hover:text-[var(--shell-text)]"
               aria-label="Close navigation"
             >
               <X className="h-4 w-4" />
             </button>
 
             <div className="flex flex-col items-center text-center">
-              <div className="relative h-20 w-20 overflow-hidden rounded-[1.8rem] border border-[#d6b37a]/20 bg-white/[0.04] shadow-[0_10px_30px_rgba(0,0,0,0.35)] sm:h-24 sm:w-24">
+              <div className="relative h-20 w-20 overflow-hidden rounded-[1.8rem] border border-[#d6b37a]/20 bg-[var(--shell-surface)] shadow-[0_10px_30px_rgba(0,0,0,0.35)] sm:h-24 sm:w-24">
                 <Image
                   src="/4ELogo.png"
                   alt="4 Elements CRM"
@@ -264,7 +270,7 @@ export default function AppShell({
               <div className="mt-5 text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
                 Navigation
               </div>
-              <div className="mt-2 text-2xl font-bold tracking-tight text-white">
+              <div className="mt-2 text-2xl font-bold tracking-tight text-[var(--shell-text)]">
                 Workspace Menu
               </div>
             </div>
@@ -272,14 +278,14 @@ export default function AppShell({
             <Link
               href="/profile"
               onClick={() => setSidebarOpen(false)}
-              className="mt-6 flex items-center gap-4 rounded-[1.75rem] border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)] transition hover:border-white/15 hover:bg-white/[0.06]"
+              className="crm-glass crm-glass-hover mt-6 flex items-center gap-4 rounded-[1.75rem] px-4 py-4"
             >
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.2rem] border border-white/10 bg-black/25 text-sm font-semibold text-[#d6b37a]">
+              <div className="crm-glass-alt flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.2rem] text-sm font-semibold text-[#d6b37a]">
                 {getInitials(profile?.full_name)}
               </div>
 
               <div className="min-w-0 text-left">
-                <div className="truncate text-base font-semibold text-white">
+                <div className="truncate text-base font-semibold text-[var(--shell-text)]">
                   {profile?.full_name || 'Loading profile...'}
                 </div>
                 <div className="mt-1 text-[11px] uppercase tracking-[0.2em] text-[#d6b37a]">
@@ -313,7 +319,7 @@ export default function AppShell({
           </div>
 
           {groupedNav.account.length > 0 ? (
-            <div className="border-t border-white/10 px-4 py-4">
+            <div className="crm-shell-divider border-t px-4 py-4">
               <NavGroup
                 title="Account"
                 items={groupedNav.account}
@@ -329,7 +335,7 @@ export default function AppShell({
         <button
           type="button"
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
+          className="crm-shell-overlay fixed inset-0 z-40 backdrop-blur-[2px]"
           aria-label="Close navigation overlay"
         />
       ) : null}
@@ -337,7 +343,7 @@ export default function AppShell({
       <main className={`mx-auto max-w-[1500px] px-4 pt-6 sm:px-6 lg:px-8 ${mainBottomPaddingClass}`}>{children}</main>
 
       {!hideMobileBottomNav ? (
-        <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-black/80 px-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] pt-2 backdrop-blur-2xl md:hidden">
+        <nav className="crm-shell-mobile-nav fixed inset-x-0 bottom-0 z-50 px-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] pt-2 backdrop-blur-2xl md:hidden">
           <div className="mx-auto grid max-w-[1500px] grid-cols-5 gap-1">
             {mobilePrimaryItems.map((item) => {
               const Icon = item.icon
@@ -350,7 +356,7 @@ export default function AppShell({
                   className={`flex min-h-[58px] flex-col items-center justify-center rounded-[1rem] px-1 py-2 text-[10px] font-semibold transition ${
                     active
                       ? 'bg-[#d6b37a] text-black shadow-[0_12px_24px_rgba(214,179,122,0.2)]'
-                      : 'text-white/75 hover:bg-white/[0.06] hover:text-white'
+                      : 'text-[var(--shell-text-muted)] hover:bg-[var(--shell-surface-hover)] hover:text-[var(--shell-text)]'
                   }`}
                 >
                   <Icon className={`h-4 w-4 ${active ? 'text-black' : 'text-[#d6b37a]'}`} />
@@ -362,7 +368,7 @@ export default function AppShell({
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
-              className="flex min-h-[58px] flex-col items-center justify-center rounded-[1rem] px-1 py-2 text-[10px] font-semibold text-white/75 transition hover:bg-white/[0.06] hover:text-white"
+              className="flex min-h-[58px] flex-col items-center justify-center rounded-[1rem] px-1 py-2 text-[10px] font-semibold text-[var(--shell-text-muted)] transition hover:bg-[var(--shell-surface-hover)] hover:text-[var(--shell-text)]"
               aria-label="Open menu"
             >
               <Menu className="h-4 w-4 text-[#d6b37a]" />
@@ -390,7 +396,7 @@ function NavGroup({
 
   return (
     <section className="mb-6">
-      <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/35">
+      <div className="crm-text-faint mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.24em]">
         {title}
       </div>
 
@@ -408,7 +414,7 @@ function NavGroup({
               className={`group flex items-center justify-between rounded-[1.4rem] px-4 py-3 text-sm font-semibold transition ${
                 active
                   ? 'bg-[linear-gradient(135deg,#d6b37a,#e2bf85)] text-black shadow-[0_12px_30px_rgba(214,179,122,0.25)]'
-                  : 'border border-white/8 bg-white/[0.03] text-white/75 hover:border-white/15 hover:bg-white/[0.07] hover:text-white'
+                  : 'crm-glass-alt crm-glass-hover text-[var(--shell-text-muted)] hover:text-[var(--shell-text)]'
               }`}
             >
               <span className="flex items-center gap-3">
@@ -416,7 +422,7 @@ function NavGroup({
                   className={`inline-flex h-10 w-10 items-center justify-center rounded-[1rem] ${
                     active
                       ? 'bg-black/10 text-black'
-                      : 'border border-white/10 bg-white/[0.03] text-[#d6b37a]'
+                      : 'crm-glass-alt text-[#d6b37a]'
                   }`}
                 >
                   <Icon className="h-4 w-4" />
@@ -428,7 +434,7 @@ function NavGroup({
                 className={`h-4 w-4 transition ${
                   active
                     ? 'text-black/70'
-                    : 'text-white/22 group-hover:translate-x-0.5 group-hover:text-white/45'
+                    : 'crm-text-faint group-hover:translate-x-0.5 group-hover:text-[var(--shell-text-soft)]'
                 }`}
               />
             </Link>

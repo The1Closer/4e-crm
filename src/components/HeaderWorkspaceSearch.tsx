@@ -376,9 +376,9 @@ export default function HeaderWorkspaceSearch({
             event.preventDefault()
             openJobsSearch()
           }}
-          className="flex items-center gap-2 rounded-[1.55rem] border border-white/10 bg-white/[0.05] p-2 shadow-[0_14px_40px_rgba(0,0,0,0.22)] backdrop-blur-2xl"
+          className="crm-glass flex items-center gap-2 rounded-[1.55rem] p-2 backdrop-blur-2xl"
         >
-          <label className="flex min-w-0 shrink-0 items-center gap-2 rounded-[1.15rem] border border-white/10 bg-black/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white/55">
+          <label className="crm-glass-alt flex min-w-0 shrink-0 items-center gap-2 rounded-[1.15rem] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--shell-text-soft)]">
             <ChevronDown className="h-4 w-4 text-[#d6b37a]" />
             <select
               value={scope}
@@ -387,14 +387,14 @@ export default function HeaderWorkspaceSearch({
                 setOpen(true)
                 void ensureJobsLoaded()
               }}
-              className="w-[112px] bg-transparent text-[11px] text-white outline-none"
+              className="w-[112px] bg-transparent text-[11px] text-[var(--shell-text)] outline-none"
               aria-label="Search scope"
             >
               {SEARCH_SCOPE_OPTIONS.map((option) => (
                 <option
                   key={option.value}
                   value={option.value}
-                  className="bg-[#101010] text-white"
+                  className="crm-select-option"
                 >
                   {option.label}
                 </option>
@@ -415,21 +415,21 @@ export default function HeaderWorkspaceSearch({
               void ensureJobsLoaded()
             }}
             placeholder="Search jobs, homeowners, addresses, claims, reps..."
-            className="min-w-0 flex-1 bg-transparent px-1 text-sm text-white outline-none placeholder:text-white/32"
+            className="min-w-0 flex-1 bg-transparent px-1 text-sm text-[var(--shell-text)] outline-none placeholder:text-[var(--shell-text-faint)]"
           />
 
           {loading ? (
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-white/55" />
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--shell-text-soft)]" />
           ) : null}
         </form>
 
         {open ? (
-          <div className="absolute inset-x-0 top-[calc(100%+0.75rem)] z-[80] overflow-hidden rounded-[1.6rem] border border-white/10 bg-[#0c0c0c]/96 shadow-[0_30px_80px_rgba(0,0,0,0.48)] backdrop-blur-2xl">
-            <div className="border-b border-white/10 px-4 py-3">
+          <div className="absolute inset-x-0 top-[calc(100%+0.75rem)] z-[80] overflow-hidden rounded-[1.6rem] border border-[var(--shell-border)] bg-[var(--shell-panel-bg)] shadow-[var(--shell-panel-shadow)] backdrop-blur-2xl">
+            <div className="crm-shell-divider border-b px-4 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
                 {normalizedQuery ? 'Search Results' : 'Recent Jobs'}
               </div>
-              <div className="mt-1 text-sm text-white/55">
+              <div className="mt-1 text-sm text-[var(--shell-text-soft)]">
                 {normalizedQuery
                   ? 'Jump into a file or open the full jobs board with this search.'
                   : 'Start typing to search by homeowner, address, claim, carrier, or rep.'}
@@ -438,12 +438,12 @@ export default function HeaderWorkspaceSearch({
 
             <div className="max-h-[420px] overflow-y-auto p-2">
               {loading && jobs.length === 0 ? (
-                <div className="flex items-center gap-3 rounded-[1.25rem] border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/55">
+                <div className="crm-glass-alt flex items-center gap-3 rounded-[1.25rem] px-4 py-4 text-sm text-[var(--shell-text-soft)]">
                   <Loader2 className="h-4 w-4 animate-spin text-[#d6b37a]" />
                   Loading searchable jobs...
                 </div>
               ) : searchResults.length === 0 ? (
-                <div className="rounded-[1.25rem] border border-dashed border-white/12 px-4 py-4 text-sm text-white/52">
+                <div className="rounded-[1.25rem] border border-dashed border-[var(--shell-border)] px-4 py-4 text-sm text-[var(--shell-text-soft)]">
                   No matching jobs found for this search yet.
                 </div>
               ) : (
@@ -453,19 +453,19 @@ export default function HeaderWorkspaceSearch({
                       key={result.id}
                       type="button"
                       onClick={() => openJob(result.id)}
-                      className="flex w-full items-start justify-between gap-4 rounded-[1.3rem] border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition hover:border-white/18 hover:bg-white/[0.06]"
+                      className="crm-glass-alt crm-glass-hover flex w-full items-start justify-between gap-4 rounded-[1.3rem] px-4 py-3 text-left"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <div className="truncate text-sm font-semibold text-white">
+                          <div className="truncate text-sm font-semibold text-[var(--shell-text)]">
                             {result.homeownerName}
                           </div>
-                          <div className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#d6b37a]">
+                          <div className="rounded-full border border-[var(--shell-border)] bg-[var(--shell-surface-hover)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#d6b37a]">
                             {result.stageName}
                           </div>
                         </div>
 
-                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-white/55">
+                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-[var(--shell-text-soft)]">
                           <span className="inline-flex items-center gap-1.5">
                             <MapPin className="h-3.5 w-3.5 text-[#d6b37a]" />
                             {result.address}
@@ -489,18 +489,18 @@ export default function HeaderWorkspaceSearch({
                         </div>
                       </div>
 
-                      <ArrowUpRight className="mt-1 h-4 w-4 shrink-0 text-white/28" />
+                      <ArrowUpRight className="mt-1 h-4 w-4 shrink-0 text-[var(--shell-text-faint)]" />
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="border-t border-white/10 p-2">
+            <div className="crm-shell-divider border-t p-2">
               <button
                 type="button"
                 onClick={openJobsSearch}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-[1.2rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
+                className="crm-glass crm-glass-hover inline-flex w-full items-center justify-center gap-2 rounded-[1.2rem] px-4 py-3 text-sm font-semibold text-[var(--shell-text)]"
               >
                 <Search className="h-4 w-4 text-[#d6b37a]" />
                 {normalizedQuery ? 'Open Full Jobs Search' : 'Open Jobs Board'}

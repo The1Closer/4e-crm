@@ -930,14 +930,14 @@ function InstallCalendarContent() {
         </section>
       ) : null}
 
-      <section className="rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(12,16,25,0.98),rgba(9,12,19,0.95))] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+      <section className="rounded-[2rem] border border-white/10 bg-[var(--shell-panel-bg)] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <button
             type="button"
             onClick={() =>
               setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1))
             }
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[var(--shell-surface-alt)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
           >
             <ChevronLeft className="h-4 w-4" />
             Previous
@@ -957,7 +957,7 @@ function InstallCalendarContent() {
             onClick={() =>
               setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1))
             }
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[var(--shell-surface-alt)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
           >
             Next
             <ChevronRight className="h-4 w-4" />
@@ -965,7 +965,7 @@ function InstallCalendarContent() {
         </div>
 
         {loading ? (
-          <div className="flex items-center gap-3 rounded-[1.6rem] border border-white/10 bg-black/20 p-6 text-sm text-white/60">
+          <div className="flex items-center gap-3 rounded-[1.6rem] border border-white/10 bg-[var(--shell-surface-alt)] p-6 text-sm text-white/60">
             <Loader2 className="h-4 w-4 animate-spin text-[#d6b37a]" />
             Loading calendar...
           </div>
@@ -1006,7 +1006,7 @@ function InstallCalendarContent() {
                     }}
                     className={`flex min-h-[250px] flex-col rounded-[1.45rem] border p-2.5 transition ${
                       day.isCurrentMonth
-                        ? 'border-white/10 bg-black/22'
+                        ? 'border-white/10 bg-[var(--shell-surface-alt)]'
                         : 'border-white/6 bg-white/[0.02]'
                     } ${isDropTarget ? 'ring-2 ring-[#d6b37a]' : ''}`}
                   >
@@ -1253,7 +1253,7 @@ function InstallCalendarContent() {
                     <div className="mt-3 flex items-center gap-2">
                       <input
                         type="date"
-                        className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
+                        className="w-full rounded-xl border border-white/10 bg-[var(--shell-surface-alt)] px-3 py-2 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
                         value={job.install_date ?? ''}
                         onChange={(event) =>
                           void updateInstallDate(job.id, event.target.value || null)
@@ -1272,7 +1272,7 @@ function InstallCalendarContent() {
         </div>
       </section>
 
-      <section className="rounded-[2rem] border border-white/10 bg-[#0b0f16]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+      <section className="rounded-[2rem] border border-white/10 bg-[var(--shell-panel-bg)] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
@@ -1551,7 +1551,7 @@ function CalendarEntryCard({
           <div className="mt-2.5">
             <input
               type="date"
-              className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
+              className="w-full rounded-xl border border-white/10 bg-[var(--shell-surface-alt)] px-3 py-2 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
               value={entry.job.install_date ?? ''}
               onChange={(event) => onInstallDateChange(event.target.value)}
             />
@@ -1636,7 +1636,7 @@ function CalendarEntryCard({
         <div className="mt-2.5">
           <input
             type="datetime-local"
-            className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
+            className="w-full rounded-xl border border-white/10 bg-[var(--shell-surface-alt)] px-3 py-2 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
             value={toLocalDateTimeInputValue(getTaskPrimaryDate(entry.task))}
             onChange={(event) => onTaskDateChange(event.target.value)}
           />

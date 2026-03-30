@@ -90,10 +90,10 @@ export default function NotificationBell() {
   return (
     <Link
       href="/notifications"
-      className={`relative inline-flex h-10 w-10 items-center justify-center rounded-[1rem] border shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:text-white sm:h-12 sm:w-12 sm:rounded-[1.35rem] ${
+      className={`relative inline-flex h-10 w-10 items-center justify-center rounded-[1rem] transition sm:h-12 sm:w-12 sm:rounded-[1.35rem] ${
         hasUnread
-          ? 'border-[#d6b37a]/35 bg-[#d6b37a]/12 text-white hover:border-[#d6b37a]/55 hover:bg-[#d6b37a]/18'
-          : 'border-white/10 bg-white/[0.04] text-white/82 hover:border-white/15 hover:bg-white/[0.06]'
+          ? 'border border-[#d6b37a]/35 bg-[#d6b37a]/12 text-[var(--shell-text)] shadow-[0_10px_30px_rgba(0,0,0,0.25)] hover:border-[#d6b37a]/55 hover:bg-[#d6b37a]/18'
+          : 'crm-glass crm-glass-hover text-[var(--shell-text-muted)] hover:text-[var(--shell-text)]'
       }`}
       aria-label={
         effectiveCount > 0 ? `${effectiveCount} unread notifications` : 'Notifications'
