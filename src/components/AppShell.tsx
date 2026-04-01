@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 
 import AuthStatus from '@/components/AuthStatus'
+import BugReportButton from '@/components/BugReportButton'
 import HeaderWorkspaceSearch from '@/components/HeaderWorkspaceSearch'
 import LiveNotificationToasts from '@/components/LiveNotificationToasts'
 import NotificationBell from '@/components/NotificationBell'
@@ -212,6 +213,7 @@ export default function AppShell({
                 </Link>
               ) : null}
 
+              <BugReportButton />
               <ThemeToggle />
               <NotificationBell />
               <AuthStatus />
