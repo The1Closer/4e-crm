@@ -39,6 +39,7 @@ type ManagerRow = {
 }
 
 type DraftRow = {
+  email: string
   full_name: string
   role: string
   phone: string
@@ -215,6 +216,7 @@ export default function TeamUsersPage() {
     const nextDrafts: Record<string, DraftRow> = {}
     for (const profile of nextProfiles) {
       nextDrafts[profile.id] = {
+        email: '',
         full_name: profile.full_name ?? '',
         role: profile.role ?? 'rep',
         phone: profile.phone ?? '',
@@ -363,6 +365,7 @@ export default function TeamUsersPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          email: draft.email || null,
           full_name: draft.full_name,
           role: draft.role,
           phone: draft.phone,
@@ -418,6 +421,7 @@ export default function TeamUsersPage() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        email: null,
         full_name: profile.full_name,
         role: profile.role,
         phone: profile.phone,
@@ -1077,6 +1081,22 @@ export default function TeamUsersPage() {
 
                           <div className="grid gap-4 md:grid-cols-2">
                             <div className="space-y-2">
+                              <label className={LABEL_CLASS_NAME}>Rep Email</label>
+                              <input
+                                className={INPUT_CLASS_NAME}
+                                type="email"
+                                value={draft.email}
+                                onChange={(e) =>
+                                  updateDraft(profile.id, { email: e.target.value })
+                                }
+                                placeholder="new-rep-email@example.com"
+                              />
+                              <p className="text-xs text-white/45">
+                                Managers can update rep emails and their own email.
+                              </p>
+                            </div>
+
+                            <div className="space-y-2">
                               <label className={LABEL_CLASS_NAME}>Full Name</label>
                               <input
                                 className={INPUT_CLASS_NAME}
@@ -1268,6 +1288,7 @@ export default function TeamUsersPage() {
                                 setDrafts((prev) => ({
                                   ...prev,
                                   [profile.id]: {
+                                    email: '',
                                     full_name: profile.full_name ?? '',
                                     role: profile.role ?? 'rep',
                                     phone: profile.phone ?? '',

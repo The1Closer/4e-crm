@@ -10,6 +10,7 @@ type RouteContext = {
 }
 
 type UpdateUserBody = {
+  email?: string | null
   full_name?: string | null
   role?: string | null
   phone?: string | null
@@ -33,6 +34,30 @@ function normalizeText(value: unknown) {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   return trimmed ? trimmed : null
+}
+
+function normalizeEmail(value: unknown) {
+  if (value === undefined || value === null) {
+    return null
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error('Invalid email.')
+  }
+
+  const trimmed = value.trim().toLowerCase()
+
+  if (!trimmed) {
+    return null
+  }
+
+  const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
+
+  if (!looksLikeEmail) {
+    throw new Error('Invalid email.')
+  }
+
+  return trimmed
 }
 
 function normalizeRole(value: unknown) {
@@ -83,10 +108,48 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     const role = normalizeRole(body.role)
     const managerId = normalizeText(body.manager_id)
     const repTypeId = normalizeRepTypeId(body.rep_type_id)
+    const nextEmail = normalizeEmail(body.email)
     const includeInNightlyNumbers =
       typeof body.include_in_nightly_numbers === 'boolean'
         ? body.include_in_nightly_numbers
         : undefined
+
+    const { data: targetProfile, error: targetProfileError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, role')
+      .eq('id', userId)
+      .single()
+
+    if (targetProfileError || !targetProfile) {
+      return NextResponse.json({ error: 'User not found.' }, { status: 404 })
+    }
+
+    if (nextEmail) {
+      const requesterRole = (authResult.requester.profile.role ?? '').trim()
+      const canEditTargetEmail =
+        requesterRole === 'admin' ||
+        userId === authResult.requester.profile.id ||
+        (targetProfile.role ?? '').trim() === 'rep'
+
+      if (!canEditTargetEmail) {
+        return NextResponse.json(
+          { error: 'Managers can edit rep emails and their own email.' },
+          { status: 403 }
+        )
+      }
+
+      const { error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
+        userId,
+        {
+          email: nextEmail,
+          email_confirm: true,
+        }
+      )
+
+      if (updateAuthError) {
+        return NextResponse.json({ error: updateAuthError.message }, { status: 400 })
+      }
+    }
 
     const updates: {
       full_name: string | null

@@ -17,6 +17,7 @@ import { getCurrentUserProfile, type UserProfile } from '@/lib/auth-helpers'
 import { supabase } from '@/lib/supabase'
 
 type ProfileForm = {
+  email: string
   full_name: string
   phone: string
   avatar_url: string
@@ -41,6 +42,7 @@ function ProfilePageContent() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [email, setEmail] = useState('')
   const [form, setForm] = useState<ProfileForm>({
+    email: '',
     full_name: '',
     phone: '',
     avatar_url: '',
@@ -70,6 +72,7 @@ function ProfilePageContent() {
       setProfile(nextProfile)
       setEmail(authData.user?.email ?? '')
       setForm({
+        email: authData.user?.email ?? '',
         full_name: nextProfile?.full_name ?? '',
         phone: nextProfile?.phone ?? '',
         avatar_url: nextProfile?.avatar_url ?? '',
@@ -106,7 +109,7 @@ function ProfilePageContent() {
       if (avatarFile) {
         avatarUrl = await uploadAvatarViaApi({
           file: avatarFile,
-          label: form.full_name || email || profile.id || 'avatar',
+          label: form.full_name || form.email || profile.id || 'avatar',
         })
       }
 
@@ -116,6 +119,7 @@ function ProfilePageContent() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          email: form.email,
           full_name: form.full_name,
           phone: form.phone,
           avatar_url: avatarUrl,
@@ -126,6 +130,7 @@ function ProfilePageContent() {
         | {
             error?: string
             profile?: UserProfile
+            email?: string | null
           }
         | null
 
@@ -136,10 +141,12 @@ function ProfilePageContent() {
       const nextProfile = result?.profile ?? (await getCurrentUserProfile())
       setProfile(nextProfile)
       setForm({
+        email: result?.email ?? form.email,
         full_name: nextProfile?.full_name ?? form.full_name,
         phone: nextProfile?.phone ?? form.phone,
         avatar_url: nextProfile?.avatar_url ?? avatarUrl ?? '',
       })
+      setEmail(result?.email ?? form.email)
       setAvatarFile(null)
       setAvatarPreview('')
       setMessageType('success')
@@ -155,6 +162,7 @@ function ProfilePageContent() {
 
   function resetForm() {
     setForm({
+      email,
       full_name: profile?.full_name ?? '',
       phone: profile?.phone ?? '',
       avatar_url: profile?.avatar_url ?? '',
@@ -246,7 +254,7 @@ function ProfilePageContent() {
             </div>
 
             <div className="mt-6 grid gap-3">
-              <ProfileSummary icon={UserRound} label="Email" value={email || 'Not available'} />
+              <ProfileSummary icon={UserRound} label="Email" value={form.email || 'Not available'} />
               <ProfileSummary icon={Phone} label="Phone" value={form.phone || 'No phone added'} />
               <ProfileSummary
                 icon={ShieldCheck}
@@ -303,6 +311,24 @@ function ProfilePageContent() {
           ) : null}
 
           <div className="mt-6 grid gap-5 md:grid-cols-2">
+            <label className="block">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
+                Email
+              </div>
+              <input
+                type="email"
+                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35"
+                value={form.email}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    email: event.target.value,
+                  }))
+                }
+                placeholder="Your email address"
+              />
+            </label>
+
             <label className="block">
               <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
                 Full Name
