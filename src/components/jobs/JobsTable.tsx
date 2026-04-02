@@ -66,7 +66,14 @@ export default function JobsTable({
                     </Link>
                   </td>
 
-                  <td className="px-4 py-4 text-white/75">{job.stageName}</td>
+                  <td className="px-4 py-4 text-white/75">
+                    <span
+                      className="block max-w-[240px] truncate whitespace-nowrap"
+                      title={job.stageName}
+                    >
+                      {job.stageName}
+                    </span>
+                  </td>
                   <td className="px-4 py-4 text-white/75">
                     {job.repNames.length ? job.repNames.join(', ') : '—'}
                   </td>
@@ -75,7 +82,7 @@ export default function JobsTable({
                   <td className="px-4 py-4 text-white">{formatCurrency(job.contractAmount)}</td>
                   <td className="px-4 py-4 text-white">{formatCurrency(job.remainingBalance)}</td>
                   <td className="px-4 py-4">
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-nowrap gap-2 whitespace-nowrap">
                       <Link
                         href={`/jobs/${job.id}`}
                         className="rounded-xl border border-white/12 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.1]"
