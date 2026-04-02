@@ -70,6 +70,8 @@ type ExistingDocumentNameRow = {
   file_name: string | null
 }
 
+const COLTAN_POWELL_FULL_NAME = 'Coltan Powell'
+
 function formatNotificationDate(value: string) {
   const [year, month, day] = value.split('-').map(Number)
 
@@ -231,6 +233,88 @@ async function notifyInstallScheduled(params: {
   if (rows.length === 0) return
 
   await supabaseAdmin.from('notifications').insert(rows)
+}
+
+function normalizeStageName(value: string | null | undefined) {
+  return (value ?? '').trim().toLowerCase()
+}
+
+function isApprovedStageName(value: string | null | undefined) {
+  return normalizeStageName(value) === 'approved'
+}
+
+function isInstallCompleteStageName(value: string | null | undefined) {
+  const normalized = normalizeStageName(value)
+  return normalized === 'install complete' || normalized.includes('install complete')
+}
+
+function isInstallScheduledStageName(value: string | null | undefined) {
+  const normalized = normalizeStageName(value)
+  return normalized === 'install scheduled' || normalized.includes('install scheduled')
+}
+
+async function findProfileIdByFullName(fullName: string) {
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('id')
+    .ilike('full_name', `%${fullName}%`)
+    .limit(1)
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  const row = Array.isArray(data) ? data[0] : null
+  return row?.id ?? null
+}
+
+async function notifyColtanStageWorkflow(params: {
+  jobId: string
+  actorUserId: string
+  stage: StageRow
+}) {
+  const coltanId = await findProfileIdByFullName(COLTAN_POWELL_FULL_NAME)
+
+  if (!coltanId) {
+    return
+  }
+
+  let title = ''
+  let message = ''
+
+  if (isApprovedStageName(params.stage.name)) {
+    title = 'Review for Supplements'
+    message = 'A job moved to Approved. Start supplementing.'
+  } else if (isInstallScheduledStageName(params.stage.name)) {
+    title = 'Install Scheduled'
+    message = 'Install Scheduled'
+  } else if (isInstallCompleteStageName(params.stage.name)) {
+    title = 'Send COC'
+    message = 'A job moved to Install Complete. Send COC.'
+  } else {
+    return
+  }
+
+  const { error } = await supabaseAdmin.from('notifications').insert({
+    user_id: coltanId,
+    actor_user_id: params.actorUserId,
+    type: 'stage_change',
+    title,
+    message,
+    link: `/jobs/${params.jobId}`,
+    job_id: params.jobId,
+    note_id: null,
+    metadata: {
+      stage_id: params.stage.id,
+      stage_name: params.stage.name,
+      workflow_alert: true,
+      target_user_name: COLTAN_POWELL_FULL_NAME,
+    },
+  })
+
+  if (error) {
+    throw new Error(error.message)
+  }
 }
 
 async function removeStoragePaths(
@@ -783,6 +867,18 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       } catch (notificationError) {
         console.error('Could not notify reps about the install schedule.', notificationError)
       }
+
+      if (targetStage) {
+        try {
+          await notifyColtanStageWorkflow({
+            jobId,
+            actorUserId: authResult.requester.profile.id,
+            stage: targetStage,
+          })
+        } catch (notificationError) {
+          console.error('Could not notify Coltan Powell about the stage workflow.', notificationError)
+        }
+      }
     } else if (targetStage && existingJob.stage_id !== stageId) {
       try {
         await notifyStageChange({
@@ -793,6 +889,16 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
         })
       } catch (notificationError) {
         console.error('Could not notify reps about the stage change.', notificationError)
+      }
+
+      try {
+        await notifyColtanStageWorkflow({
+          jobId,
+          actorUserId: authResult.requester.profile.id,
+          stage: targetStage,
+        })
+      } catch (notificationError) {
+        console.error('Could not notify Coltan Powell about the stage workflow.', notificationError)
       }
     }
 
