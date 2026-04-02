@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   type GoogleAutocompletePrediction,
   type GooglePlacesAutocompleteServiceInstance,
@@ -34,13 +34,21 @@ export default function AddressAutocompleteInput({
   id?: string
   name?: string
 }) {
-  const listId = useId()
   const autocompleteServiceRef = useRef<GooglePlacesAutocompleteServiceInstance | null>(null)
   const requestSequenceRef = useRef(0)
+  const blurTimeoutRef = useRef<number | null>(null)
   const [suggestionsEnabled, setSuggestionsEnabled] = useState(false)
   const [suggestions, setSuggestions] = useState<GoogleAutocompletePrediction[]>([])
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [isInputFocused, setIsInputFocused] = useState(false)
+
+  const normalizedValue = value.trim()
+  const shouldShowSuggestionList =
+    suggestionsEnabled &&
+    isInputFocused &&
+    normalizedValue.length >= MIN_ADDRESS_QUERY_LENGTH &&
+    suggestions.length > 0
 
   useEffect(() => {
     if (!GOOGLE_MAPS_KEY) {
@@ -93,8 +101,6 @@ export default function AddressAutocompleteInput({
 
   useEffect(() => {
     const autocompleteService = autocompleteServiceRef.current
-    const normalizedValue = value.trim()
-
     if (!suggestionsEnabled || !autocompleteService || disabled) {
       setSuggestions([])
       setIsLoadingSuggestions(false)
@@ -135,30 +141,68 @@ export default function AddressAutocompleteInput({
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [disabled, suggestionsEnabled, value])
+  }, [disabled, normalizedValue, suggestionsEnabled])
+
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current !== null) {
+        window.clearTimeout(blurTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  function handleSuggestionSelect(nextValue: string) {
+    onChange(nextValue)
+    setIsInputFocused(false)
+    setSuggestions([])
+  }
 
   return (
     <div className="space-y-2">
-      <input
-        id={id}
-        name={name}
-        type="text"
-        value={value}
-        disabled={disabled}
-        list={suggestionsEnabled ? listId : undefined}
-        autoComplete="street-address"
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        className={cn(DEFAULT_INPUT_CLASS_NAME, className)}
-      />
+      <div className="relative">
+        <input
+          id={id}
+          name={name}
+          type="text"
+          value={value}
+          disabled={disabled}
+          autoComplete="street-address"
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+          onFocus={() => {
+            if (blurTimeoutRef.current !== null) {
+              window.clearTimeout(blurTimeoutRef.current)
+              blurTimeoutRef.current = null
+            }
+            setIsInputFocused(true)
+          }}
+          onBlur={() => {
+            blurTimeoutRef.current = window.setTimeout(() => {
+              setIsInputFocused(false)
+            }, 120)
+          }}
+          className={cn(DEFAULT_INPUT_CLASS_NAME, className)}
+        />
 
-      {suggestionsEnabled ? (
-        <datalist id={listId}>
-          {suggestions.map((prediction) => (
-            <option key={prediction.place_id ?? prediction.description} value={prediction.description} />
-          ))}
-        </datalist>
-      ) : null}
+        {shouldShowSuggestionList ? (
+          <div className="absolute z-30 mt-2 max-h-64 w-full overflow-y-auto rounded-2xl border border-white/12 bg-[#10151f] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
+            {suggestions.map((prediction) => (
+              <button
+                key={prediction.place_id ?? prediction.description}
+                type="button"
+                onMouseDown={(event) => {
+                  // Prevent input blur before click so selection stays reliable on mobile Safari.
+                  event.preventDefault()
+                }}
+                onClick={() => handleSuggestionSelect(prediction.description)}
+                className="block w-full rounded-xl px-3 py-2 text-left text-sm text-white/85 transition hover:bg-white/10"
+              >
+                {prediction.description}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
 
       {suggestionsEnabled ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-white/45">

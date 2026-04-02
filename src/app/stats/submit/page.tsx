@@ -13,6 +13,11 @@ import {
   parseNightlyStatInputs,
   type NightlyStatInputValues,
 } from '@/lib/nightly-stat-inputs'
+import {
+  getPreviousDateString,
+  isMondayDateString,
+  toNightlyStatInputValues,
+} from '@/lib/nightly-stat-carryover'
 
 type FormState = NightlyStatInputValues
 
@@ -131,20 +136,42 @@ function SubmitNumbersPageContent() {
         return
       }
 
+      if (!data && isMondayDateString(effectiveReportDate)) {
+        const previousDate = getPreviousDateString(effectiveReportDate)
+        const { data: sundayData, error: sundayError } = await supabase
+          .from('rep_daily_stats')
+          .select(`
+            knocks,
+            talks,
+            inspections,
+            contingencies,
+            contracts_with_deposit,
+            revenue_signed
+          `)
+          .eq('rep_id', profile.id)
+          .eq('report_date', previousDate)
+          .maybeSingle()
+
+        if (sundayError) {
+          setMessage(sundayError.message)
+          setMessageType('error')
+          setForm(EMPTY_FORM)
+          setLoadingEntry(false)
+          return
+        }
+
+        setForm(toNightlyStatInputValues(sundayData))
+        setLoadingEntry(false)
+        return
+      }
+
       if (!data) {
         setForm(EMPTY_FORM)
         setLoadingEntry(false)
         return
       }
 
-      setForm({
-        knocks: String(data.knocks ?? ''),
-        talks: String(data.talks ?? ''),
-        inspections: String(data.inspections ?? ''),
-        contingencies: String(data.contingencies ?? ''),
-        contracts_with_deposit: String(data.contracts_with_deposit ?? ''),
-        revenue_signed: String(data.revenue_signed ?? ''),
-      })
+      setForm(toNightlyStatInputValues(data))
 
       setLoadingEntry(false)
     }

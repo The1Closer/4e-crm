@@ -131,6 +131,7 @@ const PAGE_SIZE_BY_VIEW: Record<JobsViewMode, number> = {
   table: 10,
   kanban: 999,
 }
+const TABLE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
 
 function formatCurrency(value: number | null) {
   if (value === null || value === undefined) return '-'
@@ -432,6 +433,7 @@ function JobsPageContent() {
   const [sortKey, setSortKey] = useState<JobsSortKey>('smart_priority')
   const [quickFilter, setQuickFilter] = useState<JobsQuickFilter>('all')
   const [currentPage, setCurrentPage] = useState(1)
+  const [tablePageSize, setTablePageSize] = useState(10)
   const [editingJob, setEditingJob] = useState<JobListRow | null>(null)
   const [taskSignalsByJobId, setTaskSignalsByJobId] = useState<
     Record<string, JobTaskSignal>
@@ -953,20 +955,27 @@ function JobsPageContent() {
     [filteredJobs]
   )
 
+  const pageSize = viewMode === 'table' ? tablePageSize : PAGE_SIZE_BY_VIEW[viewMode]
+  const totalPages =
+    viewMode === 'kanban'
+      ? 1
+      : Math.max(1, Math.ceil(normalizedJobs.length / pageSize))
+  const paginatedJobs =
+    viewMode === 'kanban'
+      ? normalizedJobs
+      : normalizedJobs.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
   useEffect(() => {
     if (viewMode === 'kanban') return
 
-    const maxPage = Math.max(
-      1,
-      Math.ceil(normalizedJobs.length / PAGE_SIZE_BY_VIEW[viewMode])
-    )
+    const maxPage = Math.max(1, Math.ceil(normalizedJobs.length / pageSize))
 
     const timer = setTimeout(() => {
       setCurrentPage((current) => Math.min(current, maxPage))
     }, 0)
 
     return () => clearTimeout(timer)
-  }, [normalizedJobs.length, viewMode])
+  }, [normalizedJobs.length, pageSize, viewMode])
 
   useEffect(() => {
     if (!repFilter) {
@@ -983,16 +992,6 @@ function JobsPageContent() {
 
     return () => clearTimeout(timer)
   }, [repFilter, visibleReps])
-
-  const pageSize = PAGE_SIZE_BY_VIEW[viewMode]
-  const totalPages =
-    viewMode === 'kanban'
-      ? 1
-      : Math.max(1, Math.ceil(normalizedJobs.length / pageSize))
-  const paginatedJobs =
-    viewMode === 'kanban'
-      ? normalizedJobs
-      : normalizedJobs.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   const totalContractAmount = useMemo(
     () => filteredJobs.reduce((sum, job) => sum + Number(job.contract_amount ?? 0), 0),
@@ -1458,6 +1457,21 @@ function JobsPageContent() {
                 pageSize={pageSize}
                 itemLabel="jobs"
                 onPageChange={setCurrentPage}
+                pageSizeOptions={
+                  viewMode === 'table' ? TABLE_PAGE_SIZE_OPTIONS : undefined
+                }
+                onPageSizeChange={
+                  viewMode === 'table'
+                    ? (nextPageSize) => {
+                        if (!TABLE_PAGE_SIZE_OPTIONS.includes(nextPageSize)) {
+                          return
+                        }
+
+                        setTablePageSize(nextPageSize)
+                        setCurrentPage(1)
+                      }
+                    : undefined
+                }
               />
             ) : null}
           </>

@@ -36,6 +36,11 @@ import {
   parseNightlyStatInputs,
   type NightlyStatInputValues,
 } from '@/lib/nightly-stat-inputs'
+import {
+  getPreviousDateString,
+  isMondayDateString,
+  toNightlyStatInputValues,
+} from '@/lib/nightly-stat-carryover'
 import { isIncludedInNightlyNumbers } from '@/lib/nightly-numbers'
 import { supabase } from '@/lib/supabase'
 
@@ -416,20 +421,46 @@ function HomePageContent() {
         return
       }
 
+      if (!data && isMondayDateString(todayLocalDate)) {
+        const previousDate = getPreviousDateString(todayLocalDate)
+        const { data: sundayData, error: sundayError } = await supabase
+          .from('rep_daily_stats')
+          .select(`
+            knocks,
+            talks,
+            inspections,
+            contingencies,
+            contracts_with_deposit,
+            revenue_signed
+          `)
+          .eq('rep_id', profile.id)
+          .eq('report_date', previousDate)
+          .maybeSingle()
+
+        if (!isActive) {
+          return
+        }
+
+        if (sundayError) {
+          setQuickSubmissionMessage(sundayError.message)
+          setQuickSubmissionMessageType('error')
+          setQuickSubmissionForm(EMPTY_QUICK_SUBMISSION_FORM)
+          setLoadingQuickSubmissionEntry(false)
+          return
+        }
+
+        setQuickSubmissionForm(toNightlyStatInputValues(sundayData))
+        setLoadingQuickSubmissionEntry(false)
+        return
+      }
+
       if (!data) {
         setQuickSubmissionForm(EMPTY_QUICK_SUBMISSION_FORM)
         setLoadingQuickSubmissionEntry(false)
         return
       }
 
-      setQuickSubmissionForm({
-        knocks: String(data.knocks ?? ''),
-        talks: String(data.talks ?? ''),
-        inspections: String(data.inspections ?? ''),
-        contingencies: String(data.contingencies ?? ''),
-        contracts_with_deposit: String(data.contracts_with_deposit ?? ''),
-        revenue_signed: String(data.revenue_signed ?? ''),
-      })
+      setQuickSubmissionForm(toNightlyStatInputValues(data))
       setLoadingQuickSubmissionEntry(false)
     }
 

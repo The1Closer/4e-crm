@@ -13,6 +13,10 @@ import {
   parseNightlyStatInputs,
   type NightlyStatInputValues,
 } from '@/lib/nightly-stat-inputs'
+import {
+  getPreviousDateString,
+  isMondayDateString,
+} from '@/lib/nightly-stat-carryover'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUserProfile } from '@/lib/auth-helpers'
 
@@ -238,7 +242,10 @@ function ManagerNightlyEntryContent() {
     const repIds = reps.map((rep) => rep.id)
     const monthStart = getMonthStart(date)
 
-    const [dayStatsResult, monthStatsResult] = await Promise.all([
+    const isMonday = isMondayDateString(date)
+    const previousDate = getPreviousDateString(date)
+
+    const [dayStatsResult, monthStatsResult, previousDayStatsResult] = await Promise.all([
       supabase
         .from('rep_daily_stats')
         .select(`
@@ -268,6 +275,22 @@ function ManagerNightlyEntryContent() {
         .gte('report_date', monthStart)
         .lte('report_date', date)
         .in('rep_id', repIds),
+      isMonday
+        ? supabase
+            .from('rep_daily_stats')
+            .select(`
+              rep_id,
+              report_date,
+              knocks,
+              talks,
+              inspections,
+              contingencies,
+              contracts_with_deposit,
+              revenue_signed
+            `)
+            .eq('report_date', previousDate)
+            .in('rep_id', repIds)
+        : Promise.resolve({ data: [], error: null }),
     ])
 
     if (dayStatsResult.error) {
@@ -290,25 +313,39 @@ function ManagerNightlyEntryContent() {
       return
     }
 
+    if (previousDayStatsResult.error) {
+      setMessageType('error')
+      setMessage(previousDayStatsResult.error.message)
+      setRows(reps.map(emptyRow))
+      setDayStats((dayStatsResult.data ?? []) as StatRow[])
+      setMonthStats((monthStatsResult.data ?? []) as StatRow[])
+      setLoading(false)
+      return
+    }
+
     const nextDayStats = (dayStatsResult.data ?? []) as StatRow[]
     const nextMonthStats = (monthStatsResult.data ?? []) as StatRow[]
+    const previousDayStats = (previousDayStatsResult.data ?? []) as StatRow[]
+    const previousDayByRepId = new Map(previousDayStats.map((row) => [row.rep_id, row]))
 
     const mappedRows: EditableRow[] = reps.map((rep) => {
       const existing = nextDayStats.find((row) => row.rep_id === rep.id)
+      const carryover = !existing && isMonday ? previousDayByRepId.get(rep.id) : null
+      const source = existing ?? carryover
 
-      if (!existing) {
+      if (!source) {
         return emptyRow(rep)
       }
 
       return {
         rep_id: rep.id,
         rep_name: rep.full_name,
-        knocks: String(existing.knocks ?? ''),
-        talks: String(existing.talks ?? ''),
-        inspections: String(existing.inspections ?? ''),
-        contingencies: String(existing.contingencies ?? ''),
-        contracts_with_deposit: String(existing.contracts_with_deposit ?? ''),
-        revenue_signed: String(existing.revenue_signed ?? ''),
+        knocks: String(source.knocks ?? ''),
+        talks: String(source.talks ?? ''),
+        inspections: String(source.inspections ?? ''),
+        contingencies: String(source.contingencies ?? ''),
+        contracts_with_deposit: String(source.contracts_with_deposit ?? ''),
+        revenue_signed: String(source.revenue_signed ?? ''),
       }
     })
 

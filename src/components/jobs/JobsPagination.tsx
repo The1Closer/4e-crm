@@ -9,6 +9,8 @@ export default function JobsPagination({
   pageSize,
   itemLabel,
   onPageChange,
+  pageSizeOptions,
+  onPageSizeChange,
 }: {
   page: number
   totalPages: number
@@ -16,8 +18,15 @@ export default function JobsPagination({
   pageSize: number
   itemLabel: string
   onPageChange: (page: number) => void
+  pageSizeOptions?: number[]
+  onPageSizeChange?: (pageSize: number) => void
 }) {
-  if (totalPages <= 1) return null
+  const hasPageSizeSelector =
+    Array.isArray(pageSizeOptions) &&
+    pageSizeOptions.length > 0 &&
+    typeof onPageSizeChange === 'function'
+
+  if (totalPages <= 1 && !hasPageSizeSelector) return null
 
   const start = (page - 1) * pageSize + 1
   const end = Math.min(page * pageSize, totalItems)
@@ -30,30 +39,51 @@ export default function JobsPagination({
         <span className="font-semibold text-white">{totalItems}</span> {itemLabel}
       </div>
 
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
-          className="inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:opacity-50"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Prev
-        </button>
+      <div className="flex flex-wrap items-center gap-3">
+        {hasPageSizeSelector ? (
+          <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-white/55">
+            Rows
+            <select
+              value={pageSize}
+              onChange={(event) => onPageSizeChange(Number(event.target.value))}
+              className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-semibold normal-case tracking-normal text-white outline-none transition focus:border-[#d6b37a]/35"
+            >
+              {pageSizeOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
 
-        <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm font-semibold text-white">
-          Page {page} / {totalPages}
-        </div>
+        {totalPages > 1 ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onPageChange(page - 1)}
+              disabled={page <= 1}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:opacity-50"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Prev
+            </button>
 
-        <button
-          type="button"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages}
-          className="inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:opacity-50"
-        >
-          Next
-          <ChevronRight className="h-4 w-4" />
-        </button>
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm font-semibold text-white">
+              Page {page} / {totalPages}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onPageChange(page + 1)}
+              disabled={page >= totalPages}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:opacity-50"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        ) : null}
       </div>
     </section>
   )
