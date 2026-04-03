@@ -2283,7 +2283,7 @@ export default function MaterialOrdersScreen() {
                           </button>
                         </div>
 
-                        <div className="grid gap-2 lg:grid-cols-[1.25fr_130px_110px]">
+                        <div className="grid gap-2 lg:grid-cols-3">
                           <LabeledField label="Item Name">
                             <input
                               className={FIELD_CLASS_NAME}
@@ -2423,7 +2423,7 @@ export default function MaterialOrdersScreen() {
             />
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 crm-grid-safe">
             <LabeledField label="Search">
               <input
                 className={FIELD_CLASS_NAME}
@@ -2640,7 +2640,7 @@ export default function MaterialOrdersScreen() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-[0.44fr_0.56fr]">
+          <div className="mt-6 grid gap-6 xl:grid-cols-2 crm-grid-safe">
             <div className="space-y-3">
               {presetItems.length === 0 ? (
                 <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-5 text-sm text-white/55">
@@ -2821,7 +2821,7 @@ export default function MaterialOrdersScreen() {
                           {group.values.map((value) => (
                             <div
                               key={value.id}
-                              className="grid gap-3 rounded-[1.2rem] border border-white/10 bg-white/[0.04] p-3 md:grid-cols-[minmax(0,1fr)_auto_auto]"
+                              className="grid gap-3 rounded-[1.2rem] border border-white/10 bg-white/[0.04] p-3 md:grid-cols-3 crm-grid-safe"
                             >
                               <input
                                 className={FIELD_CLASS_NAME}
@@ -2908,7 +2908,7 @@ export default function MaterialOrdersScreen() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-[0.42fr_0.58fr]">
+          <div className="mt-6 grid gap-6 xl:grid-cols-2 crm-grid-safe">
             <div className="space-y-3">
               {templates.length === 0 ? (
                 <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-5 text-sm text-white/55">
@@ -3050,7 +3050,7 @@ export default function MaterialOrdersScreen() {
                         </button>
                       </div>
 
-                      <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.45fr_0.45fr]">
+                      <div className="mt-4 grid gap-4 lg:grid-cols-3">
                         <LabeledField label="Item Name">
                           <input
                             className={FIELD_CLASS_NAME}
@@ -3189,7 +3189,7 @@ export default function MaterialOrdersScreen() {
                                     {group.values.map((value) => (
                                       <div
                                         key={value.id}
-                                        className="grid gap-3 rounded-[1.2rem] border border-white/10 bg-white/[0.04] p-3 md:grid-cols-[minmax(0,1fr)_auto_auto]"
+                                        className="grid gap-3 rounded-[1.2rem] border border-white/10 bg-white/[0.04] p-3 md:grid-cols-3 crm-grid-safe"
                                       >
                                         <input
                                           className={FIELD_CLASS_NAME}
@@ -3297,7 +3297,7 @@ export default function MaterialOrdersScreen() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-[0.42fr_0.58fr]">
+          <div className="mt-6 grid gap-6 xl:grid-cols-2 crm-grid-safe">
             <div className="space-y-3">
               {vendors.length === 0 ? (
                 <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-5 text-sm text-white/55">

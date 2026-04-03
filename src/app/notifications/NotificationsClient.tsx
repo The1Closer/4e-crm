@@ -239,7 +239,7 @@ export default function NotificationsClient() {
         <NotificationMetric label="Total" value={String(notifications.length)} />
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] crm-grid-safe">
         <TasksPanel
           title="Open Tasks And Appointments"
           description="Everything still in play for you, including general work and job-linked appointments that have not been completed yet."

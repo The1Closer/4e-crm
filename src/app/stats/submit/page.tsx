@@ -282,7 +282,7 @@ function SubmitNumbersPageContent() {
       </section>
 
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_80px_rgba(0,0,0,0.30)] backdrop-blur-2xl">
-        <div className="grid gap-4 md:grid-cols-[280px_1fr] md:items-end">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)] md:items-end crm-grid-safe">
           <label className="block">
             <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/45">
               Report Date

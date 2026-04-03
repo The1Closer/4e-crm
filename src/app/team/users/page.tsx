@@ -566,7 +566,7 @@ export default function TeamUsersPage() {
                 </p>
               </div>
 
-              <div className="grid w-full gap-3 sm:grid-cols-3 xl:w-auto xl:min-w-[460px]">
+              <div className="crm-grid-safe grid w-full gap-3 sm:grid-cols-3 xl:w-auto xl:min-w-0">
                 <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.05] p-4 backdrop-blur-xl">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
                     Total Users
@@ -866,21 +866,21 @@ export default function TeamUsersPage() {
           </section>
 
           <section className={PANEL_CLASS_NAME}>
-            <div className="mb-6 flex flex-wrap items-end gap-4">
-              <div className="min-w-[220px] flex-1">
+            <div className="crm-grid-safe mb-6 grid gap-4 md:grid-cols-3">
+              <div className="min-w-0 md:col-span-3 lg:col-span-1">
                 <label className={`mb-2 block ${LABEL_CLASS_NAME}`}>Search Users</label>
                 <input
-                  className={INPUT_CLASS_NAME}
+                  className={`${INPUT_CLASS_NAME} crm-clamp-input`}
                   placeholder="Search by name, phone, role, manager, or rep type"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
 
-              <div className="min-w-[180px]">
+              <div className="min-w-0">
                 <label className={`mb-2 block ${LABEL_CLASS_NAME}`}>Status</label>
                 <select
-                  className={INPUT_CLASS_NAME}
+                  className={`${INPUT_CLASS_NAME} crm-clamp-input`}
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
                 >
@@ -890,10 +890,10 @@ export default function TeamUsersPage() {
                 </select>
               </div>
 
-              <div className="min-w-[180px]">
+              <div className="min-w-0">
                 <label className={`mb-2 block ${LABEL_CLASS_NAME}`}>Role</label>
                 <select
-                  className={INPUT_CLASS_NAME}
+                  className={`${INPUT_CLASS_NAME} crm-clamp-input`}
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value as typeof roleFilter)}
                 >

@@ -696,7 +696,7 @@ function LeadMapPageContent() {
       </section>
 
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-        <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] crm-grid-safe">
           <input
             className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#d6b37a]/35"
             placeholder="Search homeowner, address, carrier, claim, rep..."
@@ -759,7 +759,7 @@ function LeadMapPageContent() {
         </section>
       ) : null}
 
-      <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)] crm-grid-safe">
             <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-4 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-2 pt-2">
                 <div>

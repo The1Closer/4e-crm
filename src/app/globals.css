@@ -430,3 +430,37 @@ html.theme-light .theme-force-dark :where(
 ) {
   background-color: initial !important;
 }
+
+/* Layout guardrails for responsive containment. */
+.crm-grid-safe > * {
+  min-width: 0;
+}
+
+.crm-control-row {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 640px) {
+  .crm-control-row--2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .crm-control-row--4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.crm-clamp-input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.crm-soft-scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}

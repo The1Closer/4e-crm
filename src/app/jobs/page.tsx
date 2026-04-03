@@ -1315,9 +1315,9 @@ function JobsPageContent() {
         />
 
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="crm-control-row crm-control-row--2 crm-control-row--4 crm-grid-safe">
             <input
-              className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#d6b37a]/35"
+              className="crm-clamp-input rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#d6b37a]/35"
               placeholder="Search homeowner, address, carrier, claim, rep..."
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -1349,10 +1349,10 @@ function JobsPageContent() {
 
             {isManagerLike(role) ? (
               <select
-                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
-              value={managerFilter}
-              onChange={(event) => setManagerFilter(event.target.value)}
-            >
+                className="crm-clamp-input rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
+                value={managerFilter}
+                onChange={(event) => setManagerFilter(event.target.value)}
+              >
                 <option value="">All Sales Managers</option>
                 {managers.map((manager) => (
                   <option key={manager.id} value={manager.id}>
@@ -1363,7 +1363,7 @@ function JobsPageContent() {
             ) : null}
 
             <select
-              className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
+              className="crm-clamp-input rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
               value={repFilter}
               onChange={(event) => setRepFilter(event.target.value)}
             >

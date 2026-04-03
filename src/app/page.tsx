@@ -72,6 +72,7 @@ const EMPTY_QUICK_SUBMISSION_FORM: NightlyStatInputValues = {
 type HomeContentResponse = {
   announcements?: AnnouncementContentRow[]
   spotlight?: SpotlightContentRow | null
+  spotlights?: SpotlightContentRow[]
   error?: string
 }
 
@@ -218,7 +219,7 @@ function HomePageContent() {
   const [loading, setLoading] = useState(true)
   const [homeError, setHomeError] = useState('')
   const [announcements, setAnnouncements] = useState<AnnouncementContentRow[]>([])
-  const [spotlight, setSpotlight] = useState<SpotlightContentRow | null>(null)
+  const [spotlights, setSpotlights] = useState<SpotlightContentRow[]>([])
   const [unreadNotifications, setUnreadNotifications] = useState<NotificationItem[]>([])
   const [weeklyNumbers, setWeeklyNumbers] = useState<WeeklyNumbersSummary | null>(null)
   const [weeklyNumbersTab, setWeeklyNumbersTab] = useState<WeeklyNumbersTab>('totals')
@@ -323,7 +324,10 @@ function HomePageContent() {
         }
 
         setAnnouncements(contentResult?.announcements ?? [])
-        setSpotlight(contentResult?.spotlight ?? null)
+        setSpotlights(
+          contentResult?.spotlights ??
+            (contentResult?.spotlight ? [contentResult.spotlight] : [])
+        )
         setUnreadNotifications(
           notificationsResult.filter((notification) => !notification.is_read).slice(0, 5)
         )
@@ -548,7 +552,7 @@ function HomePageContent() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,179,122,0.24),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.06),transparent_22%)]" />
         <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(214,179,122,0.7),transparent)]" />
 
-        <div className="relative grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] crm-grid-safe">
           <div className="space-y-6">
             <div className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-[#d6b37a]">
               CRM Home
@@ -611,7 +615,7 @@ function HomePageContent() {
 
             {loading ? (
               <div className="mt-6 text-sm text-white/55">Loading updates…</div>
-            ) : announcements.length === 0 && !spotlight ? (
+            ) : announcements.length === 0 && spotlights.length === 0 ? (
               <div className="mt-6 rounded-[1.6rem] border border-dashed border-white/12 bg-white/[0.03] px-4 py-5 text-sm text-white/50">
                 No announcements or spotlight content are active right now.
               </div>
@@ -635,7 +639,9 @@ function HomePageContent() {
                   </article>
                 ))}
 
-                {spotlight ? <SpotlightCard spotlight={spotlight} /> : null}
+                {spotlights.map((spotlight) => (
+                  <SpotlightCard key={spotlight.id} spotlight={spotlight} />
+                ))}
               </div>
             )}
           </section>

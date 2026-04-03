@@ -249,7 +249,7 @@ function TemplatesPageContent() {
         </section>
       ) : null}
 
-      <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] crm-grid-safe">
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">

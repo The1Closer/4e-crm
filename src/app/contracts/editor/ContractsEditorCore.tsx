@@ -1348,7 +1348,7 @@ export default function ContractsEditorCore() {
             <StatusPill>{annotations.length} overlay item(s)</StatusPill>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)_220px_220px_220px]">
+          <div className="crm-grid-safe grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <input
               className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35"
               placeholder="Document name"
@@ -1472,7 +1472,7 @@ export default function ContractsEditorCore() {
         </div>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+      <div className="crm-grid-safe grid gap-6 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
         <aside className="space-y-4">
           <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
             <PanelTitle

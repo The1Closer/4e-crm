@@ -716,7 +716,7 @@ function CommissionsPageContent() {
       </section>
 
       <section className={`${SURFACE_CLASS} p-5`}>
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,300px)] crm-grid-safe">
           <label className="block">
             <div className={FIELD_LABEL_CLASS}>Search Queue</div>
             <div className="flex items-center gap-3 rounded-[1.35rem] border border-white/10 bg-black/20 px-4 py-3">

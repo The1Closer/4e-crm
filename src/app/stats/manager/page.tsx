@@ -593,7 +593,7 @@ function ManagerNightlyEntryContent() {
               </p>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto crm-soft-scroll-x">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/10 text-left text-white/45">
@@ -689,7 +689,7 @@ function ManagerNightlyEntryContent() {
               </p>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto crm-soft-scroll-x">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/10 text-left text-white/45">

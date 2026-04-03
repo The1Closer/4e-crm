@@ -34,7 +34,7 @@ export default function JobsTable({
 }) {
   return (
     <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto crm-soft-scroll-x">
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b border-white/10 text-left text-white/45">
