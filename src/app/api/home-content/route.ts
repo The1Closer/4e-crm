@@ -245,7 +245,7 @@ export async function POST(req: NextRequest) {
   const title = (body.title ?? '').trim()
   const contentBody = (body.body ?? '').trim()
 
-  if (!title || !contentBody) {
+  if (kind === 'announcement' && (!title || !contentBody)) {
     return NextResponse.json(
       { error: 'Title and body are required.' },
       { status: 400 }
@@ -289,8 +289,8 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabaseAdmin
     .from('home_spotlights')
     .insert({
-      title,
-      body: contentBody,
+      title: title || '',
+      body: contentBody || '',
       content_type: contentType,
       media_url: normalizeNullableText(body.media_url),
       quote_author: normalizeNullableText(body.quote_author),
@@ -332,9 +332,14 @@ export async function PATCH(req: NextRequest) {
   const title = (body.title ?? '').trim()
   const contentBody = (body.body ?? '').trim()
 
-  if (!id || !title || !contentBody) {
+  if (!id || (kind === 'announcement' && (!title || !contentBody))) {
     return NextResponse.json(
-      { error: 'Content id, title, and body are required.' },
+      {
+        error:
+          kind === 'announcement'
+            ? 'Content id, title, and body are required.'
+            : 'Content id is required.',
+      },
       { status: 400 }
     )
   }
@@ -376,8 +381,8 @@ export async function PATCH(req: NextRequest) {
   const { data, error } = await supabaseAdmin
     .from('home_spotlights')
     .update({
-      title,
-      body: contentBody,
+      title: title || '',
+      body: contentBody || '',
       content_type: contentType,
       media_url: normalizeNullableText(body.media_url),
       quote_author: normalizeNullableText(body.quote_author),
