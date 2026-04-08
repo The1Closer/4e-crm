@@ -139,22 +139,6 @@ export default function JobEditorFields({
             type="date"
             onChange={(value) => onChange({ install_date: value })}
           />
-          <Field
-            label="Contract Amount"
-            value={values.contract_amount}
-            disabled={disabled}
-            placeholder="0"
-            inputMode="decimal"
-            onChange={(value) => onChange({ contract_amount: value })}
-          />
-          <Field
-            label="Supplemented Amount"
-            value={values.supplemented_amount}
-            disabled={disabled}
-            placeholder="0"
-            inputMode="decimal"
-            onChange={(value) => onChange({ supplemented_amount: value })}
-          />
         </div>
       </section>
 

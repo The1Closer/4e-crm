@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { slugifyFileName } from '@/lib/file-utils'
 import {
+  PAYMENT_METHOD_OPTIONS,
+  PAYMENT_TYPE_OPTIONS,
+} from '@/lib/job-payments'
+import {
   isMissingJobPaymentsTableError,
   JOB_PAYMENT_SELECT_FIELDS,
   loadJobPaymentsData,
@@ -51,6 +55,26 @@ function normalizeAmount(value: FormDataEntryValue | null) {
   return parsed
 }
 
+function normalizePaymentType(value: FormDataEntryValue | null) {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  return PAYMENT_TYPE_OPTIONS.some((option) => option.value === trimmed)
+    ? trimmed
+    : null
+}
+
+function normalizePaymentMethod(value: FormDataEntryValue | null) {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  return PAYMENT_METHOD_OPTIONS.some((option) => option.value === trimmed)
+    ? trimmed
+    : null
+}
+
 async function removeProofFile(filePath: string | null) {
   if (!filePath) return
   await supabaseAdmin.storage.from('job-files').remove([filePath])
@@ -81,6 +105,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       payments: paymentData.payments,
+      contracts: paymentData.contracts,
       summary: paymentData.summary,
     })
   } catch (error) {
@@ -118,18 +143,74 @@ export async function POST(req: NextRequest, context: RouteContext) {
   try {
     const formData = await req.formData()
     const amount = normalizeAmount(formData.get('amount'))
-    const paymentType = normalizeText(formData.get('paymentType'))
+    const jobContractId = normalizeText(formData.get('jobContractId'))
+    const paymentType = normalizePaymentType(formData.get('paymentType'))
+    const paymentTypeOtherDetail = normalizeText(formData.get('paymentTypeOtherDetail'))
+    const paymentMethod = normalizePaymentMethod(formData.get('paymentMethod'))
+    const paymentMethodOtherDetail = normalizeText(
+      formData.get('paymentMethodOtherDetail')
+    )
     const paymentDate = normalizeDate(formData.get('paymentDate'))
     const checkNumber = normalizeText(formData.get('checkNumber'))
     const note = normalizeText(formData.get('note'))
     const fileEntry = formData.get('file')
 
+    if (!jobContractId) {
+      return NextResponse.json(
+        { error: 'Contract selection is required.' },
+        { status: 400 }
+      )
+    }
+
     if (!paymentType) {
       return NextResponse.json({ error: 'Payment type is required.' }, { status: 400 })
     }
 
+    if (!paymentMethod) {
+      return NextResponse.json({ error: 'Payment method is required.' }, { status: 400 })
+    }
+
     if (!paymentDate) {
       return NextResponse.json({ error: 'Payment date is required.' }, { status: 400 })
+    }
+
+    if (paymentType === 'other' && !paymentTypeOtherDetail) {
+      return NextResponse.json(
+        { error: 'Specify what the payment type is when selecting Other.' },
+        { status: 400 }
+      )
+    }
+
+    if (paymentMethod === 'other' && !paymentMethodOtherDetail) {
+      return NextResponse.json(
+        { error: 'Specify the payment method when selecting Other.' },
+        { status: 400 }
+      )
+    }
+
+    if (paymentMethod === 'check' && !checkNumber) {
+      return NextResponse.json(
+        { error: 'Check number is required for check payments.' },
+        { status: 400 }
+      )
+    }
+
+    const { data: contract, error: contractError } = await supabaseAdmin
+      .from('job_contracts')
+      .select('id')
+      .eq('id', jobContractId)
+      .eq('job_id', jobId)
+      .maybeSingle()
+
+    if (contractError) {
+      return NextResponse.json({ error: contractError.message }, { status: 400 })
+    }
+
+    if (!contract) {
+      return NextResponse.json(
+        { error: 'Selected contract was not found for this job.' },
+        { status: 404 }
+      )
     }
 
     let proofFileName: string | null = null
@@ -159,10 +240,15 @@ export async function POST(req: NextRequest, context: RouteContext) {
       .from('job_payments')
       .insert({
         job_id: jobId,
+        job_contract_id: jobContractId,
         amount,
         payment_type: paymentType,
+        payment_type_other_detail: paymentType === 'other' ? paymentTypeOtherDetail : null,
+        payment_method: paymentMethod,
+        payment_method_other_detail:
+          paymentMethod === 'other' ? paymentMethodOtherDetail : null,
         payment_date: paymentDate,
-        check_number: checkNumber,
+        check_number: paymentMethod === 'check' ? checkNumber : null,
         note,
         proof_file_name: proofFileName,
         proof_file_path: proofFilePath,

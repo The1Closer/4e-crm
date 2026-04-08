@@ -5,20 +5,28 @@ import {
   toMoneyAmount,
   type JobPaymentRecord,
 } from '@/lib/job-payments'
+import {
+  calculateJobFinancialSnapshot,
+  syncJobFinancialCache,
+} from '@/lib/job-financials-server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 
-type JobFinancialRow = {
-  contract_amount: number | null
-  supplemented_amount: number | null
-  deposit_collected: number | null
-  remaining_balance: number | null
+export type JobContractOptionRecord = {
+  id: string
+  contract_amount: number
+  date_signed: string
+  trades_included: string[]
 }
 
 export const JOB_PAYMENT_SELECT_FIELDS = `
   id,
   job_id,
+  job_contract_id,
   amount,
   payment_type,
+  payment_type_other_detail,
+  payment_method,
+  payment_method_other_detail,
   payment_date,
   check_number,
   note,
@@ -30,22 +38,6 @@ export const JOB_PAYMENT_SELECT_FIELDS = `
 
 export function isMissingJobPaymentsTableError(error: { message?: string } | null | undefined) {
   return /relation .*job_payments.* does not exist/i.test(error?.message ?? '')
-}
-
-async function loadJobFinancialRow(jobId: string) {
-  const { data, error } = await supabaseAdmin
-    .from('jobs')
-    .select(
-      'contract_amount, supplemented_amount, deposit_collected, remaining_balance'
-    )
-    .eq('id', jobId)
-    .maybeSingle()
-
-  if (error || !data) {
-    throw new Error(error?.message || 'Job not found.')
-  }
-
-  return data as JobFinancialRow
 }
 
 async function loadJobPaymentRowsInternal(jobId: string) {
@@ -73,18 +65,37 @@ async function loadJobPaymentRowsInternal(jobId: string) {
   }
 }
 
+async function loadJobContractOptionsInternal(jobId: string) {
+  const { data, error } = await supabaseAdmin
+    .from('job_contracts')
+    .select('id, contract_amount, date_signed, trades_included')
+    .eq('job_id', jobId)
+    .order('date_signed', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return (data ?? []) as JobContractOptionRecord[]
+}
+
 export async function loadJobPaymentsData(jobId: string) {
-  const job = await loadJobFinancialRow(jobId)
-  const { payments, missingTable } = await loadJobPaymentRowsInternal(jobId)
+  const [financialSnapshot, { payments, missingTable }, contracts] = await Promise.all([
+    calculateJobFinancialSnapshot(jobId),
+    loadJobPaymentRowsInternal(jobId),
+    loadJobContractOptionsInternal(jobId),
+  ])
   const totalPaid = missingTable
-    ? toMoneyAmount(job.deposit_collected)
+    ? toMoneyAmount(financialSnapshot.totalPaid)
     : payments.reduce((sum, payment) => sum + toMoneyAmount(payment.amount), 0)
 
   return {
     payments,
+    contracts,
     summary: calculateJobPaymentSummary({
-      contractAmount: job.contract_amount,
-      supplementedAmount: job.supplemented_amount,
+      contractAmount: financialSnapshot.contractAmount,
+      supplementedAmount: financialSnapshot.supplementedAmount,
       totalPaid,
     }),
     missingTable,
@@ -92,19 +103,11 @@ export async function loadJobPaymentsData(jobId: string) {
 }
 
 export async function syncJobFinancialTotals(jobId: string) {
-  const { summary } = await loadJobPaymentsData(jobId)
+  const snapshot = await syncJobFinancialCache(jobId)
 
-  const { error } = await supabaseAdmin
-    .from('jobs')
-    .update({
-      deposit_collected: summary.totalPaid,
-      remaining_balance: summary.remainingBalance,
-    })
-    .eq('id', jobId)
-
-  if (error) {
-    throw new Error(error.message)
-  }
-
-  return summary
+  return calculateJobPaymentSummary({
+    contractAmount: snapshot.contractAmount,
+    supplementedAmount: snapshot.supplementedAmount,
+    totalPaid: snapshot.totalPaid,
+  })
 }

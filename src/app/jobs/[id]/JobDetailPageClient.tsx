@@ -124,9 +124,6 @@ type FormData = {
   date_of_loss: string
   type_of_loss: string
   install_date: string
-  contract_signed_date: string
-  contract_amount: string
-  supplemented_amount: string
   shingle_name: string
 }
 
@@ -202,11 +199,6 @@ function buildInitialData(
     date_of_loss: job.date_of_loss ?? '',
     type_of_loss: job.type_of_loss ?? '',
     install_date: job.install_date ?? '',
-    contract_signed_date: job.contract_signed_date ?? '',
-    contract_amount: job.contract_amount ? String(job.contract_amount) : '',
-    supplemented_amount: job.supplemented_amount
-      ? String(job.supplemented_amount)
-      : '',
     shingle_name: job.shingle_name ?? '',
   }
 }

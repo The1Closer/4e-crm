@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { slugifyFileName } from '@/lib/file-utils'
-import { calculateJobPaymentSummary } from '@/lib/job-payments'
 import {
   isMissingJobPaymentsTableError,
-  loadJobPaymentsData,
 } from '@/lib/job-payments-server'
 import {
   findInstallScheduledStage,
@@ -43,11 +41,8 @@ type JobMutationBody = {
   date_of_loss?: string | null
   type_of_loss?: string
   install_date?: string | null
-  contract_signed_date?: string | null
-  contract_amount?: string | number | null
   deposit_collected?: string | number | null
   remaining_balance?: string | number | null
-  supplemented_amount?: string | number | null
   shingle_name?: string
   rep_ids?: string[]
 }
@@ -724,22 +719,6 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     const bodyIncludesRepIds = Object.prototype.hasOwnProperty.call(body, 'rep_ids')
     const repIds = bodyIncludesRepIds ? normalizeRepIds(body.rep_ids) : currentRepIds
     const existingHomeowner = getHomeownerRow(existingJob.homeowners)
-    const contractAmount = Object.prototype.hasOwnProperty.call(body, 'contract_amount')
-      ? normalizeNumber(body.contract_amount)
-      : existingJob.contract_amount
-    const supplementedAmount = Object.prototype.hasOwnProperty.call(
-      body,
-      'supplemented_amount'
-    )
-      ? normalizeNumber(body.supplemented_amount, true)
-      : existingJob.supplemented_amount
-    const paymentData = await loadJobPaymentsData(jobId)
-    const financialSummary = calculateJobPaymentSummary({
-      contractAmount,
-      supplementedAmount,
-      totalPaid: paymentData.summary.totalPaid,
-    })
-
     const { error: homeownerError } = await supabaseAdmin
       .from('homeowners')
       .update({
@@ -791,16 +770,6 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
           ? normalizeText(body.type_of_loss)
           : existingJob.type_of_loss,
         install_date: installDate,
-        contract_signed_date: Object.prototype.hasOwnProperty.call(
-          body,
-          'contract_signed_date'
-        )
-          ? normalizeDate(body.contract_signed_date)
-          : existingJob.contract_signed_date,
-        contract_amount: contractAmount,
-        deposit_collected: financialSummary.totalPaid,
-        remaining_balance: financialSummary.remainingBalance,
-        supplemented_amount: supplementedAmount,
         shingle_name: Object.prototype.hasOwnProperty.call(body, 'shingle_name')
           ? normalizeText(body.shingle_name)
           : existingJob.shingle_name,

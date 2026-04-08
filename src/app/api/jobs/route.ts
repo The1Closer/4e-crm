@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { calculateJobPaymentSummary } from '@/lib/job-payments'
 import {
   findInstallScheduledStage,
   isInstallScheduledStage,
@@ -17,8 +16,6 @@ type JobCreateBody = {
   insurance_carrier?: string
   claim_number?: string
   install_date?: string | null
-  contract_amount?: string | number | null
-  supplemented_amount?: string | number | null
   rep_ids?: string[]
 }
 
@@ -61,19 +58,6 @@ function normalizeStageId(value: unknown) {
   const parsed = Number(value)
   if (!Number.isInteger(parsed)) {
     throw new Error('Stage selection is invalid.')
-  }
-
-  return parsed
-}
-
-function normalizeNumber(value: unknown, fallbackToZero = false) {
-  if (value === null || value === undefined || value === '') {
-    return fallbackToZero ? 0 : null
-  }
-
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed)) {
-    throw new Error('One of the numeric values is invalid.')
   }
 
   return parsed
@@ -181,13 +165,6 @@ export async function POST(req: NextRequest) {
         ...normalizeRepIds(body.rep_ids),
       ]),
     ]
-    const contractAmount = normalizeNumber(body.contract_amount)
-    const supplementedAmount = normalizeNumber(body.supplemented_amount, true)
-    const financialSummary = calculateJobPaymentSummary({
-      contractAmount,
-      supplementedAmount,
-      totalPaid: 0,
-    })
     const homeownerName = normalizeText(body.homeowner_name)
 
     if (!homeownerName) {
@@ -240,10 +217,10 @@ export async function POST(req: NextRequest) {
         insurance_carrier: normalizeText(body.insurance_carrier),
         claim_number: normalizeText(body.claim_number),
         install_date: installDate,
-        contract_amount: contractAmount,
-        deposit_collected: financialSummary.totalPaid,
-        remaining_balance: financialSummary.remainingBalance,
-        supplemented_amount: supplementedAmount,
+        contract_amount: 0,
+        deposit_collected: 0,
+        remaining_balance: 0,
+        supplemented_amount: 0,
       })
       .select('id')
       .single()

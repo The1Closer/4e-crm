@@ -5,20 +5,34 @@ import { ExternalLink, Loader2, Trash2, Upload } from 'lucide-react'
 import { authorizedFetch } from '@/lib/api-client'
 import {
   getTodayDateInputValue,
+  PAYMENT_METHOD_OPTIONS,
+  PAYMENT_TYPE_OPTIONS,
   type JobPaymentRecord,
   type JobPaymentSummary,
 } from '@/lib/job-payments'
 import { supabase } from '@/lib/supabase'
 
+type ContractOption = {
+  id: string
+  contract_amount: number
+  date_signed: string
+  trades_included: string[]
+}
+
 type PaymentsResponse = {
   payments: JobPaymentRecord[]
+  contracts: ContractOption[]
   summary: JobPaymentSummary
   error?: string
 }
 
 type PaymentFormState = {
+  jobContractId: string
   amount: string
   paymentType: string
+  paymentTypeOtherDetail: string
+  paymentMethod: string
+  paymentMethodOtherDetail: string
   paymentDate: string
   checkNumber: string
   note: string
@@ -41,6 +55,19 @@ function formatDate(value: string | null) {
 function buildProofUrl(filePath: string) {
   const { data } = supabase.storage.from('job-files').getPublicUrl(filePath)
   return data.publicUrl
+}
+
+function formatContractOptionLabel(contract: ContractOption) {
+  const date = new Date(`${contract.date_signed}T00:00:00`).toLocaleDateString('en-US')
+  return `${date} • ${formatCurrency(contract.contract_amount)}`
+}
+
+function getPaymentTypeLabel(value: string) {
+  return PAYMENT_TYPE_OPTIONS.find((option) => option.value === value)?.label ?? value
+}
+
+function getPaymentMethodLabel(value: string) {
+  return PAYMENT_METHOD_OPTIONS.find((option) => option.value === value)?.label ?? value
 }
 
 function SummaryTile({
@@ -66,10 +93,15 @@ export default function JobPaymentsPanel({
   jobId: string
 }) {
   const [payments, setPayments] = useState<JobPaymentRecord[]>([])
+  const [contracts, setContracts] = useState<ContractOption[]>([])
   const [summary, setSummary] = useState<JobPaymentSummary | null>(null)
   const [form, setForm] = useState<PaymentFormState>({
+    jobContractId: '',
     amount: '',
     paymentType: '',
+    paymentTypeOtherDetail: '',
+    paymentMethod: '',
+    paymentMethodOtherDetail: '',
     paymentDate: getTodayDateInputValue(),
     checkNumber: '',
     note: '',
@@ -94,6 +126,15 @@ export default function JobPaymentsPanel({
       }
 
       setPayments(result.payments ?? [])
+      const nextContracts = result.contracts ?? []
+      setContracts(nextContracts)
+      setForm((current) => ({
+        ...current,
+        jobContractId:
+          current.jobContractId || nextContracts.length === 0
+            ? current.jobContractId
+            : nextContracts[0].id,
+      }))
       setSummary(result.summary)
 
       if (!options?.preserveMessage) {
@@ -102,6 +143,7 @@ export default function JobPaymentsPanel({
       }
     } catch (error) {
       setPayments([])
+      setContracts([])
       setSummary(null)
       setMessageTone('error')
       setMessage(error instanceof Error ? error.message : 'Could not load job payments.')
@@ -133,8 +175,12 @@ export default function JobPaymentsPanel({
 
   function resetForm() {
     setForm({
+      jobContractId: contracts[0]?.id ?? '',
       amount: '',
       paymentType: '',
+      paymentTypeOtherDetail: '',
+      paymentMethod: '',
+      paymentMethodOtherDetail: '',
       paymentDate: getTodayDateInputValue(),
       checkNumber: '',
       note: '',
@@ -157,8 +203,12 @@ export default function JobPaymentsPanel({
 
     try {
       const payload = new FormData()
+      payload.set('jobContractId', form.jobContractId)
       payload.set('amount', form.amount)
       payload.set('paymentType', form.paymentType)
+      payload.set('paymentTypeOtherDetail', form.paymentTypeOtherDetail)
+      payload.set('paymentMethod', form.paymentMethod)
+      payload.set('paymentMethodOtherDetail', form.paymentMethodOtherDetail)
       payload.set('paymentDate', form.paymentDate)
       payload.set('checkNumber', form.checkNumber)
       payload.set('note', form.note)
@@ -266,6 +316,11 @@ export default function JobPaymentsPanel({
               Log every payment here with proof and let the CRM keep total paid and
               remaining balance in sync automatically.
             </p>
+            {contracts.length === 0 ? (
+              <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                Add at least one contract before logging payments.
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -282,34 +337,89 @@ export default function JobPaymentsPanel({
           <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
             <div className="grid gap-4 md:grid-cols-2">
               <Field
+                label="Contract"
+                disabled={saving || contracts.length === 0}
+                value={form.jobContractId}
+                as="select"
+                options={[
+                  { value: '', label: 'Select contract' },
+                  ...contracts.map((contract) => ({
+                    value: contract.id,
+                    label: formatContractOptionLabel(contract),
+                  })),
+                ]}
+                onChange={(value) => updateForm('jobContractId', value)}
+              />
+              <Field
                 label="Amount"
                 value={form.amount}
                 placeholder="0.00"
                 inputMode="decimal"
-                disabled={saving}
+                disabled={saving || contracts.length === 0}
                 onChange={(value) => updateForm('amount', value)}
               />
               <Field
                 label="Payment Type"
                 value={form.paymentType}
-                placeholder="Insurance check, homeowner deposit, ACH..."
-                disabled={saving}
+                as="select"
+                options={[
+                  { value: '', label: 'Select payment type' },
+                  ...PAYMENT_TYPE_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: option.label,
+                  })),
+                ]}
+                disabled={saving || contracts.length === 0}
                 onChange={(value) => updateForm('paymentType', value)}
+              />
+              {form.paymentType === 'other' ? (
+                <Field
+                  label="Specify Payment Type"
+                  value={form.paymentTypeOtherDetail}
+                  placeholder="Describe type"
+                  disabled={saving || contracts.length === 0}
+                  onChange={(value) => updateForm('paymentTypeOtherDetail', value)}
+                />
+              ) : null}
+              <Field
+                label="Payment Method"
+                value={form.paymentMethod}
+                as="select"
+                options={[
+                  { value: '', label: 'Select payment method' },
+                  ...PAYMENT_METHOD_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: option.label,
+                  })),
+                ]}
+                disabled={saving || contracts.length === 0}
+                onChange={(value) => updateForm('paymentMethod', value)}
               />
               <Field
                 label="Payment Date"
                 type="date"
                 value={form.paymentDate}
-                disabled={saving}
+                disabled={saving || contracts.length === 0}
                 onChange={(value) => updateForm('paymentDate', value)}
               />
-              <Field
-                label="Check Number"
-                value={form.checkNumber}
-                placeholder="Optional"
-                disabled={saving}
-                onChange={(value) => updateForm('checkNumber', value)}
-              />
+              {form.paymentMethod === 'check' ? (
+                <Field
+                  label="Check Number"
+                  value={form.checkNumber}
+                  placeholder="Required for check payments"
+                  disabled={saving || contracts.length === 0}
+                  onChange={(value) => updateForm('checkNumber', value)}
+                />
+              ) : null}
+              {form.paymentMethod === 'other' ? (
+                <Field
+                  label="Specify Payment Method"
+                  value={form.paymentMethodOtherDetail}
+                  placeholder="Describe method"
+                  disabled={saving || contracts.length === 0}
+                  onChange={(value) => updateForm('paymentMethodOtherDetail', value)}
+                />
+              ) : null}
               <label className="block md:col-span-2">
                 <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
                   Notes
@@ -317,7 +427,7 @@ export default function JobPaymentsPanel({
                 <textarea
                   rows={4}
                   value={form.note}
-                  disabled={saving}
+                  disabled={saving || contracts.length === 0}
                   placeholder="Optional payment notes"
                   onChange={(event) => updateForm('note', event.target.value)}
                   className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35 disabled:cursor-not-allowed disabled:opacity-60"
@@ -336,7 +446,7 @@ export default function JobPaymentsPanel({
               <input
                 ref={fileInputRef}
                 type="file"
-                disabled={saving}
+                disabled={saving || contracts.length === 0}
                 accept="image/*,.pdf,.heic,.heif"
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
                 className="mt-4 block w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white file:mr-4 file:rounded-full file:border-0 file:bg-[#d6b37a] file:px-4 file:py-2 file:text-xs file:font-semibold file:text-black hover:file:bg-[#e2bf85]"
@@ -358,14 +468,14 @@ export default function JobPaymentsPanel({
             <button
               type="button"
               onClick={resetForm}
-              disabled={saving}
+              disabled={saving || contracts.length === 0}
               className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-45"
             >
               Clear
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || contracts.length === 0}
               className="inline-flex items-center gap-2 rounded-2xl bg-[#d6b37a] px-5 py-3 text-sm font-semibold text-black shadow-[0_12px_32px_rgba(214,179,122,0.25)] transition hover:-translate-y-0.5 hover:bg-[#e2bf85] disabled:cursor-not-allowed disabled:opacity-45"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
@@ -397,6 +507,8 @@ export default function JobPaymentsPanel({
               const proofUrl = payment.proof_file_path
                 ? buildProofUrl(payment.proof_file_path)
                 : null
+              const paymentContract =
+                contracts.find((contract) => contract.id === payment.job_contract_id) ?? null
 
               return (
                 <div
@@ -406,7 +518,7 @@ export default function JobPaymentsPanel({
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <div className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#d6b37a]">
-                        {payment.payment_type}
+                        {getPaymentTypeLabel(payment.payment_type)}
                       </div>
                       <div className="mt-3 text-2xl font-bold tracking-tight text-white">
                         {formatCurrency(payment.amount)}
@@ -449,8 +561,28 @@ export default function JobPaymentsPanel({
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <DetailItem
+                      label="Contract"
+                      value={
+                        paymentContract
+                          ? formatContractOptionLabel(paymentContract)
+                          : payment.job_contract_id
+                      }
+                    />
+                    <DetailItem
+                      label="Payment Method"
+                      value={getPaymentMethodLabel(payment.payment_method)}
+                    />
+                    <DetailItem
                       label="Check Number"
-                      value={payment.check_number ?? 'Not provided'}
+                      value={payment.check_number ?? '-'}
+                    />
+                    <DetailItem
+                      label="Method Detail"
+                      value={payment.payment_method_other_detail ?? '-'}
+                    />
+                    <DetailItem
+                      label="Type Detail"
+                      value={payment.payment_type_other_detail ?? '-'}
                     />
                     <DetailItem
                       label="Proof File"
@@ -487,6 +619,8 @@ function Field({
   placeholder,
   disabled = false,
   type = 'text',
+  as = 'input',
+  options = [],
   inputMode,
   onChange,
 }: {
@@ -495,6 +629,11 @@ function Field({
   placeholder?: string
   disabled?: boolean
   type?: string
+  as?: 'input' | 'select'
+  options?: Array<{
+    value: string
+    label: string
+  }>
   inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']
   onChange: (value: string) => void
 }) {
@@ -503,15 +642,30 @@ function Field({
       <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
         {label}
       </div>
-      <input
-        type={type}
-        value={value}
-        disabled={disabled}
-        inputMode={inputMode}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35 disabled:cursor-not-allowed disabled:opacity-60"
-      />
+      {as === 'select' ? (
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          type={type}
+          value={value}
+          disabled={disabled}
+          inputMode={inputMode}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-[#d6b37a]/35 disabled:cursor-not-allowed disabled:opacity-60"
+        />
+      )}
     </label>
   )
 }

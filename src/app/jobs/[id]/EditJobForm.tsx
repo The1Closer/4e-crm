@@ -42,9 +42,6 @@ type FormData = {
   date_of_loss: string
   type_of_loss: string
   install_date: string
-  contract_signed_date: string
-  contract_amount: string
-  supplemented_amount: string
   shingle_name: string
 }
 
@@ -475,39 +472,6 @@ export default function EditJobForm({
                           </div>
                         ) : null}
                       </div>
-                    </FormField>
-
-                    <FormField label="Contract Signed Date">
-                      <input
-                        type="date"
-                        className={INPUT_CLASS_NAME}
-                        value={form.contract_signed_date}
-                        onChange={(event) =>
-                          updateField('contract_signed_date', event.target.value)
-                        }
-                      />
-                    </FormField>
-
-                    <FormField label="Contract Amount">
-                      <input
-                        className={INPUT_CLASS_NAME}
-                        placeholder="Contract amount"
-                        value={form.contract_amount}
-                        onChange={(event) =>
-                          updateField('contract_amount', event.target.value)
-                        }
-                      />
-                    </FormField>
-
-                    <FormField label="Supplemented Amount">
-                      <input
-                        className={INPUT_CLASS_NAME}
-                        placeholder="Supplemented amount"
-                        value={form.supplemented_amount}
-                        onChange={(event) =>
-                          updateField('supplemented_amount', event.target.value)
-                        }
-                      />
                     </FormField>
 
                     <FormField label="Shingle Name">

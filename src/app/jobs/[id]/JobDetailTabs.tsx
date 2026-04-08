@@ -5,9 +5,17 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import PhotosSection from './PhotosSection'
 import JobDocumentsPanel from './JobDocumentsPanel'
 import JobPaymentsPanel from './JobPaymentsPanel'
+import JobContractsPanel from './JobContractsPanel'
+import JobSupplementsPanel from './JobSupplementsPanel'
 import MaterialOrdersJobPanel from '@/components/material-orders/MaterialOrdersJobPanel'
 
-export type JobDetailTabKey = 'documents' | 'photos' | 'payments' | 'materials'
+export type JobDetailTabKey =
+  | 'documents'
+  | 'photos'
+  | 'payments'
+  | 'contracts'
+  | 'supplements'
+  | 'materials'
 
 const BASE_TABS: Array<{
   key: JobDetailTabKey
@@ -15,6 +23,8 @@ const BASE_TABS: Array<{
 }> = [
   { key: 'documents', label: 'Documents' },
   { key: 'photos', label: 'Photos' },
+  { key: 'contracts', label: 'Contracts' },
+  { key: 'supplements', label: 'Supplements' },
   { key: 'payments', label: 'Payments' },
 ]
 
@@ -81,6 +91,8 @@ export default function JobDetailTabs({
 
       {activeTab === 'documents' ? <JobDocumentsPanel jobId={jobId} /> : null}
       {activeTab === 'photos' ? <PhotosSection jobId={jobId} /> : null}
+      {activeTab === 'contracts' ? <JobContractsPanel jobId={jobId} /> : null}
+      {activeTab === 'supplements' ? <JobSupplementsPanel jobId={jobId} /> : null}
       {activeTab === 'payments' ? <JobPaymentsPanel jobId={jobId} /> : null}
       {activeTab === 'materials' && canViewMaterialOrders ? (
         <MaterialOrdersJobPanel jobId={jobId} homeownerName={homeownerName} />
