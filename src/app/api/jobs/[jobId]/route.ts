@@ -65,6 +65,16 @@ type ExistingDocumentNameRow = {
   file_name: string | null
 }
 
+type NoteRow = {
+  id: string
+  body: string
+  created_at: string
+  updated_at?: string | null
+  created_by?: string | null
+  profile_id?: string | null
+  user_id?: string | null
+}
+
 const COLTAN_POWELL_FULL_NAME = 'Coltan Powell'
 
 function formatNotificationDate(value: string) {
@@ -130,6 +140,22 @@ function normalizeRepIds(value: unknown) {
         .map((item) => item.trim())
     ),
   ]
+}
+
+function getNoteCreatorId(note: NoteRow) {
+  if (typeof note.created_by === 'string' && note.created_by.trim()) {
+    return note.created_by
+  }
+
+  if (typeof note.profile_id === 'string' && note.profile_id.trim()) {
+    return note.profile_id
+  }
+
+  if (typeof note.user_id === 'string' && note.user_id.trim()) {
+    return note.user_id
+  }
+
+  return null
 }
 
 async function loadStageRows() {
@@ -576,7 +602,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
     supabaseAdmin.from('job_reps').select('profile_id').eq('job_id', jobId),
     supabaseAdmin
       .from('notes')
-      .select('id, body, created_at, updated_at')
+      .select('*')
       .eq('job_id', jobId)
       .order('created_at', { ascending: false }),
   ])
@@ -590,6 +616,33 @@ export async function GET(req: NextRequest, context: RouteContext) {
     )
   }
 
+  const noteRows = (notesRes.data ?? []) as NoteRow[]
+  const creatorIds = [...new Set(noteRows.map(getNoteCreatorId).filter(Boolean))] as string[]
+  const creatorNameById = new Map<string, string | null>()
+
+  if (creatorIds.length > 0) {
+    const { data: noteCreators } = await supabaseAdmin
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', creatorIds)
+
+    for (const creator of noteCreators ?? []) {
+      creatorNameById.set(creator.id, creator.full_name ?? null)
+    }
+  }
+
+  const initialNotes = noteRows.map((note) => {
+    const creatorId = getNoteCreatorId(note)
+
+    return {
+      id: note.id,
+      body: note.body,
+      created_at: note.created_at,
+      updated_at: note.updated_at ?? null,
+      author_name: creatorId ? creatorNameById.get(creatorId) ?? null : null,
+    }
+  })
+
   return NextResponse.json({
     job: jobRes.data,
     stages: stagesRes.data ?? [],
@@ -597,7 +650,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
     initialSelectedRepIds: (jobRepsRes.data ?? []).map(
       (row: { profile_id: string }) => row.profile_id
     ),
-    initialNotes: notesRes.data ?? [],
+    initialNotes,
   })
 }
 

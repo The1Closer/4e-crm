@@ -12,6 +12,7 @@ type NoteItem = {
   body: string
   created_at: string
   updated_at?: string
+  author_name?: string | null
 }
 
 type MentionableProfile = {
@@ -356,6 +357,7 @@ export default function NotesSection({
                 <HighlightedNoteBody body={note.body} />
               </div>
               <div className="mt-2 text-xs text-white/42">
+                {note.author_name ? `${note.author_name} • ` : ''}
                 {formatDateTime(note.created_at)}
               </div>
             </div>

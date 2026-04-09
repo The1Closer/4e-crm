@@ -17,6 +17,14 @@ type CreateNoteBody = {
   body?: string
 }
 
+type InsertedNoteRow = {
+  id: string
+  body: string
+  created_at: string
+  updated_at?: string | null
+  created_by?: string | null
+}
+
 export async function POST(req: NextRequest, context: RouteContext) {
   const authResult = await getRouteRequester(req)
 
@@ -44,14 +52,39 @@ export async function POST(req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: 'Note text is required.' }, { status: 400 })
   }
 
-  const { data: note, error: noteError } = await supabaseAdmin
-    .from('notes')
-    .insert({
-      job_id: jobId,
-      body: noteBody,
-    })
-    .select('id, body, created_at, updated_at')
-    .single()
+  const insertWithCreator = async () =>
+    supabaseAdmin
+      .from('notes')
+      .insert({
+        job_id: jobId,
+        body: noteBody,
+        created_by: authResult.requester.profile.id,
+      })
+      .select('*')
+      .single()
+
+  const insertWithoutCreator = async () =>
+    supabaseAdmin
+      .from('notes')
+      .insert({
+        job_id: jobId,
+        body: noteBody,
+      })
+      .select('*')
+      .single()
+
+  let noteInsertResult = await insertWithCreator()
+
+  if (
+    noteInsertResult.error?.message
+      ?.toLowerCase()
+      .includes('column "created_by" of relation "notes" does not exist')
+  ) {
+    noteInsertResult = await insertWithoutCreator()
+  }
+
+  const note = noteInsertResult.data as InsertedNoteRow | null
+  const noteError = noteInsertResult.error
 
   if (noteError || !note) {
     return NextResponse.json(
@@ -105,5 +138,13 @@ export async function POST(req: NextRequest, context: RouteContext) {
     }
   }
 
-  return NextResponse.json({ note })
+  return NextResponse.json({
+    note: {
+      id: note.id,
+      body: note.body,
+      created_at: note.created_at,
+      updated_at: note.updated_at ?? null,
+      author_name: authResult.requester.profile.full_name ?? null,
+    },
+  })
 }
