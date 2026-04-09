@@ -67,9 +67,11 @@ function HighlightedNoteBody({ body }: { body: string }) {
 export default function NotesSection({
   jobId,
   initialNotes,
+  canDeleteNotes,
 }: {
   jobId: string
   initialNotes: NoteItem[]
+  canDeleteNotes: boolean
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
@@ -77,6 +79,7 @@ export default function NotesSection({
   const [profiles, setProfiles] = useState<MentionableProfile[]>([])
   const [body, setBody] = useState('')
   const [saving, setSaving] = useState(false)
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [mentionContext, setMentionContext] = useState<MentionContext | null>(null)
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0)
@@ -200,6 +203,43 @@ export default function NotesSection({
       setMessage(error instanceof Error ? error.message : 'Could not add the note.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleDeleteNote(noteId: string) {
+    if (!canDeleteNotes || deletingNoteId) {
+      return
+    }
+
+    const confirmed = window.confirm('Delete this note?')
+
+    if (!confirmed) {
+      return
+    }
+
+    setDeletingNoteId(noteId)
+    setMessage('')
+
+    try {
+      const response = await authorizedFetch(`/api/jobs/${jobId}/notes/${noteId}`, {
+        method: 'DELETE',
+      })
+
+      const result = (await response.json().catch(() => null)) as
+        | {
+            error?: string
+          }
+        | null
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Could not delete the note.')
+      }
+
+      setNotes((prev) => prev.filter((note) => note.id !== noteId))
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not delete the note.')
+    } finally {
+      setDeletingNoteId(null)
     }
   }
 
@@ -353,6 +393,20 @@ export default function NotesSection({
               key={note.id}
               className="rounded-[1.4rem] border border-white/10 bg-black/20 p-4"
             >
+              {canDeleteNotes ? (
+                <div className="mb-2 flex justify-end">
+                  <button
+                    type="button"
+                    disabled={deletingNoteId === note.id}
+                    onClick={() => {
+                      void handleDeleteNote(note.id)
+                    }}
+                    className="rounded-lg border border-red-300/25 bg-red-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingNoteId === note.id ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              ) : null}
               <div className="whitespace-pre-wrap text-sm leading-7 text-white/82">
                 <HighlightedNoteBody body={note.body} />
               </div>

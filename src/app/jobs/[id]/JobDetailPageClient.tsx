@@ -635,7 +635,11 @@ export default function JobDetailPageClient({
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
-          <NotesSection jobId={payload.job.id} initialNotes={payload.initialNotes} />
+          <NotesSection
+            jobId={payload.job.id}
+            initialNotes={payload.initialNotes}
+            canDeleteNotes={canDeleteJob}
+          />
 
           <TasksPanel
             jobId={payload.job.id}
