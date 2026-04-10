@@ -94,9 +94,11 @@ async function notifyAssignedReps(params: {
   jobId: string
   actorUserId: string
   repIds: string[]
+  homeownerName?: string | null
 }) {
   if (params.repIds.length === 0) return
 
+  const homeownerName = params.homeownerName?.trim()
   const rows = params.repIds
     .filter((repId) => repId !== params.actorUserId)
     .map((repId) => ({
@@ -104,7 +106,9 @@ async function notifyAssignedReps(params: {
       actor_user_id: params.actorUserId,
       type: 'assignment',
       title: 'You were assigned to a job',
-      message: 'You were assigned to a job in the CRM.',
+      message: homeownerName
+        ? `You were assigned to ${homeownerName}'s job in the CRM.`
+        : 'You were assigned to a job in the CRM.',
       link: `/jobs/${params.jobId}`,
       job_id: params.jobId,
       note_id: null,
@@ -121,10 +125,12 @@ async function notifyInstallScheduled(params: {
   actorUserId: string
   repIds: string[]
   installDate: string
+  homeownerName?: string | null
 }) {
   if (params.repIds.length === 0) return
 
   const formattedDate = formatNotificationDate(params.installDate)
+  const homeownerName = params.homeownerName?.trim()
   const rows = params.repIds
     .filter((repId) => repId !== params.actorUserId)
     .map((repId) => ({
@@ -132,7 +138,9 @@ async function notifyInstallScheduled(params: {
       actor_user_id: params.actorUserId,
       type: 'stage_change',
       title: 'Install scheduled',
-      message: `Install scheduled for ${formattedDate}.`,
+      message: homeownerName
+        ? `${homeownerName}'s install is scheduled for ${formattedDate}.`
+        : `Install scheduled for ${formattedDate}.`,
       link: `/jobs/${params.jobId}`,
       job_id: params.jobId,
       note_id: null,
@@ -244,6 +252,7 @@ export async function POST(req: NextRequest) {
       jobId: job.id,
       actorUserId: authResult.requester.profile.id,
       repIds,
+      homeownerName,
     })
 
     if (installDate && targetStage && isInstallScheduledStage(targetStage)) {
@@ -252,6 +261,7 @@ export async function POST(req: NextRequest) {
         actorUserId: authResult.requester.profile.id,
         repIds,
         installDate,
+        homeownerName,
       })
     }
 

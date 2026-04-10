@@ -25,6 +25,37 @@ type InsertedNoteRow = {
   created_by?: string | null
 }
 
+type JobHomeownerRow = {
+  homeowners:
+    | {
+        name: string | null
+      }
+    | {
+        name: string | null
+      }[]
+    | null
+}
+
+async function getJobHomeownerName(jobId: string) {
+  const { data, error } = await supabaseAdmin
+    .from('jobs')
+    .select(`
+      homeowners (
+        name
+      )
+    `)
+    .eq('id', jobId)
+    .maybeSingle()
+
+  if (error || !data) {
+    return null
+  }
+
+  const row = (data as JobHomeownerRow).homeowners
+  const homeowner = Array.isArray(row) ? row[0] ?? null : row
+  return homeowner?.name?.trim() || null
+}
+
 export async function POST(req: NextRequest, context: RouteContext) {
   const authResult = await getRouteRequester(req)
 
@@ -117,15 +148,21 @@ export async function POST(req: NextRequest, context: RouteContext) {
         .filter((userId) => userId !== authResult.requester.profile.id)
 
       if (mentionedUserIds.length > 0) {
+        const homeownerName = await getJobHomeownerName(jobId)
+
         await supabaseAdmin.from('notifications').insert(
           [...new Set(mentionedUserIds)].map((userId) => ({
             user_id: userId,
             actor_user_id: authResult.requester.profile.id,
             type: 'note_mention',
             title: 'You were mentioned in a note',
-            message: `${
-              authResult.requester.profile.full_name || 'A teammate'
-            } tagged you in a job note.`,
+            message: homeownerName
+              ? `${
+                  authResult.requester.profile.full_name || 'A teammate'
+                } tagged you in a note for ${homeownerName}.`
+              : `${
+                  authResult.requester.profile.full_name || 'A teammate'
+                } tagged you in a job note.`,
             link: `/jobs/${jobId}?tab=notes`,
             job_id: jobId,
             note_id: note.id,

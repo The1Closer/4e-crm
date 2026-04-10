@@ -175,9 +175,11 @@ async function notifyAssignedReps(params: {
   jobId: string
   actorUserId: string
   repIds: string[]
+  homeownerName?: string | null
 }) {
   if (params.repIds.length === 0) return
 
+  const homeownerName = params.homeownerName?.trim()
   const rows = params.repIds
     .filter((repId) => repId !== params.actorUserId)
     .map((repId) => ({
@@ -185,7 +187,9 @@ async function notifyAssignedReps(params: {
       actor_user_id: params.actorUserId,
       type: 'assignment',
       title: 'You were assigned to a job',
-      message: 'You were assigned to a job in the CRM.',
+      message: homeownerName
+        ? `You were assigned to ${homeownerName}'s job in the CRM.`
+        : 'You were assigned to a job in the CRM.',
       link: `/jobs/${params.jobId}`,
       job_id: params.jobId,
       note_id: null,
@@ -202,7 +206,9 @@ async function notifyStageChange(params: {
   actorUserId: string
   repIds: string[]
   stage: StageRow
+  homeownerName?: string | null
 }) {
+  const homeownerName = params.homeownerName?.trim()
   const rows = params.repIds
     .filter((repId) => repId !== params.actorUserId)
     .map((repId) => ({
@@ -210,7 +216,9 @@ async function notifyStageChange(params: {
       actor_user_id: params.actorUserId,
       type: 'stage_change',
       title: 'Job stage changed',
-      message: `A job was moved to ${params.stage.name}.`,
+      message: homeownerName
+        ? `${homeownerName}'s job was moved to ${params.stage.name}.`
+        : `A job was moved to ${params.stage.name}.`,
       link: `/jobs/${params.jobId}`,
       job_id: params.jobId,
       note_id: null,
@@ -230,10 +238,12 @@ async function notifyInstallScheduled(params: {
   actorUserId: string
   repIds: string[]
   installDate: string
+  homeownerName?: string | null
 }) {
   if (params.repIds.length === 0) return
 
   const formattedDate = formatNotificationDate(params.installDate)
+  const homeownerName = params.homeownerName?.trim()
   const rows = params.repIds
     .filter((repId) => repId !== params.actorUserId)
     .map((repId) => ({
@@ -241,7 +251,9 @@ async function notifyInstallScheduled(params: {
       actor_user_id: params.actorUserId,
       type: 'stage_change',
       title: 'Install scheduled',
-      message: `Install scheduled for ${formattedDate}.`,
+      message: homeownerName
+        ? `${homeownerName}'s install is scheduled for ${formattedDate}.`
+        : `Install scheduled for ${formattedDate}.`,
       link: `/jobs/${params.jobId}`,
       job_id: params.jobId,
       note_id: null,
@@ -293,6 +305,7 @@ async function notifyColtanStageWorkflow(params: {
   jobId: string
   actorUserId: string
   stage: StageRow
+  homeownerName?: string | null
 }) {
   const coltanId = await findProfileIdByFullName(COLTAN_POWELL_FULL_NAME)
 
@@ -302,16 +315,23 @@ async function notifyColtanStageWorkflow(params: {
 
   let title = ''
   let message = ''
+  const homeownerName = params.homeownerName?.trim()
 
   if (isApprovedStageName(params.stage.name)) {
     title = 'Review for Supplements'
-    message = 'A job moved to Approved. Start supplementing.'
+    message = homeownerName
+      ? `${homeownerName}'s job moved to Approved. Start supplementing.`
+      : 'A job moved to Approved. Start supplementing.'
   } else if (isInstallScheduledStageName(params.stage.name)) {
     title = 'Install Scheduled'
-    message = 'Install Scheduled'
+    message = homeownerName
+      ? `${homeownerName}'s install is scheduled.`
+      : 'Install Scheduled'
   } else if (isInstallCompleteStageName(params.stage.name)) {
     title = 'Send COC'
-    message = 'A job moved to Install Complete. Send COC.'
+    message = homeownerName
+      ? `${homeownerName}'s job moved to Install Complete. Send COC.`
+      : 'A job moved to Install Complete. Send COC.'
   } else {
     return
   }
@@ -772,11 +792,14 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     const bodyIncludesRepIds = Object.prototype.hasOwnProperty.call(body, 'rep_ids')
     const repIds = bodyIncludesRepIds ? normalizeRepIds(body.rep_ids) : currentRepIds
     const existingHomeowner = getHomeownerRow(existingJob.homeowners)
+    const homeownerName = Object.prototype.hasOwnProperty.call(body, 'homeowner_name')
+      ? normalizeText(body.homeowner_name)
+      : existingHomeowner?.name ?? null
     const { error: homeownerError } = await supabaseAdmin
       .from('homeowners')
       .update({
         name: Object.prototype.hasOwnProperty.call(body, 'homeowner_name')
-          ? normalizeText(body.homeowner_name)
+          ? homeownerName
           : existingHomeowner?.name ?? null,
         phone: Object.prototype.hasOwnProperty.call(body, 'phone')
           ? normalizeText(body.phone)
@@ -867,6 +890,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
         jobId,
         actorUserId: authResult.requester.profile.id,
         repIds: newlyAddedRepIds,
+        homeownerName,
       })
     } catch (notificationError) {
       console.error('Could not notify newly assigned reps.', notificationError)
@@ -885,6 +909,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
           actorUserId: authResult.requester.profile.id,
           repIds,
           installDate,
+          homeownerName,
         })
       } catch (notificationError) {
         console.error('Could not notify reps about the install schedule.', notificationError)
@@ -896,6 +921,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
             jobId,
             actorUserId: authResult.requester.profile.id,
             stage: targetStage,
+            homeownerName,
           })
         } catch (notificationError) {
           console.error('Could not notify Coltan Powell about the stage workflow.', notificationError)
@@ -908,6 +934,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
           actorUserId: authResult.requester.profile.id,
           repIds,
           stage: targetStage,
+          homeownerName,
         })
       } catch (notificationError) {
         console.error('Could not notify reps about the stage change.', notificationError)
@@ -918,6 +945,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
           jobId,
           actorUserId: authResult.requester.profile.id,
           stage: targetStage,
+          homeownerName,
         })
       } catch (notificationError) {
         console.error('Could not notify Coltan Powell about the stage workflow.', notificationError)
