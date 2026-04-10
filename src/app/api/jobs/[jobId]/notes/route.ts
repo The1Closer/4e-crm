@@ -67,6 +67,34 @@ async function getJobHomeownerName(jobId: string) {
   }
 }
 
+async function loadMentionableProfiles() {
+  const activeProfilesResult = await supabaseAdmin
+    .from('profiles')
+    .select('id, full_name')
+    .eq('is_active', true)
+    .order('full_name', { ascending: true })
+
+  if (!activeProfilesResult.error) {
+    return activeProfilesResult.data ?? []
+  }
+
+  const fallbackProfilesResult = await supabaseAdmin
+    .from('profiles')
+    .select('id, full_name')
+    .order('full_name', { ascending: true })
+
+  if (fallbackProfilesResult.error) {
+    console.error(
+      'Could not load profiles for note mentions.',
+      activeProfilesResult.error,
+      fallbackProfilesResult.error
+    )
+    return []
+  }
+
+  return fallbackProfilesResult.data ?? []
+}
+
 export async function POST(req: NextRequest, context: RouteContext) {
   const authResult = await getRouteRequester(req)
 
@@ -138,57 +166,46 @@ export async function POST(req: NextRequest, context: RouteContext) {
   const mentionTokens = extractMentionNames(noteBody)
 
   if (mentionTokens.length > 0) {
-    const { data: profiles, error: profilesError } = await supabaseAdmin
-      .from('profiles')
-      .select('id, full_name')
-      .eq('is_active', true)
-      .order('full_name', { ascending: true })
-
-    if (!profilesError) {
-      const mentionedUserIds = (profiles ?? [])
-        .filter((profile) => {
-          if (!profile.full_name) {
-            return false
-          }
-
-          const mentionHandle = buildMentionHandle(profile.full_name)
-
-          return mentionTokens.some((token) =>
-            token === mentionHandle || profileMatchesMention(profile.full_name ?? '', token)
-          )
-        })
-        .map((profile) => profile.id)
-        .filter((userId) => userId !== authResult.requester.profile.id)
-
-      if (mentionedUserIds.length > 0) {
-        const homeownerName = await getJobHomeownerName(jobId)
-        const { error: notificationError } = await supabaseAdmin
-          .from('notifications')
-          .insert(
-            [...new Set(mentionedUserIds)].map((userId) => ({
-              user_id: userId,
-              actor_user_id: authResult.requester.profile.id,
-              type: 'note_mention',
-              title: 'You were mentioned in a note',
-              message: homeownerName
-                ? `${
-                    authResult.requester.profile.full_name || 'A teammate'
-                  } tagged you in a note for ${homeownerName}.`
-                : `${
-                    authResult.requester.profile.full_name || 'A teammate'
-                  } tagged you in a job note.`,
-              link: `/jobs/${jobId}?tab=notes`,
-              job_id: jobId,
-              note_id: note.id,
-              metadata: {
-                mention_tokens: mentionTokens,
-              },
-            }))
-          )
-
-        if (notificationError) {
-          console.error('Could not create note mention notifications.', notificationError)
+    const profiles = await loadMentionableProfiles()
+    const mentionedUserIds = profiles
+      .filter((profile) => {
+        if (!profile.full_name) {
+          return false
         }
+
+        const mentionHandle = buildMentionHandle(profile.full_name)
+
+        return mentionTokens.some((token) =>
+          token === mentionHandle || profileMatchesMention(profile.full_name ?? '', token)
+        )
+      })
+      .map((profile) => profile.id)
+      .filter((userId) => userId !== authResult.requester.profile.id)
+
+    if (mentionedUserIds.length > 0) {
+      const homeownerName = await getJobHomeownerName(jobId)
+      const { error: notificationError } = await supabaseAdmin
+        .from('notifications')
+        .insert(
+          [...new Set(mentionedUserIds)].map((userId) => ({
+            user_id: userId,
+            actor_user_id: authResult.requester.profile.id,
+            type: 'note_mention',
+            title: 'You were mentioned in a note',
+            message: homeownerName
+              ? `${authResult.requester.profile.full_name || 'A teammate'} tagged you in a note for ${homeownerName}.`
+              : `${authResult.requester.profile.full_name || 'A teammate'} tagged you in a job note.`,
+            link: `/jobs/${jobId}?tab=notes`,
+            job_id: jobId,
+            note_id: note.id,
+            metadata: {
+              mention_tokens: mentionTokens,
+            },
+          }))
+        )
+
+      if (notificationError) {
+        console.error('Could not create note mention notifications.', notificationError)
       }
     }
   }
