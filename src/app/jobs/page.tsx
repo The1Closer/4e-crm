@@ -31,6 +31,7 @@ import {
 import { ARCHIVE_INACTIVITY_DAYS, isArchivedByInactivity } from '@/lib/job-lifecycle'
 import {
   getVisibleStagesForUser,
+  isDeadStageName,
   isInstallScheduledStage,
   isInstallWorkflowStage,
   isManagementLockedStage,
@@ -993,31 +994,53 @@ function JobsPageContent() {
     return () => clearTimeout(timer)
   }, [repFilter, visibleReps])
 
-  const totalContractAmount = useMemo(
-    () => filteredJobs.reduce((sum, job) => sum + Number(job.contract_amount ?? 0), 0),
+  const metricEligibleJobs = useMemo(
+    () =>
+      filteredJobs.filter(
+        (job) => !isDeadStageName(getStageName(job.pipeline_stages))
+      ),
     [filteredJobs]
+  )
+
+  const totalContractAmount = useMemo(
+    () =>
+      metricEligibleJobs.reduce(
+        (sum, job) => sum + Number(job.contract_amount ?? 0),
+        0
+      ),
+    [metricEligibleJobs]
   )
 
   const totalDepositCollected = useMemo(
     () =>
-      filteredJobs.reduce((sum, job) => sum + Number(job.deposit_collected ?? 0), 0),
-    [filteredJobs]
+      metricEligibleJobs.reduce(
+        (sum, job) => sum + Number(job.deposit_collected ?? 0),
+        0
+      ),
+    [metricEligibleJobs]
   )
 
   const totalRemainingBalance = useMemo(
     () =>
-      filteredJobs.reduce((sum, job) => sum + Number(job.remaining_balance ?? 0), 0),
-    [filteredJobs]
+      metricEligibleJobs.reduce(
+        (sum, job) => sum + Number(job.remaining_balance ?? 0),
+        0
+      ),
+    [metricEligibleJobs]
   )
 
   const archivedCount = useMemo(
-    () => jobs.filter((job) => isArchivedByInactivity(job.updated_at)).length,
+    () =>
+      jobs.filter((job) => {
+        if (isDeadStageName(getStageName(job.pipeline_stages))) return false
+        return isArchivedByInactivity(job.updated_at)
+      }).length,
     [jobs]
   )
 
   const unassignedCount = useMemo(
-    () => filteredJobs.filter((job) => (job.job_reps ?? []).length === 0).length,
-    [filteredJobs]
+    () => metricEligibleJobs.filter((job) => (job.job_reps ?? []).length === 0).length,
+    [metricEligibleJobs]
   )
 
   const stageCounts = useMemo(() => {
@@ -1025,6 +1048,7 @@ function JobsPageContent() {
 
     baseFilteredJobs.forEach((job) => {
       const stageName = getStageName(job.pipeline_stages)
+      if (isDeadStageName(stageName)) return
       counts.set(stageName, (counts.get(stageName) ?? 0) + 1)
     })
 
@@ -1289,7 +1313,7 @@ function JobsPageContent() {
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             label="Visible Jobs"
-            value={String(filteredJobs.length)}
+            value={String(metricEligibleJobs.length)}
             sub={`${archivedCount} archived after ${ARCHIVE_INACTIVITY_DAYS} days`}
           />
           <MetricCard

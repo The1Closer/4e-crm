@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { isManagerLike } from '@/lib/auth-helpers'
+import { isDeadStageName } from '@/lib/job-stage-access'
 import {
   isIncludedInNightlyNumbers,
   isMissingNightlyNumbersColumnError,
@@ -348,6 +349,7 @@ export async function loadDashboardDataset({
   jobs.forEach((job) => {
     const stage = normalizeStage(job.pipeline_stages)
     const name = stage?.name ?? 'No Stage'
+    if (isDeadStageName(name)) return
     pipelineCounts[name] = (pipelineCounts[name] ?? 0) + 1
   })
 

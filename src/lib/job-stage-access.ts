@@ -56,6 +56,10 @@ export function normalizeStageName(name: string | null | undefined) {
   return (name ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
+export function isDeadStageName(name: string | null | undefined) {
+  return normalizeStageName(name) === 'dead'
+}
+
 export function normalizeStage(stage: PipelineStageInput): PipelineStageRecord | null {
   if (!stage) return null
   return Array.isArray(stage) ? stage[0] ?? null : stage
@@ -168,21 +172,43 @@ export function getStageColor(stageName: string | null | undefined) {
   const normalized = normalizeStageName(stageName)
 
   if (!normalized) return '#94a3b8'
-  if (normalized.includes('new') || normalized.includes('lead')) return '#38bdf8'
-  if (normalized.includes('inspection') || normalized.includes('contingency')) {
-    return '#f59e0b'
-  }
-  if (normalized.includes('contract')) return '#22c55e'
-  if (
-    normalized.includes('pre-production') ||
-    normalized.includes('pre production') ||
-    normalized.includes('production')
-  ) {
-    return '#8b5cf6'
-  }
-  if (normalized.includes('install')) return '#f97316'
-  if (normalized.includes('complete') || normalized.includes('paid')) return '#14b8a6'
-  if (normalized.includes('lost') || normalized.includes('cancel')) return '#ef4444'
 
-  return '#d6b37a'
+  const exactColorByStageName: Record<string, string> = {
+    lead: '#38bdf8',
+    'inspection scheduled': '#f59e0b',
+    contingency: '#f97316',
+    'adjuster meeting': '#fb7185',
+    'partial approval': '#a78bfa',
+    approved: '#22c55e',
+    'contracted awaiting deposit': '#10b981',
+    'contracted awaiting manager approval': '#2dd4bf',
+    'deposit collected awaiting manager approval': '#14b8a6',
+    'pre-production prep': '#8b5cf6',
+    'pre production prep': '#8b5cf6',
+    'contracted/pre-production prep': '#7c3aed',
+    'contracted / pre-production prep': '#7c3aed',
+    'install scheduled': '#3b82f6',
+    'install complete': '#06b6d4',
+    'coc sent': '#6366f1',
+    'pending pay': '#f43f5e',
+    'collections (lien)': '#dc2626',
+    'paid in full': '#16a34a',
+    paid: '#15803d',
+    dead: '#64748b',
+  }
+
+  const exactColor = exactColorByStageName[normalized]
+  if (exactColor) return exactColor
+
+  if (normalized.includes('lost') || normalized.includes('cancel')) {
+    return '#b91c1c'
+  }
+
+  // Deterministic fallback so unknown stages still get a stable, unique color.
+  let hash = 0
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = (hash * 31 + normalized.charCodeAt(index)) >>> 0
+  }
+  const hue = hash % 360
+  return `hsl(${hue} 72% 56%)`
 }

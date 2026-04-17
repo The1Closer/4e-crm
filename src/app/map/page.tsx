@@ -6,7 +6,7 @@ import ProtectedRoute from '@/components/ProtectedRoute'
 import JobsStageRail from '@/components/jobs/JobsStageRail'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUserProfile, isManagerLike } from '@/lib/auth-helpers'
-import { normalizeStageName } from '@/lib/job-stage-access'
+import { getStageColor, normalizeStageName } from '@/lib/job-stage-access'
 import {
   getGeocodeCache,
   loadGoogleMapsApi,
@@ -128,11 +128,6 @@ function getStageSortOrder(stage: JobRow['pipeline_stages']) {
   if (!stage) return null
   const item = Array.isArray(stage) ? stage[0] ?? null : stage
   return typeof item?.sort_order === 'number' ? item.sort_order : null
-}
-
-function buildDistinctStageColor(index: number) {
-  const hue = (index * 47) % 360
-  return `hsl(${hue} 78% 58%)`
 }
 
 function getRepNames(jobReps: JobRep[] | null): string[] {
@@ -572,19 +567,9 @@ function LeadMapPageContent() {
       .filter((stage) => stage.count > 0)
   }, [geocodedLeads, orderedVisibleStageNames])
 
-  const stageColorByName = useMemo(() => {
-    const colorMap = new Map<string, string>()
-
-    orderedVisibleStageNames.forEach((stageName, index) => {
-      colorMap.set(stageName, buildDistinctStageColor(index))
-    })
-
-    return colorMap
-  }, [orderedVisibleStageNames])
-
   const getMapStageColor = useCallback(
-    (stageName: string) => stageColorByName.get(stageName) ?? '#94a3b8',
-    [stageColorByName]
+    (stageName: string) => getStageColor(stageName),
+    []
   )
 
   const selectedLead = useMemo(

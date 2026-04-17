@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { FilePenLine, GripVertical, Loader2, Lock, Trash2 } from 'lucide-react'
 import { type JobListRow, type JobStageOption } from '@/components/jobs/job-types'
+import { isDeadStageName } from '@/lib/job-stage-access'
 
 export default function JobsKanban({
   rows,
@@ -56,15 +57,23 @@ export default function JobsKanban({
         jobs,
       }))
 
+    const allKnownColumns = [...orderedColumns, ...remainingColumns]
+    const deadColumns = allKnownColumns.filter((column) =>
+      isDeadStageName(column.stageName)
+    )
+    const nonDeadColumns = allKnownColumns.filter(
+      (column) => !isDeadStageName(column.stageName)
+    )
+
     return [
-      ...orderedColumns,
-      ...remainingColumns,
+      ...nonDeadColumns,
       {
         key: 'no-stage',
         stageId: null,
         stageName: 'No Stage',
         jobs: grouped['no-stage'] ?? [],
       },
+      ...deadColumns,
     ]
   }, [grouped, stageOptions])
 
