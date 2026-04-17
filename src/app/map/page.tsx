@@ -85,8 +85,37 @@ type FailedGeocodeLead = {
   address: string
 }
 
+type JobGeocodeCacheRow = {
+  job_id: string
+  address_hash: string
+  latitude: number | null
+  longitude: number | null
+  lookup_status: string
+}
+
 const GOOGLE_MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? ''
 const EXTERNAL_INSTALL_MAP_URL = process.env.NEXT_PUBLIC_EXTERNAL_INSTALL_MAP_URL ?? ''
+
+function normalizeAddressForHash(address: string) {
+  return address.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+async function hashAddress(address: string) {
+  const normalizedAddress = normalizeAddressForHash(address)
+
+  if (!normalizedAddress) return ''
+
+  if (typeof window === 'undefined' || !window.crypto?.subtle) {
+    return normalizedAddress
+  }
+
+  const buffer = new TextEncoder().encode(normalizedAddress)
+  const digest = await window.crypto.subtle.digest('SHA-256', buffer)
+
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('')
+}
 
 function normalizeExternalMapUrl(value: string): string | null {
   const trimmedValue = value.trim()
@@ -380,6 +409,16 @@ function LeadMapPageContent() {
 
     async function geocodeJobs() {
       const geocoder = new activeMapsApi.Geocoder()
+      const geocodeHashes = new Map<string, string>()
+      const cacheUpserts: Array<{
+        job_id: string
+        address: string
+        address_hash: string
+        latitude: number | null
+        longitude: number | null
+        lookup_status: 'success' | 'failed'
+        geocoded_at: string
+      }> = []
       const nextLeads: GeocodedLead[] = []
       const nextFailedGeocodes: FailedGeocodeLead[] = []
       let resolved = 0
@@ -389,6 +428,39 @@ function LeadMapPageContent() {
         total: addressableJobs.length,
       })
       setFailedGeocodes([])
+
+      const hashedJobs = await Promise.all(
+        addressableJobs.map(async (job) => {
+          const addressHash = await hashAddress(job.address)
+          geocodeHashes.set(job.id, addressHash)
+
+          return {
+            ...job,
+            addressHash,
+          }
+        })
+      )
+
+      if (!isActive) return
+
+      const { data: cacheRows, error: cacheError } = await supabase
+        .from('job_geocode_cache')
+        .select('job_id,address_hash,latitude,longitude,lookup_status')
+        .in(
+          'job_id',
+          hashedJobs.map((job) => job.id)
+        )
+
+      if (!isActive) return
+
+      if (cacheError) {
+        console.error('Failed to load persisted geocode cache.', cacheError)
+      }
+
+      const persistedCacheByJobId = new Map<string, JobGeocodeCacheRow>()
+      for (const row of (cacheRows ?? []) as JobGeocodeCacheRow[]) {
+        persistedCacheByJobId.set(row.job_id, row)
+      }
 
       for (const job of addressableJobs) {
         if (!isActive) return
@@ -409,9 +481,53 @@ function LeadMapPageContent() {
           continue
         }
 
+        const jobHash = geocodeHashes.get(job.id) ?? ''
+        const persisted = persistedCacheByJobId.get(job.id)
+        const persistedMatchesAddress = Boolean(jobHash) && persisted?.address_hash === jobHash
+
+        if (
+          persisted &&
+          persistedMatchesAddress &&
+          persisted.lookup_status === 'success' &&
+          typeof persisted.latitude === 'number' &&
+          Number.isFinite(persisted.latitude) &&
+          typeof persisted.longitude === 'number' &&
+          Number.isFinite(persisted.longitude)
+        ) {
+          const position = {
+            lat: persisted.latitude,
+            lng: persisted.longitude,
+          }
+
+          setGeocodeCache(job.address, position)
+          nextLeads.push({
+            ...job,
+            position,
+          })
+
+          resolved += 1
+          setGeocodingProgress({
+            resolved,
+            total: addressableJobs.length,
+          })
+          continue
+        }
+
         try {
           const position = await geocodeAddress(geocoder, job.address)
           setGeocodeCache(job.address, position)
+
+          if (jobHash) {
+            cacheUpserts.push({
+              job_id: job.id,
+              address: job.address,
+              address_hash: jobHash,
+              latitude: position.lat,
+              longitude: position.lng,
+              lookup_status: 'success',
+              geocoded_at: new Date().toISOString(),
+            })
+          }
 
           nextLeads.push({
             ...job,
@@ -419,6 +535,19 @@ function LeadMapPageContent() {
           })
         } catch (error) {
           console.error(error)
+
+          if (jobHash) {
+            cacheUpserts.push({
+              job_id: job.id,
+              address: job.address,
+              address_hash: jobHash,
+              latitude: null,
+              longitude: null,
+              lookup_status: 'failed',
+              geocoded_at: new Date().toISOString(),
+            })
+          }
+
           nextFailedGeocodes.push({
             id: job.id,
             homeownerName: job.homeownerName,
@@ -435,12 +564,20 @@ function LeadMapPageContent() {
 
       if (!isActive) return
 
+      if (cacheUpserts.length > 0) {
+        const { error: upsertError } = await supabase
+          .from('job_geocode_cache')
+          .upsert(cacheUpserts, { onConflict: 'job_id' })
+
+        if (upsertError) {
+          console.error('Failed to persist geocode cache rows.', upsertError)
+        }
+      }
+
       setGeocodedLeads(nextLeads)
       setFailedGeocodes(nextFailedGeocodes)
 
-      if (!selectedLeadId && nextLeads[0]) {
-        setSelectedLeadId(nextLeads[0].id)
-      }
+      setSelectedLeadId((current) => current ?? nextLeads[0]?.id ?? null)
     }
 
     void geocodeJobs()
@@ -448,7 +585,7 @@ function LeadMapPageContent() {
     return () => {
       isActive = false
     }
-  }, [addressableJobs, mapsApi, selectedLeadId])
+  }, [addressableJobs, mapsApi])
 
   useEffect(() => {
     if (!mapsApi || !mapRef.current || mapInstanceRef.current) return
