@@ -34,6 +34,7 @@ type JobResponse = {
   remaining_balance: number | null
   supplemented_amount: number | null
   shingle_name: string | null
+  stage_entered_at: string | null
   created_at: string
   updated_at: string
   homeowners:
@@ -179,6 +180,16 @@ function formatMoney(value: number | null) {
 function formatDate(value: string | null) {
   if (!value) return '-'
   return new Date(`${value}T00:00:00`).toLocaleDateString('en-US')
+}
+
+function getDaysInStatus(stageEnteredAt: string | null, createdAt: string | null) {
+  const baseline = stageEnteredAt ?? createdAt
+  if (!baseline) return 0
+
+  const enteredAtMs = new Date(baseline).getTime()
+  if (Number.isNaN(enteredAtMs)) return 0
+
+  return Math.floor(Math.max(0, Date.now() - enteredAtMs) / 86_400_000)
 }
 
 function buildInitialData(
@@ -335,6 +346,13 @@ export default function JobDetailPageClient({
   )
   const assignedReps = useMemo(
     () => (payload ? getReps(payload.job.job_reps) : []),
+    [payload]
+  )
+  const daysInStatus = useMemo(
+    () =>
+      payload
+        ? getDaysInStatus(payload.job.stage_entered_at, payload.job.created_at)
+        : 0,
     [payload]
   )
   const initialData = useMemo(
@@ -518,6 +536,9 @@ export default function JobDetailPageClient({
               </div>
               <div className="mt-4 text-sm text-white/60">
                 Update the pipeline stage right here without opening the full editor.
+              </div>
+              <div className="mt-2 text-sm font-semibold text-white/75">
+                Days in status: {daysInStatus}
               </div>
               <div className="mt-4">
                 <StageSelector

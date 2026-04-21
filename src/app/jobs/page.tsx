@@ -61,6 +61,7 @@ type JobRow = {
   remaining_balance: number | null
   supplemented_amount: number | null
   install_date: string | null
+  stage_entered_at: string | null
   created_at: string | null
   updated_at: string | null
   homeowners:
@@ -169,6 +170,21 @@ function toTime(value: string | null | undefined, fallback: number) {
   if (!value) return fallback
   const parsed = new Date(value).getTime()
   return Number.isNaN(parsed) ? fallback : parsed
+}
+
+function calculateDaysInStatus(
+  stageEnteredAt: string | null | undefined,
+  createdAt: string | null | undefined,
+  nowMs: number
+) {
+  const enteredAtMs = toTime(stageEnteredAt ?? createdAt, Number.NaN)
+
+  if (!Number.isFinite(enteredAtMs)) {
+    return 0
+  }
+
+  const elapsedMs = Math.max(0, nowMs - enteredAtMs)
+  return Math.floor(elapsedMs / 86_400_000)
 }
 
 function normalizeStageLabel(value: string | null | undefined) {
@@ -554,6 +570,7 @@ function JobsPageContent() {
         remaining_balance,
         supplemented_amount,
         install_date,
+        stage_entered_at,
         created_at,
         updated_at,
         homeowners (
@@ -804,6 +821,12 @@ function JobsPageContent() {
         )
       }
 
+      if (sortKey === 'days_in_status') {
+        const aEnteredAt = toTime(a.stage_entered_at, Number.MAX_SAFE_INTEGER)
+        const bEnteredAt = toTime(b.stage_entered_at, Number.MAX_SAFE_INTEGER)
+        return compareWithRecentUpdateFallback(a, b, aEnteredAt - bEnteredAt)
+      }
+
       if (sortKey === 'install_soonest') {
         const aTime = a.install_date
           ? new Date(a.install_date).getTime()
@@ -929,8 +952,10 @@ function JobsPageContent() {
   )
 
   const normalizedJobs = useMemo<JobListRow[]>(
-    () =>
-      filteredJobs.map((job) => {
+    () => {
+      const nowMs = Date.now()
+
+      return filteredJobs.map((job) => {
         const homeowner = getHomeowner(job.homeowners)
         const stage = getStage(job.pipeline_stages)
 
@@ -947,12 +972,19 @@ function JobsPageContent() {
           insuranceCarrier: job.insurance_carrier ?? '-',
           claimNumber: job.claim_number ?? '-',
           installDate: job.install_date,
+          stageEnteredAt: job.stage_entered_at,
+          daysInStatus: calculateDaysInStatus(
+            job.stage_entered_at,
+            job.created_at,
+            nowMs
+          ),
           contractAmount: job.contract_amount,
           depositCollected: job.deposit_collected,
           remainingBalance: job.remaining_balance,
           supplementedAmount: job.supplemented_amount,
         }
-      }),
+      })
+    },
     [filteredJobs]
   )
 
@@ -1192,6 +1224,11 @@ function JobsPageContent() {
           ? {
               ...entry,
               install_date: nextInstallDate,
+              stage_entered_at:
+                (getStage(entry.pipeline_stages)?.id ?? null) !==
+                (requestedStage?.id ?? null)
+                  ? new Date().toISOString()
+                  : entry.stage_entered_at,
               updated_at: new Date().toISOString(),
               pipeline_stages: requestedStage
                 ? {

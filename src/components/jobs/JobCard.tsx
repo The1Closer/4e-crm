@@ -21,6 +21,10 @@ function formatDate(value: string | null) {
   return new Date(`${value}T00:00:00`).toLocaleDateString('en-US')
 }
 
+function formatDaysInStatus(days: number) {
+  return `${days} day${days === 1 ? '' : 's'}`
+}
+
 function StagePill({ stageName }: { stageName: string }) {
   return (
     <div className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#d6b37a]">
@@ -97,6 +101,7 @@ export default function JobCard({
         <InfoBlock label="Insurance" value={job.insuranceCarrier} />
         <InfoBlock label="Claim Number" value={job.claimNumber} />
         <InfoBlock label="Install Date" value={formatDate(job.installDate)} />
+        <InfoBlock label="Days In Status" value={formatDaysInStatus(job.daysInStatus)} />
         <InfoBlock label="Contract Amount" value={formatCurrency(job.contractAmount)} />
         <InfoBlock
           label="Total Paid"

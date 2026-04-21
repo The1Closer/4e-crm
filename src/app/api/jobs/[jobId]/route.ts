@@ -580,6 +580,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
         remaining_balance,
         supplemented_amount,
         shingle_name,
+        stage_entered_at,
         created_at,
         updated_at,
         homeowners (

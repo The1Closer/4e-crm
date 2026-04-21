@@ -11,6 +11,8 @@ export type JobListRow = {
   insuranceCarrier: string
   claimNumber: string
   installDate: string | null
+  stageEnteredAt: string | null
+  daysInStatus: number
   contractAmount: number | null
   depositCollected: number | null
   remainingBalance: number | null

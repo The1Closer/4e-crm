@@ -238,6 +238,7 @@ export default function JobsKanban({
                                 <div>Insurance: {job.insuranceCarrier}</div>
                                 <div>Claim: {job.claimNumber}</div>
                                 <div>Install: {job.installDate || '—'}</div>
+                                <div>Days In Status: {job.daysInStatus}</div>
                                 <div>
                                   Reps:{' '}
                                   {job.repNames.length > 0 ? job.repNames.join(', ') : '—'}

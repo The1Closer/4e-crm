@@ -7,6 +7,7 @@ export type JobsSortKey =
     | 'recently_updated'
     | 'least_recently_updated'
     | 'pipeline_stage_order'
+    | 'days_in_status'
     | 'install_soonest'
     | 'balance_high'
     | 'homeowner_az'
@@ -34,6 +35,7 @@ export default function JobsSortSelect({
             <option value="recently_updated">Recently Updated</option>
             <option value="least_recently_updated">Least Recently Updated</option>
             <option value="pipeline_stage_order">Pipeline Stage Order (Lead → Paid in Full)</option>
+            <option value="days_in_status">Days In Status (Oldest First)</option>
             <option value="install_soonest">Install Date Soonest</option>
             <option value="balance_high">Outstanding Balance High → Low</option>
             <option value="homeowner_az">Homeowner Name (A → Z)</option>
