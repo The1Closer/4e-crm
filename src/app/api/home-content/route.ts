@@ -223,6 +223,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     announcements: visibleAnnouncements,
     spotlight: visibleSpotlights[0] ?? null,
+    spotlights: visibleSpotlights,
     spotlightsConfigured: spotlightResult.configured,
   })
 }

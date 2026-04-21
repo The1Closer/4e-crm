@@ -53,7 +53,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
     return accessError
   }
 
-  const [contractsRes, supplementsRes] = await Promise.all([
+  const [contractsRes, supplementsRes, paymentsRes] = await Promise.all([
     supabaseAdmin
       .from('job_contracts')
       .select(
@@ -66,6 +66,10 @@ export async function GET(req: NextRequest, context: RouteContext) {
       .from('job_contract_supplements')
       .select('id, job_contract_id, amount')
       .eq('job_id', jobId),
+    supabaseAdmin
+      .from('job_payments')
+      .select('id, job_contract_id, amount')
+      .eq('job_id', jobId),
   ])
 
   if (contractsRes.error) {
@@ -76,18 +80,38 @@ export async function GET(req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: supplementsRes.error.message }, { status: 400 })
   }
 
+  if (paymentsRes.error) {
+    return NextResponse.json({ error: paymentsRes.error.message }, { status: 400 })
+  }
+
   const supplements = supplementsRes.data ?? []
+  const payments = paymentsRes.data ?? []
   const supplementByContract = supplements.reduce<Record<string, number>>((acc, row) => {
+    const current = Number(acc[row.job_contract_id] ?? 0)
+    acc[row.job_contract_id] = current + Number(row.amount ?? 0)
+    return acc
+  }, {})
+  const paidByContract = payments.reduce<Record<string, number>>((acc, row) => {
     const current = Number(acc[row.job_contract_id] ?? 0)
     acc[row.job_contract_id] = current + Number(row.amount ?? 0)
     return acc
   }, {})
 
   return NextResponse.json({
-    contracts: (contractsRes.data ?? []).map((contract) => ({
-      ...contract,
-      supplement_total: supplementByContract[contract.id] ?? 0,
-    })),
+    contracts: (contractsRes.data ?? []).map((contract) => {
+      const contractAmount = Number(contract.contract_amount ?? 0)
+      const supplementTotal = supplementByContract[contract.id] ?? 0
+      const totalValue = contractAmount + supplementTotal
+      const paidTotal = paidByContract[contract.id] ?? 0
+
+      return {
+        ...contract,
+        supplement_total: supplementTotal,
+        paid_total: paidTotal,
+        total_value: totalValue,
+        remaining_balance: totalValue - paidTotal,
+      }
+    }),
   })
 }
 

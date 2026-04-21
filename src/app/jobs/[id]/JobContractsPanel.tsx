@@ -15,6 +15,9 @@ type JobContractRow = {
   created_at: string
   created_by: string | null
   supplement_total: number
+  paid_total: number
+  total_value: number
+  remaining_balance: number
 }
 
 type ContractsResponse = {
@@ -286,6 +289,20 @@ export default function JobContractsPanel({
                     <div className="mt-2 text-sm text-white/55">
                       Supplements on this contract: {formatCurrency(contract.supplement_total)}
                     </div>
+                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                      <SnapshotTile
+                        label="Contract Value"
+                        value={formatCurrency(contract.total_value)}
+                      />
+                      <SnapshotTile
+                        label="Paid"
+                        value={formatCurrency(contract.paid_total)}
+                      />
+                      <SnapshotTile
+                        label="Remaining"
+                        value={formatCurrency(contract.remaining_balance)}
+                      />
+                    </div>
                   </div>
 
                   <button
@@ -437,5 +454,22 @@ export default function JobContractsPanel({
         </div>
       ) : null}
     </section>
+  )
+}
+
+function SnapshotTile({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.15em] text-white/45">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold text-white">{value}</div>
+    </div>
   )
 }
