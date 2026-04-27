@@ -759,13 +759,6 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Stage not found.' }, { status: 400 })
     }
 
-    if (targetStage && isInstallScheduledStage(targetStage) && !installDate) {
-      return NextResponse.json(
-        { error: 'Install Scheduled requires an install date.' },
-        { status: 400 }
-      )
-    }
-
     if (
       targetStage &&
       isManagementLockedStage(targetStage, stages) &&

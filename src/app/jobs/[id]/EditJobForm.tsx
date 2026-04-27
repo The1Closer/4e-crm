@@ -89,6 +89,17 @@ function formatScheduleDate(value: string) {
   return new Date(`${value}T00:00:00`).toLocaleDateString('en-US')
 }
 
+function normalizePromptInstallDate(rawValue: string): string | null | 'invalid' {
+  const trimmed = rawValue.trim()
+  if (!trimmed) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return 'invalid'
+
+  const parsed = new Date(`${trimmed}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return 'invalid'
+
+  return trimmed
+}
+
 export default function EditJobForm({
   jobId,
   stages,
@@ -192,13 +203,31 @@ export default function EditJobForm({
     event.preventDefault()
 
     const nextStage = stages.find((stage) => String(stage.id) === form.stage_id) ?? null
-    const nextInstallDate =
+    let nextInstallDate =
       nextStage && isPreProductionPrepStage(nextStage) ? '' : form.install_date
 
-    if (nextStage && isInstallScheduledStage(nextStage) && !nextInstallDate) {
-      setMessageTone('error')
-      setMessage('Set an install date before moving this job into Install Scheduled.')
-      return
+    if (nextStage && isInstallScheduledStage(nextStage) && !nextInstallDate.trim()) {
+      const promptedValue = window.prompt(
+        'This job does not have an install date yet. Enter one now (YYYY-MM-DD), or leave blank and click OK to skip for now.',
+        ''
+      )
+
+      if (promptedValue === null) {
+        setMessageTone('error')
+        setMessage('Save canceled.')
+        return
+      }
+
+      const normalizedPromptDate = normalizePromptInstallDate(promptedValue)
+
+      if (normalizedPromptDate === 'invalid') {
+        setMessageTone('error')
+        setMessage('Please use a valid install date in YYYY-MM-DD format.')
+        return
+      }
+
+      nextInstallDate = normalizedPromptDate ?? ''
+      updateField('install_date', nextInstallDate)
     }
 
     if (

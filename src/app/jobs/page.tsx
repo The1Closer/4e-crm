@@ -219,6 +219,17 @@ function getStageSortOrder(
   return Number.MAX_SAFE_INTEGER
 }
 
+function normalizePromptInstallDate(rawValue: string): string | null | 'invalid' {
+  const trimmed = rawValue.trim()
+  if (!trimmed) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return 'invalid'
+
+  const parsed = new Date(`${trimmed}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return 'invalid'
+
+  return trimmed
+}
+
 function getFirstAssignedRep(job: JobRow) {
   const repNames = getRepNames(job.job_reps)
   return repNames[0] ?? ''
@@ -1167,10 +1178,29 @@ function JobsPageContent() {
       return
     }
 
+    let promptInstallDate: string | null | undefined = undefined
+
     if (requestedStage && isInstallScheduledStage(requestedStage) && !job.installDate) {
-      setPageMessageTone('error')
-      setPageMessage('Set an install date before moving this job into Install Scheduled.')
-      return
+      const promptedValue = window.prompt(
+        'This job does not have an install date yet. Enter one now (YYYY-MM-DD), or leave blank and click OK to skip for now.',
+        ''
+      )
+
+      if (promptedValue === null) {
+        setPageMessageTone('error')
+        setPageMessage('Move canceled.')
+        return
+      }
+
+      const normalizedPromptDate = normalizePromptInstallDate(promptedValue)
+
+      if (normalizedPromptDate === 'invalid') {
+        setPageMessageTone('error')
+        setPageMessage('Please use a valid install date in YYYY-MM-DD format.')
+        return
+      }
+
+      promptInstallDate = normalizedPromptDate
     }
 
     if (
@@ -1185,7 +1215,11 @@ function JobsPageContent() {
     }
 
     const nextInstallDate =
-      requestedStage && isPreProductionPrepStage(requestedStage) ? null : job.installDate
+      requestedStage && isPreProductionPrepStage(requestedStage)
+        ? null
+        : promptInstallDate !== undefined
+          ? promptInstallDate
+          : job.installDate
     const noChange =
       job.stageId === (requestedStage?.id ?? null) && job.installDate === nextInstallDate
 

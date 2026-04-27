@@ -71,12 +71,40 @@ export default function StageSelector({
     )
   }, [canManageLockedStages, currentStage, stages])
 
+  function normalizePromptInstallDate(rawValue: string): string | null | 'invalid' {
+    const trimmed = rawValue.trim()
+    if (!trimmed) return null
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return 'invalid'
+
+    const parsed = new Date(`${trimmed}T00:00:00`)
+    if (Number.isNaN(parsed.getTime())) return 'invalid'
+
+    return trimmed
+  }
+
   async function handleChange(nextValue: string) {
     const nextStage = stages.find((stage) => String(stage.id) === nextValue) ?? null
+    let nextInstallDate = nextStage && isPreProductionPrepStage(nextStage) ? null : installDate
 
-    if (nextStage && isInstallScheduledStage(nextStage) && !installDate) {
-      setMessage('Set an install date in Edit Job or on the install calendar first.')
-      return
+    if (nextStage && isInstallScheduledStage(nextStage) && !nextInstallDate) {
+      const promptedValue = window.prompt(
+        'This job does not have an install date yet. Enter one now (YYYY-MM-DD), or leave blank and click OK to skip for now.',
+        ''
+      )
+
+      if (promptedValue === null) {
+        setMessage('Move canceled.')
+        return
+      }
+
+      const normalizedPromptDate = normalizePromptInstallDate(promptedValue)
+
+      if (normalizedPromptDate === 'invalid') {
+        setMessage('Please use a valid install date in YYYY-MM-DD format.')
+        return
+      }
+
+      nextInstallDate = normalizedPromptDate ?? null
     }
 
     if (
@@ -94,8 +122,6 @@ export default function StageSelector({
     setMessage('')
     setValue(nextValue)
     setSaving(true)
-
-    const nextInstallDate = nextStage && isPreProductionPrepStage(nextStage) ? null : installDate
 
     const response = await authorizedFetch(`/api/jobs/${jobId}`, {
       method: 'PATCH',
