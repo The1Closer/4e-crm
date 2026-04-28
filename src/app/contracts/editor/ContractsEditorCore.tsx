@@ -1821,7 +1821,7 @@ export default function ContractsEditorCore() {
                                   event.stopPropagation()
                                   setSelectedId(annotation.id)
                                 }}
-                                onDoubleClick={(event) => {
+                                onDoubleClick={(event: ReactMouseEvent) => {
                                   event.stopPropagation()
                                   if (annotation.type === 'signature-box') {
                                     openSignaturePad(annotation.page)
