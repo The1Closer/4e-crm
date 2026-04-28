@@ -404,6 +404,7 @@ export default function ContractsEditorCore() {
   const [isOnline, setIsOnline] = useState(true)
   const [sourceLoading, setSourceLoading] = useState(false)
   const [recipientEmail, setRecipientEmail] = useState<string | null>(null)
+  const [editBarAnnotationId, setEditBarAnnotationId] = useState<string | null>(null)
   const [shareableDocumentUrl, setShareableDocumentUrl] = useState<string | null>(
     sourceUrl || null
   )
@@ -444,6 +445,10 @@ export default function ContractsEditorCore() {
   const selectedAnnotation = useMemo(
     () => annotations.find((annotation) => annotation.id === selectedId) ?? null,
     [annotations, selectedId]
+  )
+  const editBarAnnotation = useMemo(
+    () => (editBarAnnotationId ? annotations.find((a) => a.id === editBarAnnotationId) ?? null : null),
+    [annotations, editBarAnnotationId]
   )
 
   const orderedAnnotations = useMemo(
@@ -1032,15 +1037,12 @@ export default function ContractsEditorCore() {
       return
     }
 
-    if (annotation.type === 'text' || annotation.type === 'date' || annotation.type === 'initials') {
-      const nextValue = window.prompt(
-        `Edit ${getAnnotationTypeLabel(annotation.type)}`,
-        annotation.value ?? ''
-      )
-
-      if (nextValue !== null) {
-        updateAnnotation(annotation.id, { value: nextValue })
-      }
+    if (
+      annotation.type === 'text' ||
+      annotation.type === 'date' ||
+      annotation.type === 'initials'
+    ) {
+      setEditBarAnnotationId(annotation.id)
     }
   }
 
@@ -1534,7 +1536,7 @@ export default function ContractsEditorCore() {
 
       <div className="crm-grid-safe grid gap-6 md:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
         <aside className="flex flex-col gap-4">
-          <section className="order-3 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl md:sticky md:top-28 md:z-30">
+          <section className="order-3 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl md:sticky md:top-32 md:z-30 md:max-h-[calc(100vh-9rem)] md:overflow-y-auto">
             <div className="flex items-center justify-between">
               <PanelTitle eyebrow="Toolbox" title="Insert Fields" />
             </div>
@@ -1570,71 +1572,15 @@ export default function ContractsEditorCore() {
                 Tap anywhere on the PDF to place a {getAnnotationTypeLabel(activeInsertionType)} field.
               </div>
             )}
-          </section>
 
-          <section className="order-1 hidden rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl md:block">
-            <PanelTitle
-              eyebrow="Coverage"
-              title="Document Stats"
-            />
+            <div className="my-5 border-t border-white/10" />
 
-            <div className="mt-4 grid gap-2">
-              <StatRow label="Text" value={annotationCounts.text} />
-              <StatRow label="Dates" value={annotationCounts.date} />
-              <StatRow label="Initials" value={annotationCounts.initials} />
-              <StatRow label="Signatures" value={annotationCounts.signature} />
-              <StatRow label="Sig Boxes" value={annotationCounts['signature-box']} />
-              <StatRow label="Checks" value={annotationCounts.check} />
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d6b37a]">
+              Selected Element
             </div>
-          </section>
-
-          <section className="relative z-0 order-2 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-            <PanelTitle
-              eyebrow="Field Map"
-              title="Placed Fields"
-              body="Select fields from a readable list instead of hunting for tiny boxes."
-            />
-
-            {orderedAnnotations.length === 0 ? (
-              <div className="mt-4 rounded-2xl border border-dashed border-white/14 p-4 text-sm text-white/55">
-                No fields placed yet.
-              </div>
-            ) : (
-              <div className="mt-5 space-y-2">
-                {orderedAnnotations.map((annotation) => (
-                  <button
-                    key={annotation.id}
-                    type="button"
-                    onClick={() => setSelectedId(annotation.id)}
-                    className={`block w-full rounded-2xl border px-4 py-3 text-left transition ${
-                      selectedId === annotation.id
-                        ? 'border-[#d6b37a]/35 bg-[#d6b37a]/10'
-                        : 'border-white/10 bg-black/20 hover:bg-white/[0.06]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-semibold text-white">
-                        {getAnnotationTypeLabel(annotation.type)}
-                      </div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/42">
-                        Page {annotation.page}
-                      </div>
-                    </div>
-                    <div className="mt-1 truncate text-xs text-white/55">
-                      {getAnnotationDisplayValue(annotation)}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="order-3 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl md:sticky md:top-[28rem] md:z-20">
-            <PanelTitle
-              eyebrow="Inspector"
-              title="Selected Element"
-              body="Update values, sizes, or signatures from here once a field is selected."
-            />
+            <p className="mt-2 text-sm leading-6 text-white/60">
+              Update values, sizes, or signatures from here once a field is selected.
+            </p>
 
             {!selectedAnnotation ? (
               <div className="mt-4 rounded-2xl border border-dashed border-white/14 p-4 text-sm text-white/55">
@@ -1730,6 +1676,64 @@ export default function ContractsEditorCore() {
               </div>
             )}
           </section>
+
+          <section className="order-1 hidden rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl md:block">
+            <PanelTitle
+              eyebrow="Coverage"
+              title="Document Stats"
+            />
+
+            <div className="mt-4 grid gap-2">
+              <StatRow label="Text" value={annotationCounts.text} />
+              <StatRow label="Dates" value={annotationCounts.date} />
+              <StatRow label="Initials" value={annotationCounts.initials} />
+              <StatRow label="Signatures" value={annotationCounts.signature} />
+              <StatRow label="Sig Boxes" value={annotationCounts['signature-box']} />
+              <StatRow label="Checks" value={annotationCounts.check} />
+            </div>
+          </section>
+
+          <section className="relative z-0 order-2 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+            <PanelTitle
+              eyebrow="Field Map"
+              title="Placed Fields"
+              body="Select fields from a readable list instead of hunting for tiny boxes."
+            />
+
+            {orderedAnnotations.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-white/14 p-4 text-sm text-white/55">
+                No fields placed yet.
+              </div>
+            ) : (
+              <div className="mt-5 space-y-2">
+                {orderedAnnotations.map((annotation) => (
+                  <button
+                    key={annotation.id}
+                    type="button"
+                    onClick={() => setSelectedId(annotation.id)}
+                    className={`block w-full rounded-2xl border px-4 py-3 text-left transition ${
+                      selectedId === annotation.id
+                        ? 'border-[#d6b37a]/35 bg-[#d6b37a]/10'
+                        : 'border-white/10 bg-black/20 hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-semibold text-white">
+                        {getAnnotationTypeLabel(annotation.type)}
+                      </div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/42">
+                        Page {annotation.page}
+                      </div>
+                    </div>
+                    <div className="mt-1 truncate text-xs text-white/55">
+                      {getAnnotationDisplayValue(annotation)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
         </aside>
 
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
@@ -1811,6 +1815,7 @@ export default function ContractsEditorCore() {
                                 placeAnnotationFromPointer(pageNumber, activeInsertionType, event)
                               } else {
                                 setSelectedId(null)
+                                setEditBarAnnotationId(null)
                               }
                             }}
                           >
@@ -1833,18 +1838,20 @@ export default function ContractsEditorCore() {
                                 disableDragging={false}
                                 enableUserSelectHack={false}
                                 resizeHandleStyles={{
-                                  bottomRight: { width: 22, height: 22, right: -5, bottom: -5, borderRadius: 6, background: 'rgba(100,100,100,0.35)' },
-                                  bottomLeft: { width: 22, height: 22, left: -5, bottom: -5, borderRadius: 6, background: 'rgba(100,100,100,0.35)' },
-                                  topRight: { width: 22, height: 22, right: -5, top: -5, borderRadius: 6, background: 'rgba(100,100,100,0.35)' },
-                                  topLeft: { width: 22, height: 22, left: -5, top: -5, borderRadius: 6, background: 'rgba(100,100,100,0.35)' },
+                                  bottomRight: { width: 22, height: 22, right: 0, bottom: 0, borderRadius: 6, background: 'rgba(100,100,100,0.35)' },
+                                  bottomLeft: { width: 22, height: 22, left: 0, bottom: 0, borderRadius: 6, background: 'rgba(100,100,100,0.35)' },
+                                  topRight: { width: 22, height: 22, right: 0, top: 0, borderRadius: 6, background: 'rgba(100,100,100,0.35)' },
+                                  topLeft: { width: 22, height: 22, left: 0, top: 0, borderRadius: 6, background: 'rgba(100,100,100,0.35)' },
                                 }}
                                 onMouseDown={(event) => {
                                   event.stopPropagation()
                                   setSelectedId(annotation.id)
+                                  setEditBarAnnotationId(null)
                                 }}
                                 onTouchStart={(event: ReactTouchEvent) => {
                                   event.stopPropagation()
                                   setSelectedId(annotation.id)
+                                  setEditBarAnnotationId(null)
                                 }}
                                 onClick={(event: ReactMouseEvent) => {
                                   event.stopPropagation()
@@ -1873,12 +1880,6 @@ export default function ContractsEditorCore() {
                                   annotationTapSuppressedRef.current = true
                                   setSelectedId(annotation.id)
                                 }}
-                                onDrag={(_, position) =>
-                                  updateAnnotation(annotation.id, {
-                                    x: position.x,
-                                    y: position.y,
-                                  })
-                                }
                                 onDragStop={(_, position) => {
                                   updateAnnotation(annotation.id, {
                                     x: position.x,
@@ -2128,6 +2129,68 @@ export default function ContractsEditorCore() {
                 className="rounded-2xl border border-gray-300 bg-white px-6 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-100"
               >
                 Apply to All Boxes
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {editBarAnnotation && !signatureOpen ? (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white px-4 py-4 shadow-[0_-8px_32px_rgba(0,0,0,0.12)]">
+          <div className="mx-auto flex max-w-2xl flex-col gap-3">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+              Edit {getAnnotationTypeLabel(editBarAnnotation.type)} field
+            </div>
+            <input
+              value={editBarAnnotation.value ?? ''}
+              onChange={(event) =>
+                updateAnnotation(editBarAnnotation.id, { value: event.target.value })
+              }
+              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-base text-gray-900 outline-none transition focus:border-[#9c7a4a]"
+              autoFocus
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  updateAnnotation(editBarAnnotation.id, {
+                    fontSize: Math.max(10, (editBarAnnotation.fontSize ?? 18) - 2),
+                  })
+                }
+                className="rounded-xl border border-gray-300 px-3 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-100"
+              >
+                A−
+              </button>
+              <span className="min-w-[3ch] text-center text-sm text-gray-600">
+                {editBarAnnotation.fontSize ?? 18}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  updateAnnotation(editBarAnnotation.id, {
+                    fontSize: Math.min(72, (editBarAnnotation.fontSize ?? 18) + 2),
+                  })
+                }
+                className="rounded-xl border border-gray-300 px-3 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-100"
+              >
+                A+
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteSelected()
+                  setEditBarAnnotationId(null)
+                }}
+                className="ml-auto rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-100"
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditBarAnnotationId(null)}
+                className="rounded-xl bg-gray-900 px-5 py-2 text-sm font-semibold text-white transition hover:bg-gray-800"
+              >
+                Done
               </button>
             </div>
           </div>
