@@ -1635,27 +1635,6 @@ export default function ContractsEditorCore() {
                   </label>
                 ) : null}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <InspectorNumberField
-                    label="Width"
-                    value={Math.round(selectedAnnotation.width)}
-                    onChange={(value) =>
-                      updateAnnotation(selectedAnnotation.id, {
-                        width: value,
-                      })
-                    }
-                  />
-                  <InspectorNumberField
-                    label="Height"
-                    value={Math.round(selectedAnnotation.height)}
-                    onChange={(value) =>
-                      updateAnnotation(selectedAnnotation.id, {
-                        height: value,
-                      })
-                    }
-                  />
-                </div>
-
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
@@ -1809,7 +1788,7 @@ export default function ContractsEditorCore() {
                             className={`relative overflow-hidden rounded-[1.4rem] bg-white shadow-[0_16px_40px_rgba(0,0,0,0.28)] ${
                               activeInsertionType ? 'cursor-crosshair' : ''
                             }`}
-                            style={{ width: '100%' }}
+                            style={{ width: '100%', touchAction: 'none' }}
                             onClick={(event) => {
                               if (activeInsertionType) {
                                 placeAnnotationFromPointer(pageNumber, activeInsertionType, event)
@@ -1876,8 +1855,6 @@ export default function ContractsEditorCore() {
                                 }}
                                 onDragStart={(event) => {
                                   event.stopPropagation()
-                                  annotationGestureRef.current.dragging = true
-                                  annotationTapSuppressedRef.current = true
                                   setSelectedId(annotation.id)
                                 }}
                                 onDragStop={(_, position) => {
@@ -1886,6 +1863,7 @@ export default function ContractsEditorCore() {
                                     y: position.y,
                                   })
                                   annotationGestureRef.current.dragging = false
+                                  annotationTapSuppressedRef.current = true
                                   window.setTimeout(() => {
                                     annotationTapSuppressedRef.current = false
                                   }, 120)
@@ -2226,30 +2204,6 @@ function StatRow({
       <div className="text-sm text-white/65">{label}</div>
       <div className="text-sm font-semibold text-white">{value}</div>
     </div>
-  )
-}
-
-function InspectorNumberField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: number
-  onChange: (next: number) => void
-}) {
-  return (
-    <label className="block">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
-        {label}
-      </div>
-      <input
-        type="number"
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value || 0))}
-        className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#d6b37a]/35"
-      />
-    </label>
   )
 }
 
