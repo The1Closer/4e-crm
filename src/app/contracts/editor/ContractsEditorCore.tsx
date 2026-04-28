@@ -414,6 +414,7 @@ export default function ContractsEditorCore() {
     dragging: false,
     resizing: false,
   })
+  const annotationTapSuppressedRef = useRef(false)
   const pageWidthRef = useRef(880)
   const [pageWidth, setPageWidth] = useState(880)
   const [savedSignatureDataUrl, setSavedSignatureDataUrl] = useState<string | null>(null)
@@ -1023,6 +1024,26 @@ export default function ContractsEditorCore() {
     setSignatureOpen(true)
   }
 
+  function handleAnnotationTap(annotation: Annotation) {
+    setSelectedId(annotation.id)
+
+    if (annotation.type === 'signature-box') {
+      openSignaturePad(annotation.page)
+      return
+    }
+
+    if (annotation.type === 'text' || annotation.type === 'date' || annotation.type === 'initials') {
+      const nextValue = window.prompt(
+        `Edit ${getAnnotationTypeLabel(annotation.type)}`,
+        annotation.value ?? ''
+      )
+
+      if (nextValue !== null) {
+        updateAnnotation(annotation.id, { value: nextValue })
+      }
+    }
+  }
+
   function clearSignaturePad() {
     signaturePadRef.current?.clear()
   }
@@ -1513,7 +1534,7 @@ export default function ContractsEditorCore() {
 
       <div className="crm-grid-safe grid gap-6 md:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
         <aside className="flex flex-col gap-4">
-          <section className="order-2 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl md:sticky md:top-24 md:z-30">
+          <section className="order-3 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl md:sticky md:top-28 md:z-30">
             <div className="flex items-center justify-between">
               <PanelTitle eyebrow="Toolbox" title="Insert Fields" />
             </div>
@@ -1567,7 +1588,7 @@ export default function ContractsEditorCore() {
             </div>
           </section>
 
-          <section className="relative z-0 order-4 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+          <section className="relative z-0 order-2 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
             <PanelTitle
               eyebrow="Field Map"
               title="Placed Fields"
@@ -1827,19 +1848,29 @@ export default function ContractsEditorCore() {
                                 }}
                                 onClick={(event: ReactMouseEvent) => {
                                   event.stopPropagation()
-                                  setSelectedId(annotation.id)
-
                                   if (
-                                    annotation.type === 'signature-box' &&
+                                    !annotationTapSuppressedRef.current &&
                                     !annotationGestureRef.current.dragging &&
                                     !annotationGestureRef.current.resizing
                                   ) {
-                                    openSignaturePad(annotation.page)
+                                    handleAnnotationTap(annotation)
+                                  }
+                                }}
+                                onTouchEnd={(event: ReactTouchEvent) => {
+                                  event.stopPropagation()
+
+                                  if (
+                                    !annotationTapSuppressedRef.current &&
+                                    !annotationGestureRef.current.dragging &&
+                                    !annotationGestureRef.current.resizing
+                                  ) {
+                                    handleAnnotationTap(annotation)
                                   }
                                 }}
                                 onDragStart={(event) => {
                                   event.stopPropagation()
                                   annotationGestureRef.current.dragging = true
+                                  annotationTapSuppressedRef.current = true
                                   setSelectedId(annotation.id)
                                 }}
                                 onDrag={(_, position) =>
@@ -1853,12 +1884,14 @@ export default function ContractsEditorCore() {
                                     x: position.x,
                                     y: position.y,
                                   })
+                                  annotationGestureRef.current.dragging = false
                                   window.setTimeout(() => {
-                                    annotationGestureRef.current.dragging = false
-                                  }, 0)
+                                    annotationTapSuppressedRef.current = false
+                                  }, 120)
                                 }}
                                 onResizeStart={() => {
                                   annotationGestureRef.current.resizing = true
+                                  annotationTapSuppressedRef.current = true
                                   setSelectedId(annotation.id)
                                 }}
                                 onResizeStop={(_, __, ref, ___, position) => {
@@ -1868,9 +1901,10 @@ export default function ContractsEditorCore() {
                                     x: position.x,
                                     y: position.y,
                                   })
+                                  annotationGestureRef.current.resizing = false
                                   window.setTimeout(() => {
-                                    annotationGestureRef.current.resizing = false
-                                  }, 0)
+                                    annotationTapSuppressedRef.current = false
+                                  }, 120)
                                 }}
                                 style={{
                                   border:
