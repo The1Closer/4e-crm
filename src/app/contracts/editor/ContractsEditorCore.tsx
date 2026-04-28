@@ -1508,8 +1508,8 @@ export default function ContractsEditorCore() {
       </section>
 
       <div className="crm-grid-safe grid gap-6 md:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
-        <aside className="space-y-4">
-          <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+        <aside className="flex flex-col gap-4">
+          <section className="order-2 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl md:sticky md:top-6">
             <div className="flex items-center justify-between">
               <PanelTitle eyebrow="Toolbox" title="Insert Fields" />
             </div>
@@ -1547,7 +1547,7 @@ export default function ContractsEditorCore() {
             )}
           </section>
 
-          <section className="hidden md:block rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+          <section className="order-1 hidden rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl md:block">
             <PanelTitle
               eyebrow="Coverage"
               title="Document Stats"
@@ -1563,7 +1563,7 @@ export default function ContractsEditorCore() {
             </div>
           </section>
 
-          <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+          <section className="order-4 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
             <PanelTitle
               eyebrow="Field Map"
               title="Placed Fields"
@@ -1604,7 +1604,7 @@ export default function ContractsEditorCore() {
             )}
           </section>
 
-          <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+          <section className="order-3 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_80px_rgba(0,0,0,0.22)] backdrop-blur-2xl md:sticky md:top-[23rem]">
             <PanelTitle
               eyebrow="Inspector"
               title="Selected Element"
@@ -1805,6 +1805,7 @@ export default function ContractsEditorCore() {
                                 minWidth={annotation.type === 'check' ? 30 : 48}
                                 minHeight={annotation.type === 'check' ? 30 : 28}
                                 bounds="parent"
+                                disableDragging={false}
                                 enableUserSelectHack={false}
                                 resizeHandleStyles={{
                                   bottomRight: { width: 22, height: 22, right: -5, bottom: -5, borderRadius: 6, background: 'rgba(100,100,100,0.35)' },
@@ -1815,17 +1816,27 @@ export default function ContractsEditorCore() {
                                 onMouseDown={(event) => {
                                   event.stopPropagation()
                                   setSelectedId(annotation.id)
-                                  if (annotation.type === 'signature-box') {
-                                    openSignaturePad(annotation.page)
-                                  }
                                 }}
                                 onTouchStart={(event: ReactTouchEvent) => {
                                   event.stopPropagation()
                                   setSelectedId(annotation.id)
+                                }}
+                                onDoubleClick={(event) => {
+                                  event.stopPropagation()
                                   if (annotation.type === 'signature-box') {
                                     openSignaturePad(annotation.page)
                                   }
                                 }}
+                                onDragStart={(event) => {
+                                  event.stopPropagation()
+                                  setSelectedId(annotation.id)
+                                }}
+                                onDrag={(_, position) =>
+                                  updateAnnotation(annotation.id, {
+                                    x: position.x,
+                                    y: position.y,
+                                  })
+                                }
                                 onDragStop={(_, position) =>
                                   updateAnnotation(annotation.id, {
                                     x: position.x,
@@ -2068,69 +2079,7 @@ export default function ContractsEditorCore() {
         </div>
       ) : null}
 
-      {selectedAnnotation && ['text', 'date', 'initials'].includes(selectedAnnotation.type) && !signatureOpen ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white px-4 py-4 shadow-[0_-8px_32px_rgba(0,0,0,0.12)]">
-          <div className="mx-auto flex max-w-2xl flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                Edit {selectedAnnotation.type} field
-              </span>
-            </div>
-            <input
-              value={selectedAnnotation.value ?? ''}
-              onChange={(event) =>
-                updateAnnotation(selectedAnnotation.id, { value: event.target.value })
-              }
-              className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-base text-gray-900 outline-none transition focus:border-[#9c7a4a]"
-              autoFocus
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() =>
-                  updateAnnotation(selectedAnnotation.id, {
-                    fontSize: Math.max(10, (selectedAnnotation.fontSize ?? 18) - 2),
-                  })
-                }
-                className="rounded-xl border border-gray-300 px-3 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-100"
-              >
-                A−
-              </button>
-              <span className="min-w-[3ch] text-center text-sm text-gray-600">
-                {selectedAnnotation.fontSize ?? 18}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  updateAnnotation(selectedAnnotation.id, {
-                    fontSize: Math.min(72, (selectedAnnotation.fontSize ?? 18) + 2),
-                  })
-                }
-                className="rounded-xl border border-gray-300 px-3 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-100"
-              >
-                A+
-              </button>
-              <button
-                type="button"
-                onClick={deleteSelected}
-                className="ml-auto rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-100"
-              >
-                Delete
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedId(null)}
-                className="rounded-xl bg-gray-900 px-5 py-2 text-sm font-semibold text-white transition hover:bg-gray-800"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {hasSource &&
-      !(selectedAnnotation && ['text', 'date', 'initials'].includes(selectedAnnotation.type)) &&
       !signatureOpen ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center">
           <button
@@ -2185,3 +2134,4 @@ function InspectorNumberField({
     </label>
   )
 }
+
