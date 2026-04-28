@@ -19,6 +19,8 @@ type RouteContext = {
 
 type CreateNoteBody = {
   body?: string
+  source?: string
+  inspection_id?: string
 }
 
 type InsertedNoteRow = {
@@ -117,44 +119,50 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
   const body = (await req.json()) as CreateNoteBody
   const noteBody = String(body.body ?? '').trim()
+  const noteSource = body.source ?? null
+  const inspectionId = body.inspection_id ?? null
 
   if (!noteBody) {
     return NextResponse.json({ error: 'Note text is required.' }, { status: 400 })
   }
 
-  const insertWithCreator = async () =>
-    supabaseAdmin
+  let note: InsertedNoteRow | null = null
+  let noteError: { message?: string } | null = null
+
+  // Inspection notes use an upsert — one rolled-up note per inspection per job
+  if (noteSource === 'inspection' && inspectionId) {
+    const upsertResult = await supabaseAdmin
+      .from('notes')
+      .upsert(
+        {
+          job_id: jobId,
+          body: noteBody,
+          created_by: authResult.requester.profile.id,
+          source: noteSource,
+          inspection_id: inspectionId,
+        },
+        { onConflict: 'job_id,inspection_id', ignoreDuplicates: false }
+      )
+      .select('*')
+      .single()
+
+    note = upsertResult.data as InsertedNoteRow | null
+    noteError = upsertResult.error
+  } else {
+    const insertResult = await supabaseAdmin
       .from('notes')
       .insert({
         job_id: jobId,
         body: noteBody,
         created_by: authResult.requester.profile.id,
+        source: noteSource,
       })
       .select('*')
       .single()
 
-  const insertWithoutCreator = async () =>
-    supabaseAdmin
-      .from('notes')
-      .insert({
-        job_id: jobId,
-        body: noteBody,
-      })
-      .select('*')
-      .single()
-
-  let noteInsertResult = await insertWithCreator()
-
-  if (
-    noteInsertResult.error?.message
-      ?.toLowerCase()
-      .includes('column "created_by" of relation "notes" does not exist')
-  ) {
-    noteInsertResult = await insertWithoutCreator()
+    note = insertResult.data as InsertedNoteRow | null
+    noteError = insertResult.error
   }
-
-  const note = noteInsertResult.data as InsertedNoteRow | null
-  const noteError = noteInsertResult.error
 
   if (noteError || !note) {
     return NextResponse.json(
